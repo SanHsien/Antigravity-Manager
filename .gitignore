@@ -56,6 +56,10 @@ scripts/probe_weekly.py
 scripts/probe_quota_summary.py
 pnpm-lock.yaml
 
-# Dot-directories: ignore all hidden directories, but keep .github (CI/CD workflows)
+# Dot-directories: ignore all hidden directories, but keep .github (CI/CD workflows) and .cursor
 .*/
 !.github/
+!.cursor/
+
+# Upstream report
+upstream-review-report.md

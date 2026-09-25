@@ -1,0 +1,56 @@
+name: Upstream check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/check_upstream_updates.py
+      - tools/upstream_baseline.json
+      - .github/workflows/upstream-check.yml
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check upstream updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check upstream
+        id: upstream
+        continue-on-error: true
+        run: python tools/check_upstream_updates.py --strict
+
+      - name: Publish report
+        if: always()
+        run: cat upstream-review-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require review when upstream changed
+        if: steps.upstream.outcome == 'failure'
+        run: |
+          echo "::error::Upstream changed or the check failed. Review the workflow summary."
+          exit 1

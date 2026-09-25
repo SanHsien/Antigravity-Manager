@@ -1,3 +1,25 @@
+> **SanHsien 維護型 fork overlay。** `origin` 是 [`SanHsien/Antigravity-Manager`](https://github.com/SanHsien/Antigravity-Manager)，`upstream` 是 [`lbjlaq/Antigravity-Manager`](https://github.com/lbjlaq/Antigravity-Manager)。
+> 本 fork 的維護規則以 [`FORK.md`](FORK.md) 為準；與下文衝突時以 FORK.md 優先。
+> 不要推 `upstream`、不要對上游開 PR（除非維護者在這次對話明確同意回貢）。
+> 產品行為與架構規範遵守下文說明。
+
+# Antigravity-Manager - Agent 指南與維護規範
+
+---
+
+## 核心硬閘門（所有代理人必讀）
+
+1. **Windows 11 原生環境假設**：
+   本機環境為 Windows 11 原生（PowerShell / cmd），非 WSL。嚴禁依賴 POSIX 特有指令（如 `which`、`touch`、路徑冒號分隔符等）。
+2. **對外邊界硬閘門**：
+   PR、push、release 一律指向 `SanHsien/Antigravity-Manager`。每個 clone 先跑 `gh repo set-default SanHsien/Antigravity-Manager`。
+3. **驗證憑真實輸出**：
+   回報「完成／修好／測試通過」之前，必須實際在終端機中執行檢查並貼出完整輸出。不准註解掉測試、吞掉例外、或回傳固定值偽造通過。
+4. **一鍵門禁必須全綠**：
+   交付任何改動前，必須執行 `powershell -File tools\dev_check.ps1` 並確保無任何報錯。
+
+---
+
 # Project Maintenance Guidelines
 
 - **Architecture**: This project is a gateway that aggregates four AI protocols — OpenAI Responses, OpenAI Chat Completions, Anthropic Claude, and Google Gemini — and outputs Antigravity-style Gemini protocol format.
