@@ -32,6 +32,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "Link check failed with exit code $LASTEXITCODE"
 }
 
+Write-Host "==> Checking zh-TW locale key completeness"
+python tools/check_locale_keys.py
+if ($LASTEXITCODE -ne 0) {
+    throw "zh-TW locale key check failed with exit code $LASTEXITCODE"
+}
+
 Write-Host "==> Checking upstream updates"
 python tools/check_upstream_updates.py --strict
 if ($LASTEXITCODE -ne 0) {

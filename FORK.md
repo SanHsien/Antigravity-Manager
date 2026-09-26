@@ -34,6 +34,7 @@
 | **連結檢查** | `tools/check_links.py` | 無 |
 | **GitHub Pages** | 不部署，`deploy-pages.yml` 已移除 | 有 `deploy-pages.yml`（發布 `web_site/` 到 `lbjlaq.github.io`） |
 | **`package.json` devDependencies** | 移除 `vitepress`（見下方「相依套件偏移」） | 保留 `vitepress` |
+| **中文語系** | 只有繁體中文（`zh-TW`），`src/locales/zh.json` 已刪除；任何 `zh`/`zh-CN`/`zh-Hans`/`zh-*` 一律解析為 `zh-TW`（前端 `src/i18n.ts`、Rust `src-tauri/src/modules/i18n.rs`），舊設定檔的 `language: "zh"` 會在載入時自動遷移為 `"zh-TW"` | 同時提供簡體 `zh.json` 與繁體 `zh-TW.json` |
 | **README** | Fork 自有版本（`README.md` 繁體中文、`README_EN.md` 英文），移除贊助商／打賞／作者其他專案推廣／Trendshift 徽章／貢獻者頭像牆，只保留必要的授權出處說明 | 簡體中文為主的 README，含贊助商、打賞（Buy Me a Coffee、支付寶/微信收款碼）、推薦專案（作者自家其他 repo）、Trendshift 徽章、逐一貢獻者頭像 |
 
 ---

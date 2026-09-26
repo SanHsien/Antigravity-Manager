@@ -43,6 +43,7 @@
     "update_success": "更新成功",
     "delete_success": "刪除成功",
     "copied": "已複製到剪貼簿",
+    "retry": "重試",
     "reason": "Reason",
     "show_raw": "Show Raw",
     "show_parsed": "Show Parsed",
@@ -262,8 +263,11 @@
     "warmup_now": "立即預熱",
     "warmup_batch_triggered": "已成功為 {{count}} 個帳號觸發預热任務",
     "quota_window_5h": "5小時滑動配額",
-    "quota_window_weekly": "7天周配額",
-    "quota_window_weekly_short": "周配額",
+    "quota_window_weekly": "7天週配額",
+    "quota_window_weekly_short": "週配額",
+    "weekly_exhausted_tooltip": "每週配額已用盡 (0%)，等待每週重置",
+    "weekly_tokens": "本週期 Token",
+    "weekly_tokens_tooltip": "本執行個體在此配額週期記錄的 Token 用量（輸入 + 輸出）",
     "quota_protected": "受保護",
     "details": {
       "title": "配額詳情",
@@ -658,7 +662,7 @@
       "required": "必選"
     },
     "advanced_thinking": {
-      "title": "高級思維与全局配置",
+      "title": "高級思維與全域配置",
       "description": "集中管理思維能力、圖像模式及全局指令。"
     },
     "thinking_budget": {
@@ -699,6 +703,10 @@
       "placeholder": "輸入全局系統提示詞...\n例如：你是一位資深的全棧開發工程師，擅長 React 和 Rust。請使用繁體中文回复。",
       "char_count": "{{count}} 字符",
       "long_prompt_warning": "提示詞較長（超過 2000 字符），可能會佔用較多的上下文窗口空間。"
+    },
+    "branding": {
+      "title": "Antigravity Tools",
+      "subtitle": "專業帳號管理"
     }
   },
   "tray": {
@@ -1071,53 +1079,55 @@
       "opencode_sync": {
         "card_title": "OpenCode",
         "status": {
-          "detecting": "Detecting...",
-          "installed": "Installed ({{version}})",
-          "not_installed": "Not Installed",
-          "synced": "Synced",
-          "not_synced": "Not Synced",
-          "current_base_url": "Current Base URL"
+          "detecting": "偵測中…",
+          "installed": "已安裝（{{version}}）",
+          "not_installed": "未安裝",
+          "synced": "已同步",
+          "not_synced": "尚未同步",
+          "current_base_url": "目前 Base URL"
         },
-        "sync_accounts": "Sync accounts to antigravity-accounts.json",
-        "btn_sync": "Sync Config",
-        "btn_view": "View Config",
-        "btn_restore": "Restore",
-        "btn_restore_backup": "Restore Backup",
-        "btn_clear": "Clear Config",
-        "clear_confirm_title": "Confirm Clear Config",
-        "clear_confirm_message": "Are you sure you want to clear OpenCode configuration? This will remove the config file.",
+        "sync_accounts": "同步帳號至 antigravity-accounts.json",
+        "btn_sync": "同步設定",
+        "btn_view": "檢視設定",
+        "btn_restore": "還原",
+        "btn_restore_backup": "從備份還原",
+        "btn_clear": "清除設定",
+        "clear_confirm_title": "確認清除設定",
+        "clear_confirm_message": "確定要清除 OpenCode 設定嗎？這將移除設定檔。",
         "toast": {
-          "config_missing": "Please generate API Key and start service first",
-          "sync_success": "OpenCode config synced successfully",
-          "sync_error": "OpenCode sync failed: {{error}}",
-          "clear_success": "OpenCode config cleared successfully",
-          "clear_error": "Failed to clear OpenCode config: {{error}}"
+          "config_missing": "請先產生 API Key 並啟動服務",
+          "sync_success": "OpenCode 設定同步成功",
+          "sync_error": "OpenCode 同步失敗：{{error}}",
+          "clear_success": "OpenCode 設定清除成功",
+          "clear_error": "清除 OpenCode 設定失敗：{{error}}"
         },
         "modal": {
-          "view_title": "OpenCode Config Viewer",
-          "copy_success": "Config copied"
+          "view_title": "OpenCode 設定檢視器",
+          "copy_success": "設定已複製"
         },
-        "sync_confirm_title": "Confirm Sync",
-        "sync_confirm_message": "OpenCode config will be overwritten based on current proxy settings. Continue?",
-        "restore_confirm": "Are you sure you want to restore OpenCode to default settings?",
-        "restore_backup_confirm": "Are you sure you want to restore OpenCode config from backup?",
-        "modal_title": "Select OpenCode Models",
-        "select_models": "Select models to sync",
-        "auth_plugin_warning": "Detected opencode-antigravity-auth plugin. Sync only creates provider antigravity-manager and will not overwrite the google provider/plugin.",
-        "btn_confirm_sync": "Confirm Sync",
-        "custom_base_url_label": "Custom Manager BaseURL",
-        "custom_base_url_desc": "For Docker Compose networking",
-        "custom_base_url_reset": "Reset"
+        "sync_confirm_title": "確認同步",
+        "sync_confirm_message": "OpenCode 設定將依目前的代理設定被覆寫，是否繼續？",
+        "restore_confirm": "確定要將 OpenCode 還原為預設設定嗎？",
+        "restore_backup_confirm": "確定要從備份還原 OpenCode 設定嗎？",
+        "modal_title": "選擇 OpenCode 模型",
+        "select_models": "選擇要同步的模型",
+        "auth_plugin_warning": "偵測到 opencode-antigravity-auth 外掛，同步僅會建立 antigravity-manager provider，不會覆寫 google provider/外掛。",
+        "btn_confirm_sync": "確認同步",
+        "custom_base_url_label": "自訂 Manager BaseURL",
+        "custom_base_url_desc": "適用於 Docker Compose 網路環境",
+        "custom_base_url_reset": "重設"
       },
       "droid_sync": {
-        "modal_title": "Add models to Droid",
-        "modal_desc": "Selected models will be added as customModels to settings.json",
-        "selected": "selected",
-        "btn_confirm_sync": "Add selected models",
+        "modal_title": "新增模型至 Droid",
+        "modal_desc": "所選模型將以 customModels 的形式加入 settings.json",
+        "selected": "已選取",
+        "select_models": "選擇要新增的模型",
+        "no_models": "請在上方選擇要新增的模型",
+        "btn_confirm_sync": "新增所選模型",
         "toast": {
-          "no_models_selected": "Please select at least one model",
-          "sync_success_count": "Added {{count}} model(s) to Droid",
-          "sync_error": "Sync failed: {{error}}"
+          "no_models_selected": "請至少選擇一個模型",
+          "sync_success_count": "已新增 {{count}} 個模型到 Droid",
+          "sync_error": "同步失敗：{{error}}"
         }
       }
     },
@@ -1479,7 +1489,9 @@
       "images": "繪圖",
       "reset": "重置",
       "by_account": "按帳號篩選",
-      "all_accounts": "全部帳號"
+      "all_accounts": "全部帳號",
+      "capture_health": "擷取健康檢查",
+      "capture_health_tip": "預設關閉：過濾所有 GET 成功請求（含 /v1/models 模型清單輪詢與 /health 探測）且不寫入資料庫；失敗請求一律記錄；開啟後才會全部記錄並落庫"
     },
     "table": {
       "status": "狀態",
@@ -1492,6 +1504,34 @@
       "duration": "耗時",
       "time": "時間",
       "empty": "暫無請求紀錄"
+    },
+    "network": {
+      "title": "網路監控",
+      "open": "開啟網路監控",
+      "start_recording": "開始錄製",
+      "stop_recording": "停止錄製",
+      "clear_requests": "清除請求",
+      "empty": "尚無已記錄的請求",
+      "waiting": "等待回應中…",
+      "requests_count": "{{count}} 筆請求",
+      "badge_error": "錯誤",
+      "table": {
+        "time": "時間",
+        "status": "狀態",
+        "command": "指令",
+        "duration": "耗時"
+      },
+      "fields": {
+        "start_time": "開始時間",
+        "status": "狀態",
+        "duration": "耗時"
+      },
+      "sections": {
+        "general": "一般",
+        "request_args": "請求參數",
+        "response": "回應",
+        "error_details": "錯誤詳情"
+      }
     },
     "details": {
       "title": "請求詳情",
@@ -1569,7 +1609,9 @@
     },
     "restart_prompt": "更新已準備就緒，重新啟動應用程式後即可完成升級。",
     "btn_restart": "立即重新啟動",
-    "btn_later": "稍後"
+    "btn_later": "稍後",
+    "btn_manual_download": "手動下載",
+    "manual_hint": "偵測到您目前執行的並非 AppImage 版本，自動更新僅支援 AppImage，請點擊下方按鈕手動下載更新。"
   },
   "login": {
     "title": "安全存取控制",
@@ -1822,5 +1864,14 @@
     "confirm": "立即刪除",
     "cancel": "暫不刪除",
     "success": "已成功刪除思考塊快取，將在後續對話中自動重建。"
+  },
+  "debug_console": {
+    "toggle": "切換除錯主控台",
+    "pause_scroll": "暫停捲動",
+    "resume_scroll": "恢復捲動",
+    "clear": "清除",
+    "no_logs": "尚無日誌可顯示",
+    "no_logs_hint": "日誌會即時顯示在這裡",
+    "scroll_to_bottom": "捲動"
   }
 }

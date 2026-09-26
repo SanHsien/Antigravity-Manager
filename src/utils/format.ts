@@ -1,10 +1,11 @@
 import { formatDistanceToNow } from 'date-fns';
-import { zhCN, zhTW, enUS, ja, tr, vi, ptBR } from 'date-fns/locale';
+import { zhTW, enUS, ja, tr, vi, ptBR } from 'date-fns/locale';
 
-export function formatRelativeTime(timestamp: number, language: string = 'zh-CN'): string {
+export function formatRelativeTime(timestamp: number, language: string = 'zh-TW'): string {
     let locale = enUS;
-    if (language === 'zh-CN' || language === 'zh') locale = zhCN;
-    else if (language === 'zh-TW') locale = zhTW;
+    // This fork ships Traditional Chinese only (see FORK.md); any zh variant
+    // (Simplified, region, or script tag) uses the zh-TW date-fns locale.
+    if (language === 'zh' || language.startsWith('zh-') || language.startsWith('zh_')) locale = zhTW;
     else if (language === 'ja') locale = ja;
     else if (language === 'tr') locale = tr;
     else if (language === 'vi') locale = vi;

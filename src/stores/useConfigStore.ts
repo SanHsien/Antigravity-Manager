@@ -28,6 +28,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         set({ loading: true, error: null });
         try {
             const config = await configService.loadConfig();
+            // This fork ships Traditional Chinese only (Simplified was
+            // removed, see FORK.md). Migrate any saved config that still
+            // has an old Simplified/region zh-* selection to zh-TW so
+            // returning users don't silently fall back to English.
+            if (config.language && /^zh(?!-TW$)/i.test(config.language)) {
+                const migrated = { ...config, language: 'zh-TW' };
+                set({ config: migrated, loading: false });
+                await configService.saveConfig(migrated).catch(() => {});
+                return;
+            }
             set({ config, loading: false });
         } catch (error) {
             set({ error: String(error), loading: false });

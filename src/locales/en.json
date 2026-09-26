@@ -979,6 +979,8 @@
         "modal_title": "Add models to Droid",
         "modal_desc": "Selected models will be added as customModels to settings.json",
         "selected": "selected",
+        "select_models": "Select models to add",
+        "no_models": "Please select models to add above",
         "btn_confirm_sync": "Add selected models",
         "toast": {
           "no_models_selected": "Please select at least one model",
@@ -1557,6 +1559,8 @@
     "restart_prompt": "Update is ready. Restart the app to apply changes.",
     "btn_restart": "Restart Now",
     "btn_later": "Later",
+    "btn_manual_download": "Download Manually",
+    "manual_hint": "We detected that you are not running the AppImage version. Auto-updates are only supported for AppImage. Please download the update manually.",
     "toast": {
       "not_ready": "Update artifacts are not ready yet. Will retry later.",
       "failed": "Auto-update failed"
@@ -1813,5 +1817,14 @@
     "confirm": "Clear Now",
     "cancel": "Cancel",
     "success": "Thinking block cache cleared successfully and will rebuild automatically."
+  },
+  "debug_console": {
+    "toggle": "Toggle Debug Console",
+    "pause_scroll": "Pause scroll",
+    "resume_scroll": "Resume scroll",
+    "clear": "Clear",
+    "no_logs": "No logs to display",
+    "no_logs_hint": "Logs will appear here in real-time",
+    "scroll_to_bottom": "Scroll"
   }
 }

@@ -23,11 +23,10 @@ fn supported_language(locale: &str) -> Option<&'static str> {
         .to_ascii_lowercase();
     let mut subtags = locale.split('-');
     match subtags.next()? {
-        "zh" => Some(match subtags.next() {
-            // An explicit script takes precedence over the region (zh-Hans-TW).
-            Some("hant" | "tw" | "hk" | "mo") => "zh-TW",
-            _ => "zh",
-        }),
+        // This fork ships Traditional Chinese only (see FORK.md); every zh
+        // variant -- Simplified, Traditional, region, or script tag -- maps
+        // to zh-TW so no OS locale falls back to a missing Simplified bundle.
+        "zh" => Some("zh-TW"),
         "en" => Some("en"),
         "ja" => Some("ja"),
         "tr" => Some("tr"),
@@ -64,8 +63,9 @@ fn load_translations(lang: &str) -> HashMap<String, String> {
     // so the tray menu follows the in-app language switch. Unknown codes fall back to
     // English, matching the frontend's fallbackLng.
     let json_content = match lang {
-        "zh" | "zh-CN" | "zh-Hans" => include_str!("../../../src/locales/zh.json"),
-        "zh-TW" | "zh-Hant" => include_str!("../../../src/locales/zh-TW.json"),
+        "zh" | "zh-CN" | "zh-Hans" | "zh-TW" | "zh-Hant" => {
+            include_str!("../../../src/locales/zh-TW.json")
+        }
         "ja" | "ja-JP" => include_str!("../../../src/locales/ja.json"),
         "tr" | "tr-TR" => include_str!("../../../src/locales/tr.json"),
         "vi" | "vi-VN" => include_str!("../../../src/locales/vi.json"),
@@ -169,13 +169,15 @@ mod tests {
     }
 
     #[test]
-    fn distinguishes_chinese_scripts_and_regions() {
+    fn all_chinese_scripts_and_regions_map_to_traditional() {
+        // This fork ships Traditional Chinese only (Simplified was removed,
+        // see FORK.md), so every zh-* OS locale must resolve to zh-TW.
         for (locale, expected) in [
-            ("zh", "zh"),
-            ("zh-CN", "zh"),
-            ("zh-SG", "zh"),
-            ("zh-Hans", "zh"),
-            ("zh-Hans-TW", "zh"),
+            ("zh", "zh-TW"),
+            ("zh-CN", "zh-TW"),
+            ("zh-SG", "zh-TW"),
+            ("zh-Hans", "zh-TW"),
+            ("zh-Hans-TW", "zh-TW"),
             ("zh-TW", "zh-TW"),
             ("zh-HK", "zh-TW"),
             ("zh-MO", "zh-TW"),

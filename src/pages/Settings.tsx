@@ -43,7 +43,7 @@ function Settings() {
     const [activeTab, setActiveTab] = useState<'general' | 'account' | 'proxy' | 'advanced' | 'debug' | 'about'>('general');
     const [appVersion, setAppVersion] = useState<string>('4.8.1');
     const [formData, setFormData] = useState<AppConfig>({
-        language: 'zh',
+        language: 'zh-TW',
         theme: 'system',
         auto_refresh: false,
         refresh_interval: 15,
@@ -561,7 +561,6 @@ function Settings() {
                                         updateLanguage(newLang);
                                     }}
                                 >
-                                    <option value="zh">简体中文</option>
                                     <option value="zh-TW">繁體中文</option>
                                     <option value="en">English</option>
                                     <option value="ja">日本語</option>

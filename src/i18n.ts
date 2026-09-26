@@ -3,7 +3,6 @@ import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 
 import en from "./locales/en.json";
-import zh from "./locales/zh.json";
 import zhTW from "./locales/zh-TW.json";
 import ja from "./locales/ja.json";
 import tr from "./locales/tr.json";
@@ -28,10 +27,25 @@ i18n
             en: {
                 translation: en,
             },
+            // This fork ships Traditional Chinese only (Simplified was
+            // removed, see FORK.md); every zh variant resolves to the same
+            // zh-TW bundle so no saved "zh" selection falls back to English.
             zh: {
-                translation: zh,
+                translation: zhTW,
             },
             "zh-TW": {
+                translation: zhTW,
+            },
+            "zh-CN": {
+                translation: zhTW,
+            },
+            "zh-Hans": {
+                translation: zhTW,
+            },
+            "zh-Hant": {
+                translation: zhTW,
+            },
+            "zh-HK": {
                 translation: zhTW,
             },
             ja: {
@@ -39,10 +53,6 @@ i18n
             },
             tr: {
                 translation: tr,
-            },
-            // Handling 'zh-CN' as 'zh'
-            "zh-CN": {
-                translation: zh,
             },
             vi: {
                 translation: vi,

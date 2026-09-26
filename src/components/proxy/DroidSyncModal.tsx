@@ -194,7 +194,7 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
 
     const executeDroidSync = async () => {
         if (!previewModels.some(m => m.isAg)) {
-            showToast(t('proxy.droid_sync.toast.no_models_selected', { defaultValue: '请至少选择一个模型' }), 'error');
+            showToast(t('proxy.config.droid_sync.toast.no_models_selected', { defaultValue: 'Please select at least one model' }), 'error');
             return;
         }
         setSyncing(true);
@@ -204,11 +204,11 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
                 return rest;
             });
             const added = await invoke<number>('execute_droid_sync', { customModels });
-            showToast(t('proxy.droid_sync.toast.sync_success_count', { count: added, defaultValue: `已添加 ${added} 个模型到 Droid` }), 'success');
+            showToast(t('proxy.config.droid_sync.toast.sync_success_count', { count: added, defaultValue: `Added ${added} model(s) to Droid` }), 'success');
             onSyncDone();
             onClose();
         } catch (error: any) {
-            showToast(t('proxy.droid_sync.toast.sync_error', { error: error.toString(), defaultValue: `同步失败: ${error.toString()}` }), 'error');
+            showToast(t('proxy.config.droid_sync.toast.sync_error', { error: error.toString(), defaultValue: `Sync failed: ${error.toString()}` }), 'error');
         } finally {
             setSyncing(false);
         }
@@ -230,7 +230,7 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
                             </div>
                             <div>
                                 <h3 className="text-sm font-bold text-gray-900 dark:text-base-content">
-                                    {t('proxy.droid_sync.modal_title', { defaultValue: '添加模型到 Droid' })}
+                                    {t('proxy.config.droid_sync.modal_title', { defaultValue: 'Add models to Droid' })}
                                 </h3>
                                 <p className="text-[10px] text-gray-400 mt-0.5">~/.factory/settings.json</p>
                             </div>
@@ -245,7 +245,7 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
                 <div className="px-5 pb-3 shrink-0 border-b border-gray-100 dark:border-base-200">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                            {t('proxy.droid_sync.select_models', { defaultValue: '选择要添加的模型' })}
+                            {t('proxy.config.droid_sync.select_models', { defaultValue: 'Select models to add' })}
                             <span className="ml-2 text-gray-300">{selectedModels.size}/{antigravityModels.length}</span>
                         </span>
                         <button onClick={toggleAll} className="text-[10px] text-blue-500 hover:text-blue-600 font-medium transition-colors">
@@ -318,7 +318,7 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
                         </DndContext>
                         {previewModels.length === 0 && (
                             <div className="text-center text-xs text-gray-400 py-8">
-                                {t('proxy.droid_sync.no_models', { defaultValue: '请在上方选择要添加的模型' })}
+                                {t('proxy.config.droid_sync.no_models', { defaultValue: 'Please select models to add above' })}
                             </div>
                         )}
                     </div>
@@ -340,7 +340,7 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
                         onClick={executeDroidSync}
                     >
                         <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
-                        {t('proxy.droid_sync.btn_confirm_sync', { defaultValue: '写入配置' })}
+                        {t('proxy.config.droid_sync.btn_confirm_sync', { defaultValue: 'Add selected models' })}
                     </button>
                 </div>
             </div>
