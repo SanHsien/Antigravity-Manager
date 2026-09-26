@@ -26,6 +26,12 @@ concurrency:
 jobs:
   # Single deploy job since we're just deploying
   deploy:
+    # GitHub Pages is not enabled on this fork, so every push to main fails
+    # this job with "Get Pages site failed ... Pages enabled" (see REVIEW.md).
+    # Skip on forks unless the repo owner opts in with the ENABLE_PAGES_DEPLOY
+    # repository variable, mirroring the existing Docker-push gating pattern
+    # in release.yml.
+    if: github.repository == 'lbjlaq/Antigravity-Manager' || vars.ENABLE_PAGES_DEPLOY == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
