@@ -93,8 +93,11 @@ found 0 vulnerabilities
 |---|---|---|
 | PR：無新項目（`> #3521`） | — | `gh pr list` 確認上游沒有新 PR |
 | Issue **#3523**「你们有遇到死循环的情况吗 感觉昨晚开始gemini开始死循环了？」 | **Skip / not applicable** | 上游維護者自己回報的產品行為問題（Gemini 陷入迴圈、不呼叫編輯工具），無重現步驟、無留言、無 label。本 fork 的 overlay 只碰文件/工具/CI，未修改任何 pipeline 或協定邏輯，這個問題與本 fork 的維護範圍無關；待上游自己 triage 或釋出修復後，下次 `check_upstream_updates.py` 抓到新 release 時一併重新檢視。 |
+| Issue **#3524**「反代报错400 User location is not supported for the API use」 | **Skip / not applicable** | 使用者所在地區不被 Google API 支援的求助；根因與 #3525 相同，一併追蹤。 |
+| Issue **#3525**「sandbox 返回地区错误但 daily 可用：HTTP 400 阻止上游回退（v4.8.1）」 | **Defer / track upstream** | 真實 bug：sandbox 回地區錯誤時沒有回退到 daily。上游 PR #3526 已提出修正、尚未合併；待上游合併或發行新版時依 release 追蹤一併帶入，不在 fork 先行 cherry-pick。 |
+| PR **#3526**「fix(proxy): prefer daily upstream before sandbox」 | **Defer / track upstream** | #3525 的修正，OPEN 未合併。合併後隨上游 release 帶入。 |
 
-處理後 `tools/upstream_baseline.json.reviewed_issue_through` 已由 `3519` 提升為 `3523`。
+處理後 `tools/upstream_baseline.json.reviewed_issue_through` 已由 `3519` 提升為 `3525`（#3523–#3525），`reviewed_pr_through` 由 `3521` 提升為 `3526`。
 
 ---
 
@@ -112,7 +115,7 @@ found 0 vulnerabilities
 Triaged through #3521.
 No new items above that number.
 ## Upstream issues
-Triaged through #3523.
+Triaged through #3525 (issues) / #3526 (PRs).
 No new items above that number.
 
 WINDOWS DEV CHECK GREEN

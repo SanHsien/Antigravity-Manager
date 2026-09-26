@@ -171,7 +171,7 @@ Added controls:
 
 Translations:
 - `src/locales/en.json`
-- `src/locales/zh.json`
+- `src/locales/zh-TW.json`
 
 ## Validation checklist
 Build:

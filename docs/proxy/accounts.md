@@ -35,7 +35,7 @@ The accounts UI reads `disabled` fields and shows a “Disabled” badge and too
 
 Translations:
 - [`src/locales/en.json`](../../src/locales/en.json)
-- [`src/locales/zh.json`](../../src/locales/zh.json)
+- [`src/locales/zh-TW.json`](../../src/locales/zh-TW.json)
 
 ### 5) API errors avoid leaking user emails
 Token refresh failures returned to API clients no longer include account emails:
