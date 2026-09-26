@@ -34,6 +34,26 @@
 | **連結檢查** | `tools/check_links.py` | 無 |
 | **GitHub Pages** | 不部署，`deploy-pages.yml` 已移除 | 有 `deploy-pages.yml`（發布 `web_site/` 到 `lbjlaq.github.io`） |
 | **`package.json` devDependencies** | 移除 `vitepress`（見下方「相依套件偏移」） | 保留 `vitepress` |
+| **README** | Fork 自有版本（`README.md` 繁體中文、`README_EN.md` 英文），移除贊助商／打賞／作者其他專案推廣／Trendshift 徽章／貢獻者頭像牆，只保留必要的授權出處說明 | 簡體中文為主的 README，含贊助商、打賞（Buy Me a Coffee、支付寶/微信收款碼）、推薦專案（作者自家其他 repo）、Trendshift 徽章、逐一貢獻者頭像 |
+
+---
+
+## README（本 fork 自有內容，高合併衝突區）
+
+`README.md`（繁體中文）與 `README_EN.md`（英文）是本 fork 自行維護的版本，**不是**單純同步上游 README 再翻譯——內容結構已對齊，但移除了以下與「Windows 原生維護型 fork」定位無關或屬作者個人推廣性質的區塊：
+
+- 💖 贊助商區塊（PackyCode / APIKEY.FUN / Claude API / AICodeMirror 等 affiliate 連結與優惠碼）
+- ☕ 支持專案（Buy Me a Coffee 按鈕、支付寶／微信收款 QR code）
+- 🚀 推薦專案（連到作者 lbjlaq 自己的另一個 repo，屬作者自我推廣）
+- 頂部 Trendshift 徽章（純推廣性質的星數排行榜徽章）
+- 👥 核心貢獻者區塊的逐一頭像牆，改為純文字連到上游 repo 的 Contributors 頁面（減少每次同步都要對齊一長串頭像連結的維護負擔）
+- 底部「幫我點星星」呼籲橫幅
+
+保留／新增的授權出處說明（CC BY-NC-SA 4.0 要求 attribution，不可移除）：
+- README 底部：`本專案 fork 自 lbjlaq/Antigravity-Manager，依 CC BY-NC-SA 4.0 授權。`（含連結）
+- `NOTICE.md` 既有的 Original Author / Upstream Repository / License 區塊維持不變
+
+**未來同步上游 README 改動時**：不要直接覆蓋整份檔案，逐段比對上游新增/修改的功能說明段落，手動合併進本 fork 版本，同時保留上述已移除的區塊維持移除狀態。
 
 ---
 
