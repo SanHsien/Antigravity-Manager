@@ -32,6 +32,23 @@
 | **上游追蹤水位** | `tools/upstream_baseline.json` + `tools/check_upstream_updates.py` + 每週 Actions | 無 |
 | **AI 代理規範** | `AGENTS.md`（疊加維護 overlay）、`CLAUDE.md`、`GEMINI.md`、`.cursor/rules/no-upstream-pr.mdc` | 僅上游通用規範 |
 | **連結檢查** | `tools/check_links.py` | 無 |
+| **GitHub Pages** | 不部署，`deploy-pages.yml` 已移除 | 有 `deploy-pages.yml`（發布 `web_site/` 到 `lbjlaq.github.io`） |
+| **`package.json` devDependencies** | 移除 `vitepress`（見下方「相依套件偏移」） | 保留 `vitepress` |
+
+---
+
+## 相依套件偏移（deviation from upstream package.json / package-lock.json）
+
+本 fork 為了清掉 `npm audit` 的已知漏洞，對上游 `package.json` / `package-lock.json` 做了以下偏移，皆已驗證 `npm run build`（`tsc && vite build`）通過：
+
+- **移除 `vitepress`（`^1.6.4`）**：repo 內搜尋（含 `package.json`、`src/`、`docs/`、`tools/`）找不到任何 script 或程式碼引用它，是完全未使用的 devDependency。它綁死的自帶 `vite`/`esbuild` 版本是 `npm audit` 剩下 3 筆漏洞（1 high + 2 moderate：`GHSA-fx2h-pf6j-xcff`、`GHSA-67mh-4wv8-2f99` 等）的唯一來源，上游沒有非 alpha 的修復版本可升（`vitepress` 目前最新穩定版仍是 `1.6.4`，下一版是 `2.0.0-alpha.*`）。移除後 `npm audit` 歸零，`npm run build` 照常通過。若之後真的需要產生文件網站，重新加回並升級到穩定的修復版即可。
+- 其餘 21 筆 `npm audit` 項目透過 `npm audit fix`（無 `--force`）以 semver-safe 的方式解決，沒有額外偏移上游版本號策略。
+
+## GitHub Pages（不部署）
+
+- 這個 fork 從未啟用 GitHub Pages（`gh api repos/SanHsien/Antigravity-Manager --jq '.has_pages'` → `false`），繼承自上游的 `.github/workflows/deploy-pages.yml` 因此每次 push `main` 必然失敗（`Get Pages site failed`）。維護者決定本 fork 不需要 Pages 網站，該 workflow 已直接移除，而非加條件閘門保留。
+- Repo 設定裡的 GitHub homepage 欄位原本指向 `lbjlaq.github.io`（上游官網），已由維護者清空；本 repo 檔案內（README、docs、`web_site/`）本來就沒有任何 `github.io` 連結需要改寫。
+- `web_site/`（`index.html`、`qa.html`、圖片）是上游原始靜態頁內容，未部署也不影響本 fork 運作，維持不動以縮小與上游的 diff；只有觸發部署的 workflow 被移除。
 
 ---
 
