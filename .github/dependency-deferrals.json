@@ -1,4 +1,125 @@
 {
   "_comment": "Reviewed-but-not-now decisions for tools/check_dependency_freshness.py. A deferral is for a floor that would genuinely break something if raised right now, with the reason recorded here; it is not a place to park 'waiting for upstream to move first'. Each entry needs deferredLatest so it expires by itself once the registry moves past the release it was reviewed against; a permanent policy belongs on the declaring line as `# freshness-hold:` instead.",
-  "deferrals": {}
+  "deferrals": {
+    "@ant-design/icons": {
+      "deferredLatest": "6.3.4",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "@lobehub/ui": {
+      "deferredLatest": "5.51.2",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "@vitejs/plugin-react": {
+      "deferredLatest": "6.1.1",
+      "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
+    },
+    "antd": {
+      "deferredLatest": "6.6.5",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "antd-style": {
+      "deferredLatest": "4.1.0",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "framer-motion": {
+      "deferredLatest": "13.4.6",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "i18next": {
+      "deferredLatest": "26.4.2",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "lucide-react": {
+      "deferredLatest": "1.49.0",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "react-i18next": {
+      "deferredLatest": "17.0.15",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "react-router": {
+      "deferredLatest": "8.4.0",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "tailwind-merge": {
+      "deferredLatest": "3.7.0",
+      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+    },
+    "tailwindcss": {
+      "deferredLatest": "4.3.3",
+      "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
+    },
+    "typescript": {
+      "deferredLatest": "7.0.2",
+      "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
+    },
+    "vite": {
+      "deferredLatest": "8.3.1",
+      "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
+    },
+    "aes-gcm": {
+      "deferredLatest": "0.11.1",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "axum": {
+      "deferredLatest": "0.8.9",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "base64": {
+      "deferredLatest": "0.23.1",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "dirs": {
+      "deferredLatest": "7.0.0",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "gtk": {
+      "deferredLatest": "0.19.0",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "machine-uid": {
+      "deferredLatest": "0.6.0",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "rand": {
+      "deferredLatest": "0.10.3",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "reqwest": {
+      "deferredLatest": "0.13.5",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "rusqlite": {
+      "deferredLatest": "0.40.2",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "sha2": {
+      "deferredLatest": "0.11.0",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "socket2": {
+      "deferredLatest": "0.6.5",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "sysinfo": {
+      "deferredLatest": "0.39.6",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "toml": {
+      "deferredLatest": "1.1.6+spec-1.1.0",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "toml_edit": {
+      "deferredLatest": "0.25.15+spec-1.1.0",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "tower": {
+      "deferredLatest": "0.5.3",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "tower-http": {
+      "deferredLatest": "0.7.1",
+      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    }
+  }
 }
