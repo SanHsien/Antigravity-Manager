@@ -120,6 +120,18 @@
     "tower-http": {
       "deferredLatest": "0.7.1",
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "docker/build-push-action": {
+      "deferredLatest": "7.4.0",
+      "reason": "major upgrade of a release-only Docker action; the release workflow cannot be exercised without cutting a release, so it needs a dry-run migration; not now"
+    },
+    "docker/login-action": {
+      "deferredLatest": "4.6.0",
+      "reason": "major upgrade of a release-only Docker action; the release workflow cannot be exercised without cutting a release, so it needs a dry-run migration; not now"
+    },
+    "docker/setup-buildx-action": {
+      "deferredLatest": "4.4.1",
+      "reason": "major upgrade of a release-only Docker action; the release workflow cannot be exercised without cutting a release, so it needs a dry-run migration; not now"
     }
   }
 }
