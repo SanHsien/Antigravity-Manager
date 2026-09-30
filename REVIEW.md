@@ -182,6 +182,49 @@ Build Frontend、Check Rust Code（ubuntu／macos／windows-2025：fmt＋clippy�
 2. **地區錯誤回退**：無法在本機以真實帳號重現，只有單元測試＋CI 驗證；上游若合併 #3526 或另有修法，同步時需比對後擇一，避免兩套邏輯疊加。
 3. **上游全面 403（#3527）**：Google 端異常，持續觀察上游 release。
 4. 是否要重新引入文件產生工具（`vitepress` 或替代品）；目前完全未使用，已移除。
+5. **上游 v4.8.4 整批合併**：見第 9 節，adoption pending（本機無 MSVC/cargo，Rust 變更無法在 `dev_check` 驗證；與 fork 地區回退分歧）。
+
+---
+
+## 9. 上游 v4.8.4 審查（2026-09-30）
+
+範圍：`27ee35b`（v4.8.1）→ `0269f04`（tag `v4.8.4`）共 40 commit；PR `#3541`–`#3557`（9 筆）；issue `#3528`–`#3566`（30 筆）。release 軌，不審查 tag 之後的 `d7438d61`。
+
+**總決策：adoption pending，本輪不合併任何上游程式碼。** 理由：(1) v4.8.4 是同一批 proxy pipeline 重構（簽章 sentinel、端點順序、工具封包），commit 互相依賴，無法乾淨挑出單一小修復；(2) 上游 `bbbf734`／`635767f` 改為 daily 優先，與 fork 在 `client.rs` 的地區錯誤回退（第 7.4 節）分歧，需擇一，不可疊加；(3) 本機無 cargo/MSVC，`dev_check` 只覆蓋前端建置，Rust 變更只能靠 CI 事後驗證。維護者決定要跟 v4.8.4（或更後的 release）時，建議整批合併並先在分支上跑 CI。
+
+### 9.1 Commit（40 筆，依類別）
+
+| 類別 | Commit | 決策 |
+|---|---|---|
+| Release／版號／changelog／merge（12） | `9c17149` `ca7598e` `ad07a38` `06f458d` `0269f04` `7c0b574` `08187c3` `cd30a5b` `ee7b9a6` `9243338` `6bf17c1` `a9c1ffd` | not-applicable：版務與 merge 標記；`6bf17c1`／`a9c1ffd` 是 #3520／#3521 的空 merge，實質內容見下方 `399e334`／`0708ec2` |
+| Gemini 簽章／thinking／工具封包 pipeline（12） | `775158d` `7d6f8c7` `fa5fbf3` `1ba7f17` `dbbfb07` `5321c49` `639209b` `441510d` `2bb52ee` `c8529c4` `68e7310` `219b850` | adoption pending：相依的整批重構（見總決策）；對應使用者回報的 `thought_signature` 400（#3529／#3531／#3535） |
+| 端點順序／per-account client（2） | `bbbf734` `635767f` | adoption pending：與 fork 地區回退分歧，需擇一；`635767f` 另動 `AGENTS.md`、PR 模板、`RELEASE_GUIDE.md`，合併時須保留 fork 版本 |
+| 功能（4） | `399e334`（週配額重置統計）`0708ec2`（帳號優先度設定）`7ed6b83` `34dcacf`（更新檢查雙軌／自訂端點） | follow-upstream：非缺陷修復，涉及 UI、設定與 Rust；更新檢查指向上游 release，fork 不採用 |
+| 非 Windows 編譯修復（3） | `ee83986` `999af6c` `1899489` | not-applicable：修的是上游同批 commit 引入的編譯錯誤，隨整批合併才有意義 |
+| 文件／連結（7） | `d6f9e5e` `3b4ff8e` `9fcbc5b` `572a9e8` `6a0b72e` `e505152` `4561638` | not-applicable：README 為 fork 自有版本；Docker beta 拉取說明與 JeikCode 導覽屬上游作者專案推廣 |
+
+### 9.2 Pull requests
+
+| PR | 決策 | 理由 |
+|---|---|---|
+| #3541 #3542 #3544 | follow-upstream | 上游已合併，屬 v4.8.4 之後的 proxy 修復（HAR 工具鏈、`data:image` 誤判、`toolConfig`）；隨下個 release 整批帶入 |
+| #3543 #3554 | follow-upstream | 上游已關閉未合併；待上游另案修復 |
+| #3549 #3553 #3557 | not-applicable | `--minimized` 啟動、移除 WebView2、prompts 同步（2582 檔）皆已關閉未合併 |
+| #3552 | not-applicable | 僅上游 release workflow 的 Rust cache |
+
+### 9.3 Issues
+
+| Issue | 決策 | 理由 |
+|---|---|---|
+| #3529 #3531 #3535 | follow-upstream | `thought_signature` 缺失 400；對應 C 類簽章重構，隨整批合併 |
+| #3537 #3539 #3540 #3558 #3560 #3561 #3562 | follow-upstream | 上游 pipeline 缺陷（orphaned tool_result、`googleSearch` 注入、`data:image` 誤判、結尾為 model turn、多圖 tool_result 順序、`toolConfig` 被剝除）；未在 fork 先行修補 |
+| #3545 #3547 #3556 #3564 | follow-upstream | 功能請求／顯示 bug（圖片上限、`/v1/model/{id}`、儀表板 5h／週配額顯示）；上游未列入 v4.8.4 |
+| #3551 #3536 | not-applicable | 針對 v4.8.5／v4.8.6 beta 的回歸；本 fork 追 release 軌（#3536 已關閉） |
+| #3538 | not-applicable | 針對 `hermes_sync.rs` 的 yaml-rt workaround 移除建議；本 fork 未修改該檔，隨上游處理 |
+| #3563 #3566 #3546 #3550 | not-applicable | RFC／指南／公告，非缺陷 |
+| #3528 #3530 #3532 #3533 #3534 #3548 #3555 #3559 #3565 | not-applicable | 帳號登入／授權／403／預熱／環境求助；#3559 回報刷新即恢復，屬 Google 端異常（延續 #3527） |
+
+共 30 筆 issue、9 筆 PR、40 筆 commit 全數 triage；水位：`reviewed_release=v4.8.4`、`reviewed_through=0269f045f4e35f34b9ee3b3bcd6c0ff1e741378f`、`reviewed_pr_through=3557`、`reviewed_issue_through=3566`、`reviewed_date=2026-09-30`。**Baseline 代表已審查，不代表已合併。**
 
 ---
 
