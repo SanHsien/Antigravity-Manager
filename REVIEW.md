@@ -229,3 +229,42 @@ Build Frontend、Check Rust Code（ubuntu／macos／windows-2025：fmt＋clippy�
 ---
 
 Maintained per `AGENTS.md` 協作約定：修 bug 需回註本檔並附 commit hash；對應 commit：`1334af79`、`2a9b9e03`、`bca736e9`、`49b6f567`、`a7a7ab0e`、`5fba79d0`、`81909ac4`、`aef80c8b`。
+
+---
+
+## 10. 上游 v4.9.6 審查（2026-10-07）
+
+範圍：前次水位 `0269f04`（v4.8.4）至 `b601f5e7`（v4.9.6）共 **174 commit**；另審 PR `#3567`–`#3622`（34 筆）及 issue `#3569`–`#3621`（22 筆）。依 `tools/check_upstream_updates.py` 的 release 軌，v4.9.6 tag 是本次邊界；tag 之後的修正只列為後續追蹤。上游 v4.9.6 release 說明確認它是 v4.9.5 內容的重新發布，並非獨立的程式功能批次。
+
+**總決策：已審查，整批程式碼採用仍 pending。** 本 fork 仍在 v4.8.1 衍生樹；上游這段改動橫跨 proxy pipeline、模型路由、Cowork、帳號處理、桌面端與 UI，共 140 個檔案、約 31,206 行新增／9,802 行刪除。既有第 9 節的地區錯誤回退與上游端點優先序分歧仍未解決。這輪只完成審查與水位，不假稱已合併或已驗證上游整樹。日後若採用，應另開隔離分支處理衝突、CI 與回歸，不能零散 cherry-pick 相依提交。下列每組列出該類**全部**短 SHA；分組計數 `70+18+67+9+8+2=174`。
+
+| 類別 | Commit（全部） | 決策與依據 |
+| --- | --- | --- |
+| 發版、merge、CI、格式與上游依賴（70） | `87de06cf` `ff8c3870` `100322e3` `10c44ef7` `ba2a3668` `f51a92ca` `e24ed63f` `7850e046` `5e719a9c` `4c709c97` `e4f455c4` `c6d6687e` `c3951922` `b661d301` `f89d262c` `a2464cf3` `c373e161` `3d015d84` `62a23b53` `f67422da` `e99a6586` `4fbdab0b` `69f7a0fb` `02ad2b49` `a3ddf8d5` `9e41d7c8` `de0f0e22` `a978bcc1` `a6637bcd` `bd48eb00` `a2dfd515` `45fc6d37` `72699a7f` `c829cf38` `6eca4510` `3ec6824d` `99c9528a` `6e8b982a` `2201173a` `f666237c` `6a360c3a` `42d9a732` `1d81d64f` `4e10eee3` `be403fe6` `3732e117` `5f952e0b` `04d2fd2c` `b5de8c8f` `e63e8bc0` `39608f2d` `8ab0d37e` `1873899c` `d74ba8f0` `325e787a` `083039d2` `f094b29c` `84b0b71f` `6b3b00a9` `6702090d` `e927fb8d` `f04bce68` `ab176a84` `ff56fed1` `e82405a4` `f2a97ad3` `b5eed068` `b4ff91f1` `56513c7f` `b601f5e7` | not-applicable：上游版號、merge 標記、release workflow 與格式整理不能單獨移植。`e24ed63f` 的 yaml-rt 依賴升級應在採用上游整樹時重新驗證，而非以格式／版務提交直接套入 fork。 |
+| 上游文件與品牌（18） | `76124c29` `4568c352` `23d8c11e` `16d3cdbf` `ffdbe996` `d7438d61` `1fbe00f4` `ffc557f0` `b4dafd8c` `a82ee988` `8813f0ad` `1011b684` `67c5fdf9` `9ea713db` `79dc54c3` `277c0062` `6b589798` `80bf086d` | not-applicable：README、changelog、抓包與 Cowork 規格屬上游版本或作者資料；fork 文件與治理指引獨立維護，採用功能時再對照技術文件。 |
+| Proxy、模型、Cowork、設定與 gateway（67） | `fe8aee68` `d04fc5fb` `eb5c1e1d` `af0e3224` `0c36bcac` `cc6fb217` `c9be9d05` `41855f7c` `5f0bae66` `3f00eec7` `6b56f5f5` `49f855a7` `3059a2c9` `b57872fc` `ea515250` `45bb067d` `34c2cfc6` `0c88f1b2` `3f8363a4` `2c7cf017` `c5ad0622` `026d4097` `a690dfaa` `3e92accd` `e642d257` `9a547bd4` `36f5706e` `d2150fa3` `7103e28d` `d00085dd` `f3ab5873` `6ea73c46` `9d1690cf` `09bab118` `30654785` `5b337a32` `3be28fe6` `4a1c88b7` `669d6c45` `d0fccd32` `5d5d3537` `0e5a0ca7` `96eb11f1` `5cfc607d` `913c7dda` `84eb5413` `9ca5ad5e` `8fdf6d61` `4e8487df` `331d5982` `fd9c30c6` `322587be` `af5b791b` `11cf588a` `f3d74cf2` `9912ccd9` `2303ed33` `a80cd495` `58a4e1a8` `8f5ff297` `dbd0786c` `aadfa547` `ecdb1862` `0dc45751` `a4903ef5` `215443a5` `04198598` | follow-upstream／adoption pending：同一條 pipeline 的簽章、模型、HTTP/2、429、SSE、Cowork 與路由修正相依。`9912ccd9` 明確修回 `#3571` 引入的危險 HTTP/2 設定，不能只挑前者；`e642d257` 刪除 z.ai/MCP（22 檔、約 2,506 行刪除），會改變 fork 現有功能，採用前須另做產品決策。`913c7dda`／`a80cd495` 的路徑與 process 隔離值得後續優先審查，但非本輪 CodeQL alert 的直接修補。 |
+| 桌面端與整合（9） | `675703a6` `38dc82e6` `6e421677` `cb6f1135` `d1ec3fd4` `99d32a68` `68ce996f` `a163b61d` `64bb357f` | follow-upstream／adoption pending：PATH／keyring／資料庫隔離、啟動模式、Linux 圖形與 macOS 重簽需跨平台驗證；本機無 MSVC，不能只憑靜態審查宣稱已驗收。 |
+| UI、monitor、i18n（8） | `a60e7d12` `75112aeb` `5994437b` `5d2ac56b` `7c07bb3f` `dad8f006` `4d2b5717` `58a22ea0` | follow-upstream／adoption pending：配額、mini view 與 monitor 改動須跟新資料模型及 UI 一起驗證。 |
+| 其他（2） | `4736f80a` `31d219f7` | `4736f80a` not-applicable：只修上游新批次引入的型別／格式門禁；`31d219f7` defer：新增大量錯誤與入參日誌，採用前須先審核憑證與個資遮罩。 |
+
+### 10.1 上游 PR（34 筆）
+
+| 決策 | PR | 理由 |
+| --- | --- | --- |
+| follow-upstream／adoption pending | `#3567` `#3568` `#3571` `#3574` `#3578` `#3580` `#3584` `#3589` `#3590` `#3591` `#3592` `#3595` `#3599` `#3600` `#3601` `#3602` `#3603` `#3604` `#3606` `#3607` `#3608` `#3609` `#3611` | 已合併到 v4.9.6 邊界的程式碼；依上表按整批處理。`#3571` 的 HTTP/2 PING 之後被 `9912ccd9` 修正。 |
+| follow-upstream（tag 之後） | `#3613` `#3615` `#3618` `#3620` | 上游已合併，但不在本次 v4.9.6 tag；等待下一個 release 審查。 |
+| follow-upstream（未合併） | `#3616` | 仍開啟的 token stats 功能 PR，不能當作已發布修補。 |
+| follow-upstream（tag 之後，未合併） | `#3622` | 2026-10-07 新開、目標 beta 的 Claude SSE 超時／重試修復，對應未解 `#3621`；尚未進入 v4.9.6 release，不能當作 fork 已修。 |
+| not-applicable | `#3579` `#3582` | 上游 README 與 Cowork RFC 文件；fork 文件獨立。 |
+| not-adopt | `#3583` `#3588` `#3594` | 上游已關閉而未合併；`#3588` 功能由 `#3592` 接替，`#3594` Claude 規格由後續提交處理。 |
+
+### 10.2 上游 issues（22 筆）
+
+| 決策 | Issue | 理由 |
+| --- | --- | --- |
+| follow-upstream／adoption pending | `#3570` `#3573` `#3577` `#3585` `#3586` `#3587` `#3593` `#3598` `#3605` `#3610` | 上游已關閉的功能缺陷；相關修正分散於上述版本，fork 尚未採用，不能宣稱已修。 |
+| follow-upstream（後續 release） | `#3612` `#3614` `#3617` `#3619` `#3621` | v4.9.6 後續 SSE、Cowork、語系與競態回報；`#3621` 仍開啟，下一次 release 繼續追。 |
+| needs-info／follow-upstream | `#3572` `#3581` | 登入授權與 Fedora UI 問題沒有足夠 fork 重現資料；先保留觀察，不移植特定修補。 |
+| not-applicable | `#3569` `#3575` `#3576` `#3596` `#3597` | 撤回問候、Cowork RFC、社群與第三方訂閱問題，無 fork 程式修補。 |
+
+審查水位：`reviewed_release=v4.9.6`、`reviewed_through=b601f5e7375343343922ccab5e50653bc3450c3b`、PR through `#3622`、issue through `#3621`，日期 `2026-10-07`。**水位只代表逐項審查與記錄，不代表已合併或已驗證上游程式碼。**
