@@ -1805,6 +1805,7 @@
     },
     "keyManager": {
       "title": "金鑰管理",
+      "sessionNotice": "金鑰只保留在記憶體中，重新整理或關閉程式後會清除。",
       "desc": "儲存常用 API Key，點擊即可切換並自動查詢額度。",
       "lastRemainingLabel": "上次餘額",
       "lastRemaining": "${{value}}",
