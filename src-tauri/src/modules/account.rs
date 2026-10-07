@@ -209,8 +209,7 @@ mod tests {
         // New behavior: BOM is stripped and JSON parses successfully
         assert!(
             result.is_ok(),
-            "BOM should be stripped and JSON should parse: {:?}",
-            result
+            "BOM should be stripped and JSON should parse"
         );
         let index = result.unwrap();
         assert!(index.accounts.is_empty());
@@ -236,8 +235,7 @@ mod tests {
         // New behavior: NUL bytes are stripped and JSON parses successfully
         assert!(
             result.is_ok(),
-            "NUL prefix should be stripped and JSON should parse: {:?}",
-            result
+            "NUL prefix should be stripped and JSON should parse"
         );
         let index = result.unwrap();
         assert!(index.accounts.is_empty());
@@ -257,8 +255,7 @@ mod tests {
         // New behavior: garbage content triggers recovery, returns empty index
         assert!(
             result.is_ok(),
-            "Garbage content should trigger recovery and return Ok: {:?}",
-            result
+            "Garbage content should trigger recovery and return Ok"
         );
         let index = result.unwrap();
         assert!(
@@ -341,10 +338,7 @@ mod tests {
             "Account files should still exist on disk"
         );
 
-        println!(
-            "Missing index with existing accounts: successfully recovered {} accounts",
-            index.accounts.len()
-        );
+        println!("Missing index with existing accounts: recovery succeeded");
     }
 
     #[test]
@@ -418,10 +412,7 @@ mod tests {
         assert!(acc2.disabled);
         assert!(acc2.proxy_disabled);
 
-        println!(
-            "save_account_index roundtrip: successfully saved and loaded index with {} accounts",
-            loaded.accounts.len()
-        );
+        println!("save_account_index roundtrip succeeded");
     }
 
     #[test]
