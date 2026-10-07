@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { NavItem, Language } from './constants';
 import { isTauri } from '../../utils/env';
 import { useViewStore } from '../../stores/useViewStore';
+import { clearAdminApiKey } from '../../utils/adminAuth';
 
 // useClickOutside Hook
 export function useClickOutside(
@@ -194,6 +195,7 @@ export function MoreDropdown({
     };
 
     const handleLogout = () => {
+        clearAdminApiKey();
         sessionStorage.removeItem('abv_admin_api_key');
         localStorage.removeItem('abv_admin_api_key');
         window.location.reload();

@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Lock, Key, Globe, AlertCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { isTauri } from '../../utils/env';
+import { clearAdminApiKey, setAdminApiKey } from '../../utils/adminAuth';
 
 /**
  * AdminAuthGuard
  * 针对 Docker/Web 模式的强制鉴权保护层。
- * 如果检测到没有存储的 API Key 或后端返回 401，将拦截 UI 并要求输入 Key。
+ * 每次載入要求重新驗證；後端返回 401 時也會攔截 UI。
  */
 export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { t, i18n } = useTranslation();
@@ -19,29 +20,15 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
     useEffect(() => {
         if (isTauri()) return;
 
-        // 检查 Session 存储 (优先)
-        const sessionKey = sessionStorage.getItem('abv_admin_api_key');
-        if (sessionKey) {
-            setIsAuthenticated(true);
-            setApiKey(sessionKey);
-            return;
-        }
-
-        // 检查本地存储 (迁移逻辑)
-        const savedKey = localStorage.getItem('abv_admin_api_key');
-        if (savedKey) {
-            // 迁移到 sessionStorage 并清理 localStorage
-            sessionStorage.setItem('abv_admin_api_key', savedKey);
-            localStorage.removeItem('abv_admin_api_key');
-            setIsAuthenticated(true);
-            setApiKey(savedKey);
-        }
+        // 清除舊版本留在瀏覽器儲存空間的明文金鑰。
+        sessionStorage.removeItem('abv_admin_api_key');
+        localStorage.removeItem('abv_admin_api_key');
 
         // 监听全局 401 事件
         const handleUnauthorized = () => {
-            sessionStorage.removeItem('abv_admin_api_key');
-            localStorage.removeItem('abv_admin_api_key'); // 双重清理确保万一
+            clearAdminApiKey();
             setIsAuthenticated(false);
+            setApiKey('');
         };
 
         window.addEventListener('abv-unauthorized', handleUnauthorized);
@@ -57,9 +44,6 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
         setError('');
 
         try {
-            // 先临时存储 key，用于验证请求
-            sessionStorage.setItem('abv_admin_api_key', trimmedKey);
-
             // 调用一个需要认证的 API 来验证密码是否正确
             const response = await fetch('/api/accounts', {
                 method: 'GET',
@@ -70,23 +54,19 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
                 }
             });
 
-            if (response.ok || response.status === 204) {
+            if (response.ok) {
                 // 验证成功
-                localStorage.removeItem('abv_admin_api_key');
+                setAdminApiKey(trimmedKey);
                 setIsAuthenticated(true);
-                window.location.reload();
+                setApiKey('');
             } else if (response.status === 401) {
                 // 密码错误
-                sessionStorage.removeItem('abv_admin_api_key');
                 setError(t('login.error_invalid_key'));
             } else {
-                // 其他错误，但可能密码是对的
-                setIsAuthenticated(true);
-                window.location.reload();
+                setError(t('login.error_network'));
             }
         } catch (err) {
             // 网络错误等
-            sessionStorage.removeItem('abv_admin_api_key');
             setError(t('login.error_network'));
         } finally {
             setIsLoading(false);

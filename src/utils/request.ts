@@ -1,3 +1,5 @@
+import { getAdminApiKey, getAdminAuthEpoch } from './adminAuth';
+
 // 探测环境
 const isTauri = typeof window !== 'undefined' && (!!(window as any).__TAURI_INTERNALS__ || !!(window as any).__TAURI__);
 
@@ -225,7 +227,8 @@ export async function request<T>(cmd: string, args?: any): Promise<T> {
     });
   }
 
-  const apiKey = typeof window !== 'undefined' ? sessionStorage.getItem('abv_admin_api_key') : null;
+  const apiKey = getAdminApiKey();
+  const authEpoch = getAdminAuthEpoch();
 
   const options: RequestInit = {
     method: mapping.method,
@@ -258,7 +261,7 @@ export async function request<T>(cmd: string, args?: any): Promise<T> {
   try {
     const response = await fetch(url, options);
     if (!response.ok) {
-      if (!isTauri && response.status === 401) {
+      if (!isTauri && response.status === 401 && apiKey && authEpoch === getAdminAuthEpoch()) {
         // [FIX #1163] 增加防抖锁，避免重复事件导致 UI 抖动
         const now = Date.now();
         const lastAuthError = (window as any)._lastAuthErrorTime || 0;
