@@ -352,22 +352,40 @@ for (const target of TARGET_FILES) {
     }
 
     const fullPath = path.join(ROOT_DIR, target.relPath);
-    if (!fs.existsSync(fullPath)) {
-        warn(`未找到目标文件 ${target.relPath}，已自动跳过。`);
-        continue;
+    let fd;
+    try {
+        const mode = isDryRun ? fs.constants.O_RDONLY : fs.constants.O_RDWR;
+        fd = fs.openSync(fullPath, mode | (fs.constants.O_NOFOLLOW ?? 0));
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            warn(`未找到目标文件 ${target.relPath}，已自动跳过。`);
+            continue;
+        }
+        throw err;
     }
 
-    const oldContent = fs.readFileSync(fullPath, 'utf8');
-    const newContent = target.replace(oldContent);
+    try {
+        const oldContent = fs.readFileSync(fd, 'utf8');
+        const newContent = target.replace(oldContent);
 
-    if (oldContent === newContent) {
-        warn(`文件 ${target.relPath} 内容未发生变更（可能未匹配到版本特征串）。`);
-    } else {
-        if (!isDryRun) {
-            fs.writeFileSync(fullPath, newContent, 'utf8');
+        if (oldContent === newContent) {
+            warn(`文件 ${target.relPath} 内容未发生变更（可能未匹配到版本特征串）。`);
+        } else {
+            if (!isDryRun) {
+                const bytes = Buffer.from(newContent, 'utf8');
+                let written = 0;
+                while (written < bytes.length) {
+                    const count = fs.writeSync(fd, bytes, written, bytes.length - written, written);
+                    if (count === 0) throw new Error(`无法写入目标文件 ${target.relPath}`);
+                    written += count;
+                }
+                fs.ftruncateSync(fd, bytes.length);
+            }
+            success(`同步更新: ${target.name} -> ${newVersion}`);
+            updatedCount++;
         }
-        success(`同步更新: ${target.name} -> ${newVersion}`);
-        updatedCount++;
+    } finally {
+        fs.closeSync(fd);
     }
 }
 
