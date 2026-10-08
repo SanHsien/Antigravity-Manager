@@ -1,9 +1,9 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose, Engine as _};
-use rand::{rngs::OsRng, RngCore};
+use rand::rngs::OsRng;
 use serde::{Deserialize, Deserializer, Serializer};
 use sha2::Digest;
 
@@ -11,12 +11,20 @@ const LEGACY_FIXED_NONCE: &[u8; 12] = b"antigravsalt";
 const ENCRYPTED_PREFIX: &str = "ag_enc_";
 const ENCRYPTED_V2_PREFIX: &str = "ag_enc_v2_";
 
-fn get_encryption_key() -> [u8; 32] {
-    let device_id = machine_uid::get().unwrap_or_else(|_| "default".to_string());
-    let mut key = [0u8; 32];
-    let hash = sha2::Sha256::digest(device_id.as_bytes());
-    key.copy_from_slice(&hash);
-    key
+fn get_encryption_key() -> Result<[u8; 32], String> {
+    encryption_key_from_device_id(machine_uid::get().map_err(|_| {
+        "Machine identity unavailable; refusing to use a shared encryption key".to_string()
+    }))
+}
+
+fn encryption_key_from_device_id(device_id: Result<String, String>) -> Result<[u8; 32], String> {
+    let device_id = device_id?;
+    if device_id.trim().is_empty() {
+        return Err(
+            "Machine identity is empty; refusing to use a shared encryption key".to_string(),
+        );
+    }
+    Ok(sha2::Sha256::digest(device_id.as_bytes()).into())
 }
 
 pub fn serialize_password<S>(password: &str, serializer: S) -> Result<S::Ok, S::Error>
@@ -69,18 +77,16 @@ where
 }
 
 pub fn encrypt_string(password: &str) -> Result<String, String> {
-    let key = get_encryption_key();
+    let key = get_encryption_key()?;
     let cipher = Aes256Gcm::new(&key.into());
 
-    let mut nonce_bytes = [0u8; 12];
-    OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
     let ciphertext = cipher
-        .encrypt(nonce, password.as_bytes())
+        .encrypt(&nonce, password.as_bytes())
         .map_err(|e| format!("Encryption failed: {}", e))?;
 
-    let encoded_nonce = general_purpose::STANDARD_NO_PAD.encode(nonce_bytes);
+    let encoded_nonce = general_purpose::STANDARD_NO_PAD.encode(nonce);
     let encoded_ciphertext = general_purpose::STANDARD_NO_PAD.encode(ciphertext);
     Ok(format!(
         "{}{}.{}",
@@ -89,7 +95,10 @@ pub fn encrypt_string(password: &str) -> Result<String, String> {
 }
 
 fn decrypt_legacy(encrypted_base64: &str) -> Result<String, String> {
-    let key = get_encryption_key();
+    decrypt_legacy_with_key(encrypted_base64, get_encryption_key()?)
+}
+
+fn decrypt_legacy_with_key(encrypted_base64: &str, key: [u8; 32]) -> Result<String, String> {
     let cipher = Aes256Gcm::new(&key.into());
     let nonce = Nonce::from_slice(LEGACY_FIXED_NONCE);
 
@@ -120,7 +129,7 @@ fn decrypt_string_v2(encrypted: &str) -> Result<String, String> {
         .decode(ciphertext_base64)
         .map_err(|e| format!("Ciphertext decode failed: {}", e))?;
 
-    let key = get_encryption_key();
+    let key = get_encryption_key()?;
     let cipher = Aes256Gcm::new(&key.into());
     let plaintext = cipher
         .decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())
@@ -143,10 +152,20 @@ pub fn decrypt_string(encrypted: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    fn random_password() -> String {
+        general_purpose::STANDARD_NO_PAD.encode(Aes256Gcm::generate_nonce(&mut OsRng))
+    }
+
+    #[test]
+    fn test_machine_identity_failure_has_no_fallback_key() {
+        assert!(encryption_key_from_device_id(Err("unavailable".to_string())).is_err());
+        assert!(encryption_key_from_device_id(Ok("  ".to_string())).is_err());
+    }
+
     #[test]
     fn test_encrypt_decrypt_cycle() {
-        let password = "my_secret_password";
-        let encrypted = encrypt_string(password).unwrap();
+        let password = random_password();
+        let encrypted = encrypt_string(&password).unwrap();
 
         assert!(encrypted.starts_with(ENCRYPTED_V2_PREFIX));
         assert_ne!(password, encrypted);
@@ -157,9 +176,9 @@ mod tests {
 
     #[test]
     fn test_encrypt_uses_unique_nonce() {
-        let password = "my_secret_password";
-        let encrypted_a = encrypt_string(password).unwrap();
-        let encrypted_b = encrypt_string(password).unwrap();
+        let password = random_password();
+        let encrypted_a = encrypt_string(&password).unwrap();
+        let encrypted_b = encrypt_string(&password).unwrap();
 
         assert_ne!(encrypted_a, encrypted_b);
         assert_eq!(decrypt_string(&encrypted_a).unwrap(), password);
@@ -167,18 +186,30 @@ mod tests {
     }
 
     #[test]
+    fn test_tampered_ciphertext_is_rejected() {
+        let encrypted = encrypt_string(&random_password()).unwrap();
+        let payload = encrypted.strip_prefix(ENCRYPTED_V2_PREFIX).unwrap();
+        let (nonce, ciphertext) = payload.split_once('.').unwrap();
+        let mut ciphertext = general_purpose::STANDARD_NO_PAD.decode(ciphertext).unwrap();
+        ciphertext[0] ^= 1;
+        let tampered = format!(
+            "{}{}.{}",
+            ENCRYPTED_V2_PREFIX,
+            nonce,
+            general_purpose::STANDARD_NO_PAD.encode(ciphertext)
+        );
+        assert!(decrypt_string(&tampered).is_err());
+    }
+
+    #[test]
     fn test_legacy_compatibility() {
-        let password = "legacy_password";
-        let key = get_encryption_key();
-        let cipher = Aes256Gcm::new(&key.into());
-        let nonce = Nonce::from_slice(LEGACY_FIXED_NONCE);
-        let ciphertext = cipher.encrypt(nonce, password.as_bytes()).unwrap();
-        let legacy_encrypted = general_purpose::STANDARD.encode(ciphertext);
-
-        assert!(!legacy_encrypted.starts_with(ENCRYPTED_PREFIX));
-
-        let decrypted = decrypt_string(&legacy_encrypted).unwrap();
-        assert_eq!(password, decrypted);
+        // Historical-format fixture, produced independently with AES-GCM and
+        // SHA-256("legacy-compatibility-fixture"). Never encrypt with the legacy nonce.
+        let key =
+            encryption_key_from_device_id(Ok("legacy-compatibility-fixture".to_string())).unwrap();
+        let decrypted =
+            decrypt_legacy_with_key("X+swqaQ8ZxLC/gZLlOKs7P9IrjD64gwyaiOhXculvg==", key).unwrap();
+        assert_eq!("legacy_password", decrypted);
     }
 
     #[derive(Deserialize)]
@@ -196,10 +227,11 @@ mod tests {
 
     #[test]
     fn test_deserialize_password_valid_encrypted() {
-        let encrypted = encrypt_string("secret_pass_456").unwrap();
+        let password = random_password();
+        let encrypted = encrypt_string(&password).unwrap();
         let json = format!(r#"{{"password": "{}"}}"#, encrypted);
         let parsed: PasswordContainer = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.password, "secret_pass_456");
+        assert_eq!(parsed.password, password);
     }
 
     #[test]
