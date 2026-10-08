@@ -68,7 +68,7 @@ const router = createBrowserRouter([
   },
 ]);
 
-function App() {
+function AppContent() {
   const { config, loadConfig } = useConfigStore();
   const { fetchCurrentAccount, fetchAccounts } = useAccountStore();
   const { i18n } = useTranslation();
@@ -164,7 +164,7 @@ function App() {
   }, []);
 
   return (
-    <AdminAuthGuard>
+    <>
       <ThemeManager />
       <DebugConsole />
       <SuggestionDeleteThinkingModal />
@@ -172,8 +172,12 @@ function App() {
         <UpdateNotification onClose={() => setShowUpdateNotification(false)} />
       )}
       <RouterProvider router={router} />
-    </AdminAuthGuard>
+    </>
   );
+}
+
+function App() {
+  return <AdminAuthGuard><AppContent /></AdminAuthGuard>;
 }
 
 export default App;
