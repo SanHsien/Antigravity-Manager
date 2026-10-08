@@ -268,3 +268,12 @@ Maintained per `AGENTS.md` 協作約定：修 bug 需回註本檔並附 commit h
 | not-applicable | `#3569` `#3575` `#3576` `#3596` `#3597` | 撤回問候、Cowork RFC、社群與第三方訂閱問題，無 fork 程式修補。 |
 
 審查水位：`reviewed_release=v4.9.6`、`reviewed_through=b601f5e7375343343922ccab5e50653bc3450c3b`、PR through `#3622`、issue through `#3621`，日期 `2026-10-07`。**水位只代表逐項審查與記錄，不代表已合併或已驗證上游程式碼。**
+
+### 10.3 新增 issue 審查（2026-10-08）
+
+| Issue | 決策 | 依據與後續 |
+| --- | --- | --- |
+| [`#3623`](https://github.com/lbjlaq/Antigravity-Manager/issues/3623) | follow-upstream／needs fork reproduction | 回報 v4.9.6 將不存在的 `claude-sonnet-4-6-thinking` 列出並回傳誤導性 429。fork 的 `src-tauri/src/proxy/common/model_mapping.rs` 也有同名映射，因此存在相關風險；上游帳號配額與三次請求紀錄不是 fork 的 runtime 證據。後續須對照帳號可用模型、列表產生及錯誤分類，在隔離測試中驗證後修正；本輪不擅改模型路由。 |
+| [`#3624`](https://github.com/lbjlaq/Antigravity-Manager/issues/3624) | follow-upstream／needs timing evidence | 回報 thinking 約 3.5 秒批次送出，原因仍是推測。fork 的 `src-tauri/src/proxy/mappers/claude/streaming.rs` 已有 `thinking_delta`／`signature_delta` 處理，但僅此不能證明或排除延遲。後續須比對上游到達與下游送出時間，區分模型端與 mapper 緩衝；不憑回報直接改簽章或 flush 行為。 |
+
+本次只審查上述兩筆新增 issue；issue 水位提升至 `#3624`，release、commit 與 PR 水位維持不變。決策為追蹤與待重現，未宣稱問題已修復。
