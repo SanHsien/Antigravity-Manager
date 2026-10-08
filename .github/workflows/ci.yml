@@ -90,7 +90,7 @@ jobs:
       - name: Test password encryption
         run: |
           cd src-tauri
-          cargo test utils::crypto::tests --lib
+          cargo test --test password_crypto
 
   # Tauri 构建测试（不打包）
   build-tauri:
