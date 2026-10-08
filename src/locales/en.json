@@ -1767,6 +1767,7 @@
     },
     "keyManager": {
       "title": "Key Management",
+      "sessionNotice": "Keys are kept in memory only. Refreshing or closing this app clears them.",
       "desc": "Save frequently used API Keys. Click to switch and query balance automatically.",
       "lastRemainingLabel": "Last Balance",
       "lastRemaining": "${{value}}",

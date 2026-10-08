@@ -4208,7 +4208,12 @@ mod tests {
             serde_json::from_value(weekly_quota_account(now)).unwrap();
         let mut refresh = account.quota.clone().unwrap();
         refresh.last_updated += 1;
-        refresh.quota_groups.as_mut().unwrap()[0].buckets.remove(0); // Partial summary / 5h recovery.
+        // Partial summary contains only the recovered 5h bucket. Select by identity,
+        // so changing fixture order cannot silently remove the wrong quota window.
+        let buckets = &mut refresh.quota_groups.as_mut().unwrap()[0].buckets;
+        buckets.retain(|bucket| bucket.bucket_id != "gemini-weekly");
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].bucket_id, "gemini-5h");
         account.update_quota(refresh);
         let mut failed = account.quota.clone().unwrap();
         failed.last_updated += 1;
