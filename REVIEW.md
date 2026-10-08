@@ -277,3 +277,16 @@ Maintained per `AGENTS.md` 協作約定：修 bug 需回註本檔並附 commit h
 | [`#3624`](https://github.com/lbjlaq/Antigravity-Manager/issues/3624) | follow-upstream／needs timing evidence | 回報 thinking 約 3.5 秒批次送出，原因仍是推測。fork 的 `src-tauri/src/proxy/mappers/claude/streaming.rs` 已有 `thinking_delta`／`signature_delta` 處理，但僅此不能證明或排除延遲。後續須比對上游到達與下游送出時間，區分模型端與 mapper 緩衝；不憑回報直接改簽章或 flush 行為。 |
 
 本次只審查上述兩筆新增 issue；issue 水位提升至 `#3624`，release、commit 與 PR 水位維持不變。決策為追蹤與待重現，未宣稱問題已修復。
+
+### 10.4 Beta 串流回歸與帳號冷卻報告（2026-10-08）
+
+已閱讀下列 PR 的說明、檔案範圍及串流錯誤／超時相關 diff，並對照 fork 的 Claude／OpenAI handler 與 mapper。這輪只記錄決策，不採用上游程式碼。
+
+| 項目 | 決策 | 依據與後續 |
+| --- | --- | --- |
+| [PR #3625](https://github.com/lbjlaq/Antigravity-Manager/pull/3625) | follow-upstream／未採用 | 針對 beta #3622 的假截斷收尾，改為傳出錯誤並把滑動超時 45 秒改為 120 秒；涉及 lifecycle、handler、mapper、設定與語系。fork 尚未採用該 lifecycle，不能把此修補直接套入，也不能把作者的測試當成 fork 驗收。後續 release 審查需保留「錯誤後不追加成功尾幀」的回歸案例。 |
+| [PR #3628](https://github.com/lbjlaq/Antigravity-Manager/pull/3628) | follow-upstream／未採用 | 同一 beta 回歸的另一方案：移除 lifecycle 與全域 120 秒熔斷，回復串流邏輯並使用 `overloaded_error`。與 #3625 方案相互影響，不能兩份任意 cherry-pick。fork 的 Claude mapper 已有 `overloaded_error`，但未做 runtime 串流驗收；等待上游收斂後獨立檢查錯誤後尾幀、長等待及 OpenAI 路徑。 |
+| [Issue #3626](https://github.com/lbjlaq/Antigravity-Manager/issues/3626) | follow-upstream／beta 回歸待追蹤 | 回報 #3622 引入的假 `end_turn`／`message_stop`、45 秒滑動超時及 120 秒全域截止時間。fork 未採用該 beta lifecycle；回報不能證明 fork 同樣受影響。保留為後續採用前的測試要求，不宣稱本輪已修或已重現。 |
+| [Issue #3627](https://github.com/lbjlaq/Antigravity-Manager/issues/3627) | needs-info／待 fork 重現 | 回報額度充足但帳號池全數冷卻，等待 182805 秒。缺少帳號池與限流時間證據，不能據此縮短冷卻或繞過限流。後續用遮罩後的帳號狀態、冷卻截止時間與實際 provider 回應，區分排程、配額與帳號停用原因。 |
+
+PR 水位提升至 `#3628`，issue 水位提升至 `#3627`；release／commit 水位維持 v4.9.6／`b601f5e7`。上述紀錄表示已審查，並非已採用或通過 fork 的 runtime 驗收。
