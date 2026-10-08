@@ -59,6 +59,21 @@ interface UsageSummary {
 
 const STORAGE_KEY = 'apikey_fun_managed_keys_local';
 const DEFAULT_ENDPOINT = 'https://api.apikey.fan/v1';
+let sessionManagedKeys: ManagedApiKey[] | null = null;
+
+function loadSessionManagedKeys(): ManagedApiKey[] {
+    if (sessionManagedKeys !== null) return sessionManagedKeys;
+    sessionManagedKeys = [];
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) sessionManagedKeys = parsed;
+    } catch {
+        // Storage may be unavailable; this session still supports key management.
+    }
+    return sessionManagedKeys;
+}
 
 function maskKey(value: string): string {
     const trimmed = value.trim();
@@ -106,23 +121,16 @@ export const ApiKeyFun: React.FC = () => {
     }, [fetchOpencodeProviders]);
     
     // Key Management
-    const [managedKeys, setManagedKeys] = useState<ManagedApiKey[]>(() => {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : [];
-        } catch {
-            return [];
-        }
-    });
+    const [managedKeys, setManagedKeys] = useState<ManagedApiKey[]>(loadSessionManagedKeys);
     
     // Inline Rename state
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editNameValue, setEditNameValue] = useState('');
     const initialKeyLoaded = useRef(false);
 
-    // Save keys to localStorage
+    // Preserve keys across page navigation only for this running session.
     useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(managedKeys));
+        sessionManagedKeys = managedKeys;
     }, [managedKeys]);
 
     const handleCopy = async (text: string) => {
@@ -638,6 +646,9 @@ export const ApiKeyFun: React.FC = () => {
                     </h2>
                     <p className="text-xs text-gray-400 mb-4">
                         {t('apiKeyFun.keyManager.desc', { defaultValue: 'Save frequently used keys, click to quickly switch and query balance.' })}
+                    </p>
+                    <p className="text-xs text-gray-500 mb-4">
+                        {t('apiKeyFun.keyManager.sessionNotice', { defaultValue: 'Keys are kept in memory only. Refreshing or closing this app clears them.' })}
                     </p>
 
                     <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
