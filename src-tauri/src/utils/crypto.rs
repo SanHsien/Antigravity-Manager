@@ -203,13 +203,22 @@ mod tests {
 
     #[test]
     fn test_legacy_compatibility() {
-        // Historical-format fixture, produced independently with AES-GCM and
-        // SHA-256("legacy-compatibility-fixture"). Never encrypt with the legacy nonce.
-        let key =
-            encryption_key_from_device_id(Ok("legacy-compatibility-fixture".to_string())).unwrap();
-        let decrypted =
-            decrypt_legacy_with_key("X+swqaQ8ZxLC/gZLlOKs7P9IrjD64gwyaiOhXculvg==", key).unwrap();
-        assert_eq!("legacy_password", decrypted);
+        #[derive(Deserialize)]
+        struct HistoricalPassword {
+            device_id: String,
+            ciphertext: String,
+            plaintext: String,
+        }
+
+        // Public, independently produced historical test vector. Its device ID
+        // is test data, never a fallback identity or an application secret.
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/legacy-password.json");
+        let fixture: HistoricalPassword =
+            serde_json::from_slice(&std::fs::read(fixture_path).unwrap()).unwrap();
+        let key = encryption_key_from_device_id(Ok(fixture.device_id)).unwrap();
+        let decrypted = decrypt_legacy_with_key(&fixture.ciphertext, key).unwrap();
+        assert_eq!(fixture.plaintext, decrypted);
     }
 
     #[derive(Deserialize)]
