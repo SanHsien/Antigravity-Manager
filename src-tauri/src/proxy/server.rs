@@ -3384,6 +3384,7 @@ async fn admin_import_from_db(
 
 #[derive(Deserialize)]
 struct CustomDbRequest {
+    // Remote requests select a filename in the administrator-owned import directory.
     path: String,
 }
 
@@ -3391,17 +3392,23 @@ async fn admin_import_custom_db(
     State(state): State<AppState>,
     Json(payload): Json<CustomDbRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    // [SECURITY] 禁止目录遍历
-    if payload.path.contains("..") {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "非法路径: 不允许目录遍历".to_string(),
-            }),
-        ));
-    }
+    let import_dir = std::env::var_os("ANTIGRAVITY_DB_IMPORT_DIR")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            (
+                StatusCode::FORBIDDEN,
+                Json(ErrorResponse {
+                    error: "Remote custom database import requires ANTIGRAVITY_DB_IMPORT_DIR; desktop file selection remains available".to_string(),
+                }),
+            )
+        })?;
+    let import_path = crate::utils::db_import_path::resolve_custom_db_import_path(
+        std::path::Path::new(&import_dir),
+        &payload.path,
+    )
+    .map_err(|error| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })))?;
 
-    let account = migration::import_from_custom_db_path(payload.path)
+    let account = migration::import_from_custom_db_file(import_path)
         .await
         .map_err(|e| {
             (
