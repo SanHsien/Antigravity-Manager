@@ -4,6 +4,7 @@ import { LanguageDropdown, MoreDropdown } from './NavDropdowns';
 import { LANGUAGES } from './constants';
 import { isTauri } from '../../utils/env';
 import { useViewStore } from '../../stores/useViewStore';
+import { clearAdminApiKey } from '../../utils/adminAuth';
 
 interface NavSettingsProps {
     theme: 'light' | 'dark';
@@ -29,6 +30,7 @@ export function NavSettings({
     const { setMiniView } = useViewStore();
 
     const handleLogout = () => {
+        clearAdminApiKey();
         sessionStorage.removeItem('abv_admin_api_key');
         localStorage.removeItem('abv_admin_api_key');
         window.location.reload();
