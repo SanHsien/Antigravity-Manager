@@ -290,3 +290,9 @@ Maintained per `AGENTS.md` 協作約定：修 bug 需回註本檔並附 commit h
 | [Issue #3627](https://github.com/lbjlaq/Antigravity-Manager/issues/3627) | needs-info／待 fork 重現 | 回報額度充足但帳號池全數冷卻，等待 182805 秒。缺少帳號池與限流時間證據，不能據此縮短冷卻或繞過限流。後續用遮罩後的帳號狀態、冷卻截止時間與實際 provider 回應，區分排程、配額與帳號停用原因。 |
 
 PR 水位提升至 `#3628`，issue 水位提升至 `#3627`；release／commit 水位維持 v4.9.6／`b601f5e7`。上述紀錄表示已審查，並非已採用或通過 fork 的 runtime 驗收。
+
+### 10.5 合成人類訊息回報（2026-10-09）
+
+已閱讀 [Issue #3629](https://github.com/lbjlaq/Antigravity-Manager/issues/3629)。決策：needs-info／follow-upstream。作者從 executable 找到 Gemini defense 的 `ok go on` 字串，回報它可能干擾 Agent 等待人類確認的狀態；但未提供版本、原始請求、gateway 實際出站 payload 或 fork 重現。
+
+fork 的 `src-tauri/src/proxy` 精準搜尋未找到 `ok go on` 或該兩條完整 Defense 訊息；這不等於所有補齊訊息行為均不存在，更不能據此宣稱本輪已修復。後續應比對來源版本與 request mapper，使用隔離 payload fixture 確认補齊訊息是否被當作人類授權；不得把合成訊息當成操作者同意，也不直接採用未驗證的開關／替代文字方案。issue 水位更新至 `#3629`，其他水位不變。
