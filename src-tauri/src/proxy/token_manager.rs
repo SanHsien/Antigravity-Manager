@@ -311,13 +311,10 @@ impl TokenManager {
 
     /// 重新加载指定账号（用于配额更新后的实时同步）
     pub async fn reload_account(&self, account_id: &str) -> Result<(), String> {
-        let path = self
-            .data_dir
-            .join("accounts")
-            .join(format!("{}.json", account_id));
-        if !path.exists() {
-            return Err(format!("账号文件不存在: {:?}", path));
-        }
+        let path = crate::utils::db_import_path::resolve_account_file_path(
+            &self.data_dir.join("accounts"),
+            account_id,
+        )?;
 
         match self.load_single_account(&path).await {
             Ok(Some(token)) => {
