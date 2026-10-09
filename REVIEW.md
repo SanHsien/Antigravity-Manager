@@ -293,6 +293,6 @@ PR 水位提升至 `#3628`，issue 水位提升至 `#3627`；release／commit �
 
 ### 10.5 合成人類訊息回報（2026-10-09）
 
-已閱讀 [Issue #3629](https://github.com/lbjlaq/Antigravity-Manager/issues/3629)。決策：needs-info／follow-upstream。作者從 executable 找到 Gemini defense 的 `ok go on` 字串，回報它可能干擾 Agent 等待人類確認的狀態；但未提供版本、原始請求、gateway 實際出站 payload 或 fork 重現。
+已閱讀 [Issue #3629](https://github.com/lbjlaq/Antigravity-Manager/issues/3629) 與 maintainer 回覆。決策：follow-upstream／上游已有修正，fork 未採用。作者回報 Gemini defense 的 `ok go on` 可能干擾 Agent 等待人類確認的狀態；maintainer 已確認根因，並指出修正 [d8b6e3f9](https://github.com/lbjlaq/Antigravity-Manager/commit/d8b6e3f90ee8cbd4700c75c876c6998b9f8537f8) 移除末尾 model／assistant turn 的合成 user turn，但仍保留空 user turn 的填補處理。已確認 `v4.9.7-beta.5` tag 存在；本次審查時 GitHub Release API 尚未列出該 release，不把 tag 存在當成正式 release 或 fork runtime 驗收。
 
-fork 的 `src-tauri/src/proxy` 精準搜尋未找到 `ok go on` 或該兩條完整 Defense 訊息；這不等於所有補齊訊息行為均不存在，更不能據此宣稱本輪已修復。後續應比對來源版本與 request mapper，使用隔離 payload fixture 確认補齊訊息是否被當作人類授權；不得把合成訊息當成操作者同意，也不直接採用未驗證的開關／替代文字方案。issue 水位更新至 `#3629`，其他水位不變。
+fork 的 `src-tauri/src/proxy` 精準搜尋未找到 `ok go on` 或該兩條完整 Defense 訊息；但 `mappers/common_utils.rs` 的 `ensure_gemini_payload_ends_with_user` 確有補齊 user turn，使用 `TRANSIT_DEFENSE_FALLBACK_TEXT = "Please continue your analysis."`。文字不同不代表安全問題不存在，本輪也未修復或驗證它是否被下游視為人類授權。後續應比對來源版本與 request mapper，使用隔離 payload fixture 確認補齊訊息是否被當作人類授權；不得把合成訊息當成操作者同意，也不直接採用未驗證的開關／替代文字方案。issue 水位更新至 `#3629`，其他水位不變。
