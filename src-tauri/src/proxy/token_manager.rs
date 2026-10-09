@@ -1060,10 +1060,12 @@ impl TokenManager {
             None => return mapped_model.to_string(),
         };
 
-        let account_path = match self.tokens.get(account_id) {
-            Some(token) => token.account_path.clone(),
-            None => return mapped_model.to_string(),
+        // Keep the untrusted model fallback separate from the filesystem path.
+        let Some(token) = self.tokens.get(account_id) else {
+            return mapped_model.to_string();
         };
+        let account_path = token.account_path.clone();
+        drop(token);
 
         let available_models = match Self::get_available_models_from_json(&account_path) {
             Some(models) if !models.is_empty() => models,
