@@ -15,6 +15,10 @@ $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host "==> Checking Frontend Build (npm run build)"
+npm run test:security-dependencies
+if ($LASTEXITCODE -ne 0) {
+    throw "Security dependency regressions failed with exit code $LASTEXITCODE"
+}
 npm run build
 if ($LASTEXITCODE -ne 0) {
     throw "Frontend build failed with exit code $LASTEXITCODE"

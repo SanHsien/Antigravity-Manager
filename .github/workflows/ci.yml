@@ -35,6 +35,9 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
 
+      - name: Security dependency regressions
+        run: npm run test:security-dependencies
+
       - name: Build frontend
         run: npm run build
 

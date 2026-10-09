@@ -44,3 +44,16 @@ The remote custom database API requires the server-owned `ANTIGRAVITY_DB_IMPORT_
 Send a filename only in `path`; absolute paths, nested paths and symlinks are rejected.
 Keep this dedicated directory writable only by trusted administrators. Imports open SQLite
 read-only. Desktop file selection remains available without this environment variable.
+
+## 依賴修補與未完成風險（2026-10-09）
+
+KaTeX 固定解析至 `0.18.2`，selector parser 至 `7.1.6`；以 npm overrides 修補間接依賴，
+保留現有 Tailwind v3 的 PostCSS 設定。`npm run test:security-dependencies` 驗證
+KaTeX 預設不繼承污染的 `trust`、正常明確授權連結與 selector 解析相容性，並納入 CI。
+
+`npm audit` 仍有 5 筆 high，均來自同一未修補的
+[braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
+及其 Tailwind v3 間接依賴鏈。GitHub advisory 的 patched version 為空，npm 最新 braces
+仍是受影響的 `3.0.3`。本批不宣稱 audit 歸零，也不 dismiss 或排除告警。
+後續須獨立評估 Tailwind v4 遷移或官方修補；不可只升主套件後留下失效的 PostCSS 設定。
+在此之前，建置僅處理可信任的本機來源，不把 glob／brace pattern 解析暴露給遠端輸入。

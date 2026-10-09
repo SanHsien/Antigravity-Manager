@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test:security-dependencies": "node tools/check_dependency_security.mjs",
     "preview": "vite preview",
     "bump": "node scripts/bump-version.mjs",
     "tauri": "tauri",
@@ -48,6 +49,10 @@
     "recharts": "^3.5.1",
     "tailwind-merge": "^2.3.0",
     "zustand": "^5.0.9"
+  },
+  "overrides": {
+    "katex": "0.18.2",
+    "postcss-selector-parser": "7.1.6"
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "^0.1.1",
