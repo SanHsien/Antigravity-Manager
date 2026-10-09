@@ -87,6 +87,12 @@ jobs:
           cd src-tauri
           cargo check
 
+      - name: Test Windows shortcut COM interfaces
+        if: runner.os == 'Windows'
+        run: |
+          cd src-tauri
+          cargo test --test windows_shortcut
+
       - name: Test password encryption
         run: |
           cd src-tauri
