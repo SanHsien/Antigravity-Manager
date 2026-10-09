@@ -87,6 +87,11 @@ jobs:
           cd src-tauri
           cargo check
 
+      - name: Test password encryption
+        run: |
+          cd src-tauri
+          cargo test --test password_crypto
+
       - name: Test custom database import boundary
         run: |
           cd src-tauri
