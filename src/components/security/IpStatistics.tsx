@@ -114,7 +114,7 @@ export const IpStatistics: React.FC<Props> = ({ refreshKey }) => {
 
                 <div className="w-full">
                     {/* Combined IP Stats */}
-                    <div className="bg-white dark:bg-base-200 rounded-xl shadow-sm border border-gray-100 dark:border-base-300 overflow-hidden">
+                    <div className="bg-white dark:bg-base-200 rounded-xl shadow-xs border border-gray-100 dark:border-base-300 overflow-hidden">
                         <div className="p-4 border-b border-gray-100 dark:border-base-300 flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                                 <Globe size={20} className="text-blue-500" />

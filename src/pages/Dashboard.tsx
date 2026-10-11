@@ -291,7 +291,7 @@ function Dashboard() {
                     <div className="flex gap-2">
                         <AddAccountDialog onAdd={handleAddAccount} />
                         <button
-                            className={`px-3 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm ${isRefreshing || !currentAccount ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            className={`px-3 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-xs ${isRefreshing || !currentAccount ? 'opacity-70 cursor-not-allowed' : ''}`}
                             onClick={handleRefreshCurrent}
                             disabled={isRefreshing || !currentAccount}
                             title={isRefreshing ? t('dashboard.refreshing') : t('dashboard.refresh_quota')}
@@ -305,7 +305,7 @@ function Dashboard() {
                 {/* 1. 账号生态健康状态阵列 (4 核心卡片，以风控与配置定生死) */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* 总账号数 */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200">
                         <div className="flex items-center justify-between mb-2">
                             <div className="p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md">
                                 <Users className="w-4 h-4 text-blue-500 dark:text-blue-400" />
@@ -322,7 +322,7 @@ function Dashboard() {
                     </div>
 
                     {/* 可用账号数 (开启且风控正常，不以额度定生死) */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-emerald-100 dark:border-emerald-950/40">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-emerald-100 dark:border-emerald-950/40">
                         <div className="flex items-center justify-between mb-2">
                             <div className="p-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-md">
                                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -339,7 +339,7 @@ function Dashboard() {
                     </div>
 
                     {/* 禁用账号数 (手动停用) */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200">
                         <div className="flex items-center justify-between mb-2">
                             <div className="p-1.5 bg-gray-100 dark:bg-base-300 rounded-md">
                                 <Ban className="w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -356,7 +356,7 @@ function Dashboard() {
                     </div>
 
                     {/* 异常账号数 (风控阻断或403封禁) */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200">
                         <div className="flex items-center justify-between mb-2">
                             <div className={`p-1.5 rounded-md ${stats.abnormal > 0 ? 'bg-rose-50 dark:bg-rose-900/20' : 'bg-gray-50 dark:bg-base-300'}`}>
                                 <ShieldAlert className={`w-4 h-4 ${stats.abnormal > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-gray-400'}`} />
@@ -428,7 +428,7 @@ function Dashboard() {
                 {/* 3 大模型卡片：展示 5H均值、周配额均值及周额度熔断加权配额 */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {/* Gemini 文本模型配额 */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-col justify-between">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-col justify-between">
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -476,7 +476,7 @@ function Dashboard() {
                     </div>
 
                     {/* Gemini 绘图模型配额 */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-col justify-between">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-col justify-between">
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -524,7 +524,7 @@ function Dashboard() {
                     </div>
 
                     {/* Claude 模型配额 */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-col justify-between">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-col justify-between">
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
@@ -588,14 +588,14 @@ function Dashboard() {
                 {/* 快速链接 */}
                 <div className="grid grid-cols-2 gap-3">
                     <button
-                        className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3 shadow-sm border border-indigo-100 dark:border-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md transition-all flex items-center justify-between group"
+                        className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3 shadow-xs border border-indigo-100 dark:border-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md transition-all flex items-center justify-between group"
                         onClick={() => navigate('/accounts')}
                     >
                         <span className="text-indigo-700 dark:text-indigo-300 font-medium text-sm">{t('dashboard.view_all_accounts')}</span>
                         <ArrowRight className="w-4 h-4 text-indigo-400 dark:text-indigo-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 group-hover:translate-x-1 transition-all" />
                     </button>
                     <button
-                        className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 shadow-sm border border-purple-100 dark:border-purple-900/30 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all flex items-center justify-between group"
+                        className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 shadow-xs border border-purple-100 dark:border-purple-900/30 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all flex items-center justify-between group"
                         onClick={handleExport}
                     >
                         <span className="text-purple-700 dark:text-purple-300 font-medium text-sm">{t('dashboard.export_data')}</span>

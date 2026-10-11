@@ -80,7 +80,7 @@ export default function CircuitBreaker({
                         checked={!!config.lock_on_zero_quota}
                         onChange={(e) => onChange({ ...config, lock_on_zero_quota: e.target.checked })}
                     />
-                    <div className="w-10 h-5 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500 shadow-inner"></div>
+                    <div className="w-10 h-5 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500 shadow-inner"></div>
                 </label>
             </div>
 
@@ -103,7 +103,7 @@ export default function CircuitBreaker({
                     {config.backoff_steps.map((seconds, idx) => (
                         <div
                             key={idx}
-                            className={`p-3 rounded-xl border transition-all hover:shadow-sm group relative ${getStepColorCls(idx)}`}
+                            className={`p-3 rounded-xl border transition-all hover:shadow-xs group relative ${getStepColorCls(idx)}`}
                         >
                             <div className="flex flex-col gap-2">
                                 <div className="flex justify-between items-center">
@@ -126,7 +126,7 @@ export default function CircuitBreaker({
                                         defaultValue={seconds}
                                         key={`${idx}-${seconds}`}
                                         onBlur={(e) => handleLevelChange(idx, e.target.value)}
-                                        className="w-full bg-white dark:bg-base-200 border border-gray-300 dark:border-base-300 text-gray-900 dark:text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="w-full bg-white dark:bg-base-200 border border-gray-300 dark:border-base-300 text-gray-900 dark:text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         min="0"
                                     />
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold opacity-40 select-none pointer-events-none">S</span>

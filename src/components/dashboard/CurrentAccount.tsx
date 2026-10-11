@@ -14,7 +14,7 @@ function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
     const { t } = useTranslation();
     if (!account) {
         return (
-            <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200">
+            <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200">
                 <h2 className="text-base font-semibold text-gray-900 dark:text-base-content mb-2 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-500" />
                     {t('dashboard.current_account')}
@@ -40,7 +40,7 @@ function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
     const claudeModel = findQuotaModel(account.quota?.models, 'claude');
 
     return (
-        <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 h-full flex flex-col">
+        <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 h-full flex flex-col">
             <h2 className="text-base font-semibold text-gray-900 dark:text-base-content mb-3 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-green-500" />
                 {t('dashboard.current_account')}
@@ -57,21 +57,21 @@ function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
                         const tier = getAccountTier(account);
                         if (tier === 'ultra') {
                             return (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold shadow-sm shrink-0">
+                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold shadow-xs shrink-0">
                                     <Gem className="w-2.5 h-2.5 fill-current" />
                                     ULTRA
                                 </span>
                             );
                         } else if (tier === 'pro') {
                             return (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-sm shrink-0">
+                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-xs shrink-0">
                                     <Diamond className="w-2.5 h-2.5 fill-current" />
                                     PRO
                                 </span>
                             );
                         } else {
                             return (
-                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[10px] font-bold shadow-sm border border-gray-200 dark:border-white/10 shrink-0">
+                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[10px] font-bold shadow-xs border border-gray-200 dark:border-white/10 shrink-0">
                                     <Circle className="w-2.5 h-2.5" />
                                     FREE
                                 </span>
@@ -80,7 +80,7 @@ function CurrentAccount({ account, onSwitch }: CurrentAccountProps) {
                     })()}
                     {/* 自定义标签 */}
                     {account.custom_label && (
-                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold shadow-sm shrink-0">
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold shadow-xs shrink-0">
                             <Tag className="w-2.5 h-2.5" />
                             {account.custom_label}
                         </span>

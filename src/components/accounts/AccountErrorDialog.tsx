@@ -149,7 +149,7 @@ export default function AccountErrorDialog({ account, onClose }: AccountErrorDia
                     <label className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1.5 ml-1">
                         {t('accounts.account')}
                     </label>
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-base-200/50 px-4 py-2.5 rounded-xl border border-gray-100 dark:border-base-200 shadow-sm">
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-base-200/50 px-4 py-2.5 rounded-xl border border-gray-100 dark:border-base-200 shadow-xs">
                         {account.email}
                     </div>
                 </div>
@@ -239,7 +239,7 @@ export default function AccountErrorDialog({ account, onClose }: AccountErrorDia
 
                     {/* Terminal Fix Guide */}
                     {(isForbidden || isVerificationNeeded) && !showRaw && (
-                        <div className="mt-4 border border-blue-100 dark:border-blue-900/40 rounded-xl overflow-hidden shadow-sm">
+                        <div className="mt-4 border border-blue-100 dark:border-blue-900/40 rounded-xl overflow-hidden shadow-xs">
                             <button
                                 onClick={() => setShowGuide(!showGuide)}
                                 className="w-full flex items-center justify-between p-3 bg-blue-50/70 dark:bg-blue-900/20 hover:bg-blue-100/70 dark:hover:bg-blue-900/40 transition-colors"

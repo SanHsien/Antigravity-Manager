@@ -744,7 +744,7 @@ function Accounts() {
           <input
             type="text"
             placeholder={t('accounts.search_placeholder')}
-            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-base-100 text-sm text-gray-900 dark:text-base-content border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500"
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-base-100 text-sm text-gray-900 dark:text-base-content border border-gray-200 dark:border-base-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -771,7 +771,7 @@ function Accounts() {
                   ref={searchInputRef}
                   type="text"
                   placeholder={t('accounts.search_placeholder')}
-                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-base-100 text-sm text-gray-900 dark:text-base-content border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-lg"
+                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-base-100 text-sm text-gray-900 dark:text-base-content border border-gray-200 dark:border-base-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-lg"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onBlur={() => setIsSearchExpanded(false)}
@@ -787,7 +787,7 @@ function Accounts() {
             className={cn(
               "px-2 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1",
               quotaWindow === "5h"
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content",
             )}
             onClick={() => setQuotaWindow("5h")}
@@ -800,7 +800,7 @@ function Accounts() {
             className={cn(
               "px-2 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1",
               quotaWindow === "weekly"
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content",
             )}
             onClick={() => setQuotaWindow("weekly")}
@@ -817,7 +817,7 @@ function Accounts() {
             className={cn(
               "p-1.5 rounded-md transition-all",
               viewMode === "list"
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content",
             )}
             onClick={() => setViewMode("list")}
@@ -829,7 +829,7 @@ function Accounts() {
             className={cn(
               "p-1.5 rounded-md transition-all",
               viewMode === "grid"
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content",
             )}
             onClick={() => setViewMode("grid")}
@@ -846,7 +846,7 @@ function Accounts() {
             className={cn(
               "px-2 md:px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 md:gap-1.5 whitespace-nowrap shrink-0",
               filter === 'all'
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs ring-1 ring-black/5"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
             )}
             onClick={() => setFilter('all')}
@@ -868,7 +868,7 @@ function Accounts() {
             className={cn(
               "px-2 md:px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 md:gap-1.5 whitespace-nowrap shrink-0",
               filter === 'pro'
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs ring-1 ring-black/5"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
             )}
             onClick={() => setFilter('pro')}
@@ -890,7 +890,7 @@ function Accounts() {
             className={cn(
               "flex px-2 lg:px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all items-center gap-1 lg:gap-1.5 whitespace-nowrap shrink-0",
               filter === 'ultra'
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs ring-1 ring-black/5"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
             )}
             onClick={() => setFilter('ultra')}
@@ -912,7 +912,7 @@ function Accounts() {
             className={cn(
               "flex px-2 lg:px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all items-center gap-1 lg:gap-1.5 whitespace-nowrap shrink-0",
               filter === 'free'
-                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-black/5"
+                ? "bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs ring-1 ring-black/5"
                 : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-base-content hover:bg-white/40"
             )}
             onClick={() => setFilter('free')}
@@ -939,7 +939,7 @@ function Accounts() {
           {selectedIds.size > 0 && (
             <>
               <button
-                className="px-2.5 py-2 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                className="px-2.5 py-2 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-xs"
                 onClick={handleBatchDelete}
                 title={t("accounts.delete_selected", {
                   count: selectedIds.size,
@@ -951,7 +951,7 @@ function Accounts() {
                 </span>
               </button>
               <button
-                className="px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                className="px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-xs"
                 onClick={() => handleBatchToggleProxy(false)}
                 title={t("accounts.disable_proxy_selected", {
                   count: selectedIds.size,
@@ -965,7 +965,7 @@ function Accounts() {
                 </span>
               </button>
               <button
-                className="px-2.5 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                className="px-2.5 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1.5 shadow-xs"
                 onClick={() => handleBatchToggleProxy(true)}
                 title={t("accounts.enable_proxy_selected", {
                   count: selectedIds.size,
@@ -982,7 +982,7 @@ function Accounts() {
           )}
 
           <button
-            className={`px-2.5 py-2 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm ${isRefreshing ? "opacity-70 cursor-not-allowed" : ""}`}
+            className={`px-2.5 py-2 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-xs ${isRefreshing ? "opacity-70 cursor-not-allowed" : ""}`}
             onClick={handleRefreshClick}
             disabled={isRefreshing}
             title={
@@ -1004,7 +1004,7 @@ function Accounts() {
           </button>
 
           <button
-            className={`px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm ${isWarmuping ? "opacity-70 cursor-not-allowed" : ""}`}
+            className={`px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-xs ${isWarmuping ? "opacity-70 cursor-not-allowed" : ""}`}
             onClick={() => setIsWarmupConfirmOpen(true)}
             disabled={isWarmuping}
             title={
@@ -1071,7 +1071,7 @@ function Accounts() {
       {/* 账号列表内容区域 */}
       <div className="flex-1 min-h-0 relative" ref={containerRef}>
         {viewMode === "list" ? (
-          <div className="h-full bg-white dark:bg-base-100 rounded-2xl shadow-sm border border-gray-100 dark:border-base-200 flex flex-col overflow-hidden">
+          <div className="h-full bg-white dark:bg-base-100 rounded-2xl shadow-xs border border-gray-100 dark:border-base-200 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
               <AccountTable
                 accounts={paginatedAccounts}

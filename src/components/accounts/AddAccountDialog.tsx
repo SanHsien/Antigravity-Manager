@@ -458,7 +458,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
         };
 
         return (
-            <div className={`alert ${styles[status]} mb-4 text-sm py-2 shadow-sm`}>
+            <div className={`alert ${styles[status]} mb-4 text-sm py-2 shadow-xs`}>
                 {icons[status]}
                 <span>{message}</span>
             </div>
@@ -468,7 +468,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
     return (
         <>
             <button
-                className="px-2.5 lg:px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-sm border border-gray-200/50 dark:border-base-300 relative z-[100]"
+                className="px-2.5 lg:px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-xs border border-gray-200/50 dark:border-base-300 relative z-[100]"
                 onClick={() => {
                     console.log('AddAccountDialog button clicked');
                     setIsOpen(true);
@@ -498,7 +498,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                         <div className="bg-gray-100 dark:bg-base-200 p-1 rounded-xl mb-6 grid grid-cols-3 gap-1">
                             <button
                                 className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'oauth'
-                                    ? 'bg-white dark:bg-base-100 shadow-sm text-blue-600 dark:text-blue-400'
+                                    ? 'bg-white dark:bg-base-100 shadow-xs text-blue-600 dark:text-blue-400'
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-base-300'
                                     } `}
                                 onClick={() => setActiveTab('oauth')}
@@ -507,7 +507,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                             </button>
                             <button
                                 className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'token'
-                                    ? 'bg-white dark:bg-base-100 shadow-sm text-blue-600 dark:text-blue-400'
+                                    ? 'bg-white dark:bg-base-100 shadow-xs text-blue-600 dark:text-blue-400'
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-base-300'
                                     } `}
                                 onClick={() => setActiveTab('token')}
@@ -516,7 +516,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                             </button>
                             <button
                                 className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'import'
-                                    ? 'bg-white dark:bg-base-100 shadow-sm text-blue-600 dark:text-blue-400'
+                                    ? 'bg-white dark:bg-base-100 shadow-xs text-blue-600 dark:text-blue-400'
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-base-300'
                                     } `}
                                 onClick={() => setActiveTab('import')}
@@ -605,7 +605,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                                                 <div className="relative flex-1">
                                                     <input
                                                         type="text"
-                                                        className="w-full text-xs py-2 px-3 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300 dark:placeholder:text-gray-600"
+                                                        className="w-full text-xs py-2 px-3 bg-white dark:bg-base-100 border border-gray-200 dark:border-base-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-hidden transition-all placeholder:text-gray-300 dark:placeholder:text-gray-600"
                                                         placeholder={t('accounts.add.oauth.manual_placeholder')}
                                                         value={manualCode}
                                                         onChange={(e) => setManualCode(e.target.value)}
@@ -633,7 +633,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                                             <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{t('accounts.add.token.label')}</span>
                                         </div>
                                         <textarea
-                                            className="textarea textarea-bordered w-full h-32 font-mono text-xs leading-relaxed focus:outline-none focus:border-blue-500 transition-colors bg-white dark:bg-base-100 text-gray-900 dark:text-base-content border-gray-300 dark:border-base-300 placeholder:text-gray-400"
+                                            className="textarea textarea-bordered w-full h-32 font-mono text-xs leading-relaxed focus:outline-hidden focus:border-blue-500 transition-colors bg-white dark:bg-base-100 text-gray-900 dark:text-base-content border-gray-300 dark:border-base-300 placeholder:text-gray-400"
                                             placeholder={t('accounts.add.token.placeholder')}
                                             value={refreshToken}
                                             onChange={(e) => setRefreshToken(e.target.value)}
@@ -658,7 +658,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                                             {t('accounts.add.import.scheme_a_desc')}
                                         </p>
                                         <button
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-200 dark:hover:border-blue-800 hover:text-blue-600 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mb-2 shadow-sm"
+                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-200 dark:hover:border-blue-800 hover:text-blue-600 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mb-2 shadow-xs"
                                             onClick={handleImportDb}
                                             disabled={status === 'loading' || status === 'success'}
                                         >
@@ -666,7 +666,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                                             {t('accounts.add.import.btn_db')}
                                         </button>
                                         <button
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-200 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-200 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                                             onClick={handleImportCustomDb}
                                             disabled={status === 'loading' || status === 'success'}
                                         >
@@ -686,7 +686,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                                             {t('accounts.add.import.scheme_b_desc')}
                                         </p>
                                         <button
-                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-200 dark:hover:border-emerald-800 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                                            className="w-full px-4 py-3 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl border border-gray-200 dark:border-base-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:border-emerald-200 dark:hover:border-emerald-800 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                                             onClick={handleImportV1}
                                             disabled={status === 'loading' || status === 'success'}
                                         >
@@ -700,7 +700,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
 
                         <div className="flex gap-3 w-full mt-6">
                             <button
-                                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-base-300 transition-colors focus:outline-none focus:ring-2 focus:ring-200 dark:focus:ring-base-300"
+                                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-base-300 transition-colors focus:outline-hidden focus:ring-2 focus:ring-200 dark:focus:ring-base-300"
                                 onClick={async () => {
                                     if (status === 'loading' && activeTab === 'oauth') {
                                         await cancelOAuthLogin();
@@ -713,7 +713,7 @@ function AddAccountDialog({ onAdd, showText = true }: AddAccountDialogProps) {
                             </button>
                             {activeTab === 'token' && (
                                 <button
-                                    className="flex-1 px-4 py-2.5 text-white font-medium rounded-xl shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 bg-blue-500 hover:bg-blue-600 focus:ring-blue-500 shadow-blue-100 dark:shadow-blue-900/30 flex justify-center items-center gap-2"
+                                    className="flex-1 px-4 py-2.5 text-white font-medium rounded-xl shadow-md transition-all focus:outline-hidden focus:ring-2 focus:ring-offset-2 bg-blue-500 hover:bg-blue-600 focus:ring-blue-500 shadow-blue-100 dark:shadow-blue-900/30 flex justify-center items-center gap-2"
                                     onClick={handleSubmit}
                                     disabled={status === 'loading' || status === 'success'}
                                 >

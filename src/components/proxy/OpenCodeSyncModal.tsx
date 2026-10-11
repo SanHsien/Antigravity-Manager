@@ -218,7 +218,7 @@ export function OpenCodeSyncModal({ proxyUrl, apiKey, getFormattedProxyUrl, sync
                                 value={customBaseUrl}
                                 onChange={(e) => setCustomBaseUrl(e.target.value)}
                                 placeholder="e.g. http://antigravity-manager:8045/v1"
-                                className="w-full px-3 py-1.5 text-xs bg-white dark:bg-base-100 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                className="w-full px-3 py-1.5 text-xs bg-white dark:bg-base-100 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-hidden transition-all"
                             />
                             {customBaseUrl !== proxyUrl && (
                                 <button
@@ -324,7 +324,7 @@ export function OpenCodeSyncModal({ proxyUrl, apiKey, getFormattedProxyUrl, sync
                         className={cn(
                             "px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5",
                             previewModels.length > 0
-                                ? "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-sm"
+                                ? "bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white shadow-xs"
                                 : "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
                         )}
                         disabled={previewModels.length === 0 || syncing}

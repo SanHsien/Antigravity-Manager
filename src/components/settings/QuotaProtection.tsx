@@ -85,7 +85,7 @@ const QuotaProtection = ({ config, onChange }: QuotaProtectionProps) => {
                         checked={config.enabled}
                         onChange={(e) => handleEnabledChange(e.target.checked)}
                     />
-                    <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500 shadow-inner"></div>
+                    <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500 shadow-inner"></div>
                 </label>
             </div>
 
@@ -100,7 +100,7 @@ const QuotaProtection = ({ config, onChange }: QuotaProtectionProps) => {
                         <div className="relative flex items-center gap-2">
                             <input
                                 type="number"
-                                className="w-24 px-3 py-2 bg-gray-50 dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none text-sm font-bold text-rose-600 dark:text-rose-400"
+                                className="w-24 px-3 py-2 bg-gray-50 dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-2 focus:ring-rose-500 outline-hidden text-sm font-bold text-rose-600 dark:text-rose-400"
                                 min="1"
                                 max="99"
                                 value={config.threshold_percentage}

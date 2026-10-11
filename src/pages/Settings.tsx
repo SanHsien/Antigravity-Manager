@@ -475,7 +475,7 @@ function Settings() {
                     <div className="flex items-center gap-1 bg-gray-100 dark:bg-base-200 rounded-full p-1 w-fit">
                         <button
                             className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${activeTab === 'general'
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-xs'
                                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                             onClick={() => startTransition(() => setActiveTab('general'))}
@@ -484,7 +484,7 @@ function Settings() {
                         </button>
                         <button
                             className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${activeTab === 'account'
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-xs'
                                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                             onClick={() => startTransition(() => setActiveTab('account'))}
@@ -493,7 +493,7 @@ function Settings() {
                         </button>
                         <button
                             className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${activeTab === 'proxy'
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-xs'
                                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                             onClick={() => startTransition(() => setActiveTab('proxy'))}
@@ -502,7 +502,7 @@ function Settings() {
                         </button>
                         <button
                             className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${activeTab === 'advanced'
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-xs'
                                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                             onClick={() => startTransition(() => setActiveTab('advanced'))}
@@ -511,7 +511,7 @@ function Settings() {
                         </button>
                         <button
                             className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${activeTab === 'debug'
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-xs'
                                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                             onClick={() => startTransition(() => setActiveTab('debug'))}
@@ -520,7 +520,7 @@ function Settings() {
                         </button>
                         <button
                             className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${activeTab === 'about'
-                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-xs'
                                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                                 }`}
                             onClick={() => startTransition(() => setActiveTab('about'))}
@@ -530,7 +530,7 @@ function Settings() {
                     </div>
 
                     <button
-                        className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-sm"
+                        className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2 shadow-xs"
                         onClick={handleSave}
                     >
                         <Save className="w-4 h-4" />
@@ -539,7 +539,7 @@ function Settings() {
                 </div>
 
                 {/* 设置表单 */}
-                <div className="bg-white dark:bg-base-100 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-base-200">
+                <div className="bg-white dark:bg-base-100 rounded-2xl p-6 shadow-xs border border-gray-100 dark:border-base-200">
                     {/* 通用设置 */}
                     {activeTab === 'general' && (
                         <div className="space-y-6">
@@ -549,7 +549,7 @@ function Settings() {
                             <div>
                                 <label className="block text-sm font-medium text-gray-900 dark:text-base-content mb-2">{t('settings.general.language')}</label>
                                 <select
-                                    className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
+                                    className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
                                     value={formData.language}
                                     onChange={(e) => {
                                         const newLang = e.target.value;
@@ -577,7 +577,7 @@ function Settings() {
                             <div>
                                 <label className="block text-sm font-medium text-gray-900 dark:text-base-content mb-2">{t('settings.general.theme')}</label>
                                 <select
-                                    className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
+                                    className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
                                     value={formData.theme}
                                     onChange={(e) => {
                                         const newTheme = e.target.value;
@@ -602,7 +602,7 @@ function Settings() {
                                     )}
                                 </div>
                                 <select
-                                    className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
+                                    className="w-full px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
                                     value={formData.auto_launch ? 'enabled' : 'disabled'}
                                     onChange={async (e) => {
                                         const enabled = e.target.value === 'enabled';
@@ -651,7 +651,7 @@ function Settings() {
                                                 }
                                             }}
                                         />
-                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                                     </label>
                                 </div>
 
@@ -661,7 +661,7 @@ function Settings() {
                                         <label className="block text-sm font-medium text-gray-900 dark:text-base-content mb-2">{t('settings.general.update_check_interval')}</label>
                                         <input
                                             type="number"
-                                            className="w-32 px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
+                                            className="w-32 px-4 py-4 border border-gray-200 dark:border-base-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-base-content bg-gray-50 dark:bg-base-200"
                                             min="1"
                                             max="168"
                                             value={formData.update_check_interval ?? 24}
@@ -703,7 +703,7 @@ function Settings() {
                                                 setFormData({ ...formData, lightweight_mode: enabled });
                                             }}
                                         />
-                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                                     </label>
                                 </div>
                             )}
@@ -762,7 +762,7 @@ function Settings() {
                                                         ${isSettings
                                                             ? 'bg-gray-50 dark:bg-base-200 border-gray-100 dark:border-base-300 opacity-60 cursor-not-allowed'
                                                             : isVisible
-                                                                ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-500 dark:border-blue-500 shadow-sm'
+                                                                ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-500 dark:border-blue-500 shadow-xs'
                                                                 : 'bg-white dark:bg-base-100 border-gray-200 dark:border-base-300 hover:border-gray-300 dark:hover:border-base-content/20 text-gray-500'
                                                         }
                                                     `}
@@ -809,7 +809,7 @@ function Settings() {
                     {activeTab === 'account' && (
                         <div className="space-y-4 animate-in fade-in duration-500">
                             {/* 自动刷新配额 */}
-                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-blue-200 transition-all duration-300 shadow-sm">
+                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-blue-200 transition-all duration-300 shadow-xs">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all duration-300">
@@ -838,7 +838,7 @@ function Settings() {
                                                 }
                                             }}
                                         />
-                                        <div className={`w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner ${formData.quota_protection.enabled ? 'peer-checked:bg-blue-500' : ''}`}></div>
+                                        <div className={`w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner ${formData.quota_protection.enabled ? 'peer-checked:bg-blue-500' : ''}`}></div>
                                     </label>
                                 </div>
 
@@ -847,7 +847,7 @@ function Settings() {
                                     <div className="relative">
                                         <input
                                             type="number"
-                                            className="w-24 px-3 py-2 bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-blue-600 dark:text-blue-400"
+                                            className="w-24 px-3 py-2 bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-hidden text-sm font-bold text-blue-600 dark:text-blue-400"
                                             min="1"
                                             max="35791"
                                             value={formData.refresh_interval}
@@ -858,7 +858,7 @@ function Settings() {
                             </div>
 
                             {/* 自动获取当前账号 */}
-                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-emerald-200 transition-all duration-300 shadow-sm">
+                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-emerald-200 transition-all duration-300 shadow-xs">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-all duration-300">
@@ -876,7 +876,7 @@ function Settings() {
                                             checked={formData.auto_sync}
                                             onChange={(e) => setFormData({ ...formData, auto_sync: e.target.checked })}
                                         />
-                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
+                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
                                     </label>
                                 </div>
 
@@ -885,7 +885,7 @@ function Settings() {
                                         <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{t('settings.account.sync_interval')}</label>
                                         <input
                                             type="number"
-                                            className="w-24 px-3 py-2 bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-emerald-600 dark:text-emerald-400"
+                                            className="w-24 px-3 py-2 bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-hidden text-sm font-bold text-emerald-600 dark:text-emerald-400"
                                             min="1"
                                             max="35791"
                                             value={formData.sync_interval}
@@ -896,7 +896,7 @@ function Settings() {
                             </div>
 
                             {/* 7天周配额智能预热 (Smart Warmup) */}
-                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-orange-200 transition-all duration-300 shadow-sm">
+                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-orange-200 transition-all duration-300 shadow-xs">
                                 <SmartWarmup
                                     config={formData.scheduled_warmup}
                                     onChange={async (newConfig) => {
@@ -916,7 +916,7 @@ function Settings() {
                             </div>
 
                             {/* 配额保护 (Quota Protection) */}
-                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-rose-200 transition-all duration-300 shadow-sm">
+                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-rose-200 transition-all duration-300 shadow-xs">
                                 <QuotaProtection
                                     config={formData.quota_protection}
                                     onChange={async (newConfig) => {
@@ -945,7 +945,7 @@ function Settings() {
                             </div>
 
                             {/* 配额关注列表 (Pinned Quota Models) */}
-                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-indigo-200 transition-all duration-300 shadow-sm">
+                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-indigo-200 transition-all duration-300 shadow-xs">
                                 <PinnedQuotaModels
                                     config={formData.pinned_quota_models}
                                     onChange={(newConfig) => setFormData({
@@ -1131,7 +1131,7 @@ function Settings() {
                                             </p>
                                         </div>
                                         <button
-                                            className={`px-4 py-2 rounded-lg transition-colors font-medium text-sm shadow-sm ${formData.antigravity_cli_executable ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'}`}
+                                            className={`px-4 py-2 rounded-lg transition-colors font-medium text-sm shadow-xs ${formData.antigravity_cli_executable ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'}`}
                                             disabled={!formData.antigravity_cli_executable}
                                             onClick={async () => {
                                                 if (!formData.antigravity_cli_executable) return;
@@ -1273,7 +1273,7 @@ function Settings() {
                                                         },
                                                     })}
                                                 />
-                                                <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                                <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                                             </label>
                                         </div>
                                         {(formData.proxy?.debug_logging?.enabled ?? false) && (
@@ -1347,7 +1347,7 @@ function Settings() {
                                         checked={isEnabled}
                                         onChange={(e) => e.target.checked ? enable() : disable()}
                                     />
-                                    <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                    <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
                                     <span className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
                                         {isEnabled ? t('settings.debug.enabled') : t('settings.debug.disabled')}
                                     </span>
@@ -1412,11 +1412,11 @@ function Settings() {
                             />
 
                             {/* [FIX #1701] 恢复全局上游代理设置 */}
-                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-blue-200 transition-all duration-300 shadow-sm relative overflow-hidden">
+                            <div className="group bg-white dark:bg-base-100 rounded-xl p-5 border border-gray-100 dark:border-base-200 hover:border-blue-200 transition-all duration-300 shadow-xs relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 -mr-12 -mt-12 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors"></div>
                                 <div className="flex items-center justify-between mb-5 relative z-10">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all duration-300 shadow-sm">
+                                        <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all duration-300 shadow-xs">
                                             <Globe size={18} />
                                         </div>
                                         <div>
@@ -1442,7 +1442,7 @@ function Settings() {
                                                 }
                                             })}
                                         />
-                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner"></div>
+                                        <div className="w-11 h-6 bg-gray-200 dark:bg-base-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 shadow-inner"></div>
                                     </label>
                                 </div>
 
@@ -1455,7 +1455,7 @@ function Settings() {
                                             <div className="relative group/input">
                                                 <input
                                                     type="text"
-                                                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm font-medium transition-all shadow-inner"
+                                                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-hidden text-sm font-medium transition-all shadow-inner"
                                                     placeholder={t('proxy.config.upstream_proxy.url_placeholder')}
                                                     value={formData.proxy?.upstream_proxy?.url || ''}
                                                     onChange={(e) => setFormData({
@@ -1471,7 +1471,7 @@ function Settings() {
                                                 />
                                             </div>
                                             <div className="mt-4 bg-amber-50/40 dark:bg-amber-900/10 rounded-xl p-3.5 border border-amber-100/50 dark:border-amber-800/20 text-[11px] text-amber-700 dark:text-amber-400 flex items-start gap-3 transition-colors hover:bg-amber-50/60">
-                                                <div className="mt-0.5 p-1 bg-amber-100/80 dark:bg-amber-800/40 rounded-lg shadow-sm">
+                                                <div className="mt-0.5 p-1 bg-amber-100/80 dark:bg-amber-800/40 rounded-lg shadow-xs">
                                                     <Network size={12} className="text-amber-600 dark:text-amber-400" />
                                                 </div>
                                                 <div className="leading-relaxed">
@@ -1513,7 +1513,7 @@ function Settings() {
                                 {/* Cards Grid - Now 5 columns */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 w-full max-w-6xl px-4">
                                     {/* Author Card */}
-                                    <div className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800 transition-all group flex flex-col items-center text-center gap-3">
+                                    <div className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-xs hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800 transition-all group flex flex-col items-center text-center gap-3">
                                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300">
                                             <User className="w-6 h-6 text-blue-500" />
                                         </div>
@@ -1524,7 +1524,7 @@ function Settings() {
                                     </div>
 
                                     {/* WeChat Card */}
-                                    <div className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-green-200 dark:hover:border-green-800 transition-all group flex flex-col items-center text-center gap-3">
+                                    <div className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-xs hover:shadow-md hover:border-green-200 dark:hover:border-green-800 transition-all group flex flex-col items-center text-center gap-3">
                                         <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300">
                                             <MessageCircle className="w-6 h-6 text-green-500" />
                                         </div>
@@ -1539,7 +1539,7 @@ function Settings() {
                                         href="https://t.me/AntigravityManager"
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-sky-200 dark:hover:border-sky-800 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
+                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-xs hover:shadow-md hover:border-sky-200 dark:hover:border-sky-800 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
                                     >
                                         <div className="p-3 bg-sky-50 dark:bg-sky-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300">
                                             <Send className="w-6 h-6 text-sky-500" />
@@ -1555,7 +1555,7 @@ function Settings() {
                                         href="https://github.com/lbjlaq/Antigravity-Manager"
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
+                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-xs hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
                                     >
                                         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl group-hover:scale-110 transition-transform duration-300">
                                             <Github className="w-6 h-6 text-gray-900 dark:text-white" />
@@ -1572,7 +1572,7 @@ function Settings() {
                                     {/* Support Card */}
                                     <div
                                         onClick={() => setIsSupportModalOpen(true)}
-                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-pink-200 dark:hover:border-pink-800 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
+                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-xs hover:shadow-md hover:border-pink-200 dark:hover:border-pink-800 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
                                     >
                                         <div className="p-3 bg-pink-50 dark:bg-pink-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300">
                                             <Heart className="w-6 h-6 text-pink-500 fill-pink-500" />
@@ -1602,7 +1602,7 @@ function Settings() {
                                     <button
                                         onClick={handleCheckUpdate}
                                         disabled={isCheckingUpdate}
-                                        className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg transition-all flex items-center gap-2 shadow-sm hover:shadow-md disabled:cursor-not-allowed"
+                                        className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg transition-all flex items-center gap-2 shadow-xs hover:shadow-md disabled:cursor-not-allowed"
                                     >
                                         <RefreshCw className={`w-4 h-4 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
                                         {isCheckingUpdate ? t('settings.about.checking_update') : t('settings.about.check_update')}
@@ -1636,7 +1636,7 @@ function Settings() {
                                                             isTauri() && (
                                                                 <button
                                                                     onClick={handleConfirmUpdate}
-                                                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                                                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-all shadow-xs active:scale-95 flex items-center gap-1.5"
                                                                 >
                                                                     <RefreshCw className="w-3.5 h-3.5" />
                                                                     {t('settings.about.upgrade_now_btn', { defaultValue: '立即自动更新' })}
@@ -1836,7 +1836,7 @@ function Settings() {
                     <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
                     <div className="modal-box relative max-w-2xl bg-white dark:bg-base-100 shadow-2xl rounded-3xl p-0 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-300">
                         <div className="flex flex-col items-center p-8">
-                            <div className="w-16 h-16 bg-pink-50 dark:bg-pink-900/20 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+                            <div className="w-16 h-16 bg-pink-50 dark:bg-pink-900/20 rounded-2xl flex items-center justify-center mb-6 shadow-xs">
                                 <Coffee className="w-8 h-8 text-pink-500" />
                             </div>
 
@@ -1849,7 +1849,7 @@ function Settings() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mb-8">
                                 {/* Alipay */}
                                 <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300">
-                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-xs border border-gray-100">
                                         <img src="/images/donate/alipay.png" alt="Alipay" className="w-full h-full object-contain" />
                                     </div>
                                     <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('settings.about.support_alipay')}</span>
@@ -1857,7 +1857,7 @@ function Settings() {
 
                                 {/* WeChat */}
                                 <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300">
-                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-xs border border-gray-100">
                                         <img src="/images/donate/wechat.png" alt="WeChat" className="w-full h-full object-contain" />
                                     </div>
                                     <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('settings.about.support_wechat')}</span>
@@ -1865,7 +1865,7 @@ function Settings() {
 
                                 {/* Buy Me a Coffee */}
                                 <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300">
-                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-xs border border-gray-100">
                                         <img src="/images/donate/coffee.png" alt="Buy Me A Coffee" className="w-full h-full object-contain" />
                                     </div>
                                     <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('settings.about.support_buymeacoffee')}</span>

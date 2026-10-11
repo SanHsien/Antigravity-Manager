@@ -177,7 +177,7 @@ export function OpenClawSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyn
                 <div className="px-5 pt-4 pb-3 shrink-0 border-b border-gray-100 dark:border-base-200">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-[#18181b] dark:bg-[#121214] rounded-lg flex items-center justify-center border border-white/10 shadow-sm">
+                            <div className="p-1.5 bg-[#18181b] dark:bg-[#121214] rounded-lg flex items-center justify-center border border-white/10 shadow-xs">
                                 <OpenClaw.Color size={22} />
                             </div>
                             <div>
@@ -230,7 +230,7 @@ export function OpenClawSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyn
                                         className={cn(
                                             "flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all",
                                             targetVersion === 'v2'
-                                                ? "border-red-500/70 bg-red-500/[0.04] dark:bg-red-500/[0.08] shadow-sm ring-1 ring-red-500/20"
+                                                ? "border-red-500/70 bg-red-500/[0.04] dark:bg-red-500/[0.08] shadow-xs ring-1 ring-red-500/20"
                                                 : "border-gray-200 dark:border-base-300 hover:border-gray-300"
                                         )}
                                     >
@@ -259,7 +259,7 @@ export function OpenClawSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyn
                                         className={cn(
                                             "flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all",
                                             targetVersion === 'v1'
-                                                ? "border-red-500/70 bg-red-500/[0.04] dark:bg-red-500/[0.08] shadow-sm ring-1 ring-red-500/20"
+                                                ? "border-red-500/70 bg-red-500/[0.04] dark:bg-red-500/[0.08] shadow-xs ring-1 ring-red-500/20"
                                                 : "border-gray-200 dark:border-base-300 hover:border-gray-300"
                                         )}
                                     >
@@ -313,7 +313,7 @@ export function OpenClawSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyn
                                         value={customBaseUrl}
                                         onChange={e => setCustomBaseUrl(e.target.value)}
                                         placeholder="http://host.docker.internal:8045/v1"
-                                        className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none"
+                                        className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-hidden"
                                     />
                                 )}
                             </section>
@@ -433,7 +433,7 @@ export function OpenClawSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyn
                             className={cn(
                                 "px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 border shadow-xs disabled:opacity-50",
                                 targetVersion === 'v1'
-                                    ? "bg-red-500 hover:bg-red-600 text-white border-red-500 shadow-sm"
+                                    ? "bg-red-500 hover:bg-red-600 text-white border-red-500 shadow-xs"
                                     : "bg-white dark:bg-base-200 hover:bg-gray-50 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-base-300"
                             )}
                             disabled={loading || !!syncingVersion || !status}
@@ -450,7 +450,7 @@ export function OpenClawSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyn
                             className={cn(
                                 "px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 border shadow-xs disabled:opacity-50",
                                 targetVersion === 'v2'
-                                    ? "bg-red-500 hover:bg-red-600 active:bg-red-700 text-white border-red-500 shadow-sm"
+                                    ? "bg-red-500 hover:bg-red-600 active:bg-red-700 text-white border-red-500 shadow-xs"
                                     : "bg-white dark:bg-base-200 hover:bg-gray-50 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-base-300"
                             )}
                             disabled={loading || !!syncingVersion || !status}

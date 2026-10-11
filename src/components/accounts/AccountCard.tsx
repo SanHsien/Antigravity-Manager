@@ -188,13 +188,13 @@ function AccountCard({ account, selected, onSelect, isCurrent: propIsCurrent, is
                     <div className="flex items-center justify-between w-full gap-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
                             {isCurrent && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] font-bold shadow-sm border border-blue-200/50">
+                                <span className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] font-bold shadow-xs border border-blue-200/50">
                                     {t('accounts.current').toUpperCase()}
                                 </span>
                             )}
                             {isDisabled && (
                                 <span
-                                    className="px-1.5 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-rose-200/50"
+                                    className="px-1.5 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 text-[9px] font-bold flex items-center gap-1 shadow-xs border border-rose-200/50"
                                 >
                                     <Ban className="w-2.5 h-2.5" />
                                     {t('accounts.disabled').toUpperCase()}
@@ -202,20 +202,20 @@ function AccountCard({ account, selected, onSelect, isCurrent: propIsCurrent, is
                             )}
                             {account.proxy_disabled && (
                                 <span
-                                    className="px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-orange-200/50"
+                                    className="px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[9px] font-bold flex items-center gap-1 shadow-xs border border-orange-200/50"
                                 >
                                     <Ban className="w-2.5 h-2.5" />
                                     {t('accounts.proxy_disabled').toUpperCase()}
                                 </span>
                             )}
                             {account.quota?.is_forbidden && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-red-200/50">
+                                <span className="px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[9px] font-bold flex items-center gap-1 shadow-xs border border-red-200/50">
                                     <Lock className="w-2.5 h-2.5" />
                                     {t('accounts.forbidden').toUpperCase()}
                                 </span>
                             )}
                             {account.validation_blocked && (
-                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-[9px] font-bold flex items-center gap-1 shadow-sm border border-amber-200/50">
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-[9px] font-bold flex items-center gap-1 shadow-xs border border-amber-200/50">
                                     <Clock className="w-2.5 h-2.5" />
                                     {validationBlockedLabel.toUpperCase()}
                                 </span>
@@ -225,21 +225,21 @@ function AccountCard({ account, selected, onSelect, isCurrent: propIsCurrent, is
                                 const tier = getAccountTier(account);
                                 if (tier === 'ultra') {
                                     return (
-                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[9px] font-bold shadow-sm">
+                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[9px] font-bold shadow-xs">
                                             <Gem className="w-2.5 h-2.5 fill-current" />
                                             ULTRA
                                         </span>
                                     );
                                 } else if (tier === 'pro') {
                                     return (
-                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[9px] font-bold shadow-sm">
+                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[9px] font-bold shadow-xs">
                                             <Diamond className="w-2.5 h-2.5 fill-current" />
                                             PRO
                                         </span>
                                     );
                                 } else {
                                     return (
-                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[9px] font-bold shadow-sm border border-gray-200 dark:border-white/10">
+                                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 text-[9px] font-bold shadow-xs border border-gray-200 dark:border-white/10">
                                             <Circle className="w-2.5 h-2.5" />
                                             FREE
                                         </span>
@@ -248,7 +248,7 @@ function AccountCard({ account, selected, onSelect, isCurrent: propIsCurrent, is
                             })()}
                             {/* 自定义标签 */}
                             {account.custom_label && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[9px] font-bold shadow-sm border border-orange-200/50 dark:border-orange-800/50">
+                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[9px] font-bold shadow-xs border border-orange-200/50 dark:border-orange-800/50">
                                     <Tag className="w-2.5 h-2.5" />
                                     {account.custom_label}
                                 </span>
@@ -323,7 +323,7 @@ function AccountCard({ account, selected, onSelect, isCurrent: propIsCurrent, is
                         <div className="flex items-center gap-2 w-full max-w-xs">
                             <input
                                 type="text"
-                                className="flex-1 px-2 py-1 text-sm border border-orange-300 dark:border-orange-700 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white dark:bg-base-200"
+                                className="flex-1 px-2 py-1 text-sm border border-orange-300 dark:border-orange-700 rounded-md focus:outline-hidden focus:ring-2 focus:ring-orange-500 bg-white dark:bg-base-200"
                                 placeholder={t('accounts.custom_label_placeholder', 'Enter custom label')}
                                 value={labelInput}
                                 onChange={(e) => setLabelInput(e.target.value)}

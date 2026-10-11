@@ -1222,7 +1222,7 @@ export default function ThinkingBudget({
                         type="button"
                         disabled={isSaving}
                         onClick={handleSave}
-                        className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 shrink-0 cursor-pointer ${
+                        className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 shrink-0 cursor-pointer ${
                             isSaved
                                 ? "bg-emerald-600 hover:bg-emerald-500 text-white"
                                 : "bg-blue-600 hover:bg-blue-500 text-white"

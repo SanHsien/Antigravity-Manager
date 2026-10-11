@@ -333,7 +333,7 @@ export function DroidSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncDo
                         className={cn(
                             "px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5",
                             previewModels.some(m => m.isAg)
-                                ? "bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white shadow-sm"
+                                ? "bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white shadow-xs"
                                 : "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
                         )}
                         disabled={!previewModels.some(m => m.isAg) || syncing}

@@ -330,7 +330,7 @@ export const CliSyncCard = ({ proxyUrl, apiKey, className }: CliSyncCardProps) =
 
         return (
             <div className={cn(
-                "flex flex-col rounded-xl border p-4 shadow-sm transition-all duration-300 group",
+                "flex flex-col rounded-xl border p-4 shadow-xs transition-all duration-300 group",
                 app === 'JeikCode'
                     ? "bg-gradient-to-b from-emerald-500/[0.04] via-white/80 to-white/60 dark:from-emerald-950/20 dark:via-gray-800/60 dark:to-gray-800/40 border-emerald-500/30 dark:border-emerald-500/40 hover:border-emerald-400 dark:hover:border-emerald-400 shadow-emerald-500/5 hover:shadow-emerald-500/15 ring-1 ring-emerald-500/10"
                     : "bg-white/50 dark:bg-gray-800/40 border-gray-100 dark:border-white/5 hover:shadow-lg hover:border-blue-200/50 dark:hover:border-blue-500/30"
@@ -338,7 +338,7 @@ export const CliSyncCard = ({ proxyUrl, apiKey, className }: CliSyncCardProps) =
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-y-3 gap-x-2 mb-3">
                     <div className="flex items-center gap-3 min-w-0">
                         <div className={cn(
-                            "w-10 h-10 shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 p-0 rounded-xl overflow-hidden shadow-sm border border-gray-200/60 dark:border-white/10",
+                            "w-10 h-10 shrink-0 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 p-0 rounded-xl overflow-hidden shadow-xs border border-gray-200/60 dark:border-white/10",
                             app === 'JeikCode' && "shadow-md shadow-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40"
                         )}>
                             {app === 'JeikCode' ? (
@@ -380,7 +380,7 @@ export const CliSyncCard = ({ proxyUrl, apiKey, className }: CliSyncCardProps) =
                     {!isAppLoading && (status?.installed || (app === 'OpenCode' || app === 'JeikCode' || app === 'GrokBuild' || app === 'Hermes' || app === 'OpenClaw') && status?.current_base_url) && (
                         <div
                             className={cn(
-                                "inline-flex items-center justify-center transition-all shrink-0 whitespace-nowrap shadow-sm",
+                                "inline-flex items-center justify-center transition-all shrink-0 whitespace-nowrap shadow-xs",
                                 status.is_synced
                                     ? "w-6 h-6 rounded-full bg-gradient-to-tr from-green-500 to-emerald-600 text-white shadow-emerald-500/20"
                                     : "w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-500 border border-amber-200/60 dark:border-amber-800/40"
@@ -522,7 +522,7 @@ export const CliSyncCard = ({ proxyUrl, apiKey, className }: CliSyncCardProps) =
                             onClick={() => handleSync(app)}
                             disabled={(app !== 'OpenCode' && app !== 'JeikCode' && app !== 'GrokBuild' && app !== 'Hermes' && app !== 'OpenClaw' && !status?.installed) || isAppSyncing || isAppLoading}
                             className={cn(
-                                "btn btn-sm flex-1 gap-2 rounded-xl transition-all font-bold shadow-sm",
+                                "btn btn-sm flex-1 gap-2 rounded-xl transition-all font-bold shadow-xs",
                                 status?.is_synced
                                     ? "btn-ghost border-gray-200 dark:border-base-400 text-gray-500 hover:bg-gray-100"
                                     : "btn-primary hover:shadow-lg shadow-blue-500/20"
@@ -590,7 +590,7 @@ export const CliSyncCard = ({ proxyUrl, apiKey, className }: CliSyncCardProps) =
                 ), 'Gemini CLI')}
                 {renderCliItem('Droid', (
                     <div className="w-full h-full bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white">
-                        <Bot size={22} className="text-white drop-shadow-sm" />
+                        <Bot size={22} className="text-white drop-shadow-xs" />
                     </div>
                 ), 'Droid')}
             </div>

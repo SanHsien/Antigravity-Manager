@@ -174,7 +174,7 @@ export default function ProxyPoolSettings({ config, onChange }: ProxyPoolSetting
             {/* Consolidated Header & Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-4 p-1.5 bg-gray-100/30 dark:bg-gray-800/20 border border-gray-200 dark:border-gray-800/70 rounded-2xl">
                 {/* Left: Component Identity & Feature Toggle */}
-                <div className="flex items-center gap-2 p-1.5 bg-white dark:bg-gray-900 border border-gray-200/50 dark:border-gray-800 shadow-sm rounded-xl">
+                <div className="flex items-center gap-2 p-1.5 bg-white dark:bg-gray-900 border border-gray-200/50 dark:border-gray-800 shadow-xs rounded-xl">
                     <div className="flex items-center gap-3 pr-3 border-r border-gray-100 dark:border-gray-800">
                         <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-blue-500/20 shadow-lg">
                             <Network className="w-3.5 h-3.5" />
@@ -189,7 +189,7 @@ export default function ProxyPoolSettings({ config, onChange }: ProxyPoolSetting
                                 onChange={e => onChange({ ...safeConfig, enabled: e.target.checked })}
                                 className="sr-only peer"
                             />
-                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-hidden rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                         </label>
                     </div>
 
@@ -240,21 +240,21 @@ export default function ProxyPoolSettings({ config, onChange }: ProxyPoolSetting
                             <div className="flex items-center gap-1">
                                 <button
                                     onClick={() => handleBatchToggleEnabled(true)}
-                                    className="p-1.5 text-blue-600 hover:bg-white dark:hover:bg-blue-800 rounded-lg transition-all shadow-sm hover:shadow active:scale-90"
+                                    className="p-1.5 text-blue-600 hover:bg-white dark:hover:bg-blue-800 rounded-lg transition-all shadow-xs hover:shadow active:scale-90"
                                     title={t('common.enable', 'Enable')}
                                 >
                                     <Power size={14} />
                                 </button>
                                 <button
                                     onClick={() => handleBatchToggleEnabled(false)}
-                                    className="p-1.5 text-gray-400 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all shadow-sm hover:shadow active:scale-90"
+                                    className="p-1.5 text-gray-400 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all shadow-xs hover:shadow active:scale-90"
                                     title={t('common.disable', 'Disable')}
                                 >
                                     <Power size={14} className="opacity-50" />
                                 </button>
                                 <button
                                     onClick={handleBatchDelete}
-                                    className="p-1.5 text-rose-500 hover:bg-white dark:hover:bg-rose-900/40 rounded-lg transition-all shadow-sm hover:shadow active:scale-90"
+                                    className="p-1.5 text-rose-500 hover:bg-white dark:hover:bg-rose-900/40 rounded-lg transition-all shadow-xs hover:shadow active:scale-90"
                                     title={t('common.delete', 'Delete')}
                                 >
                                     <Trash2 size={14} />
@@ -291,7 +291,7 @@ export default function ProxyPoolSettings({ config, onChange }: ProxyPoolSetting
                             <div className="flex items-center gap-2 ml-1">
                                 <button
                                     onClick={() => setIsBatchImportOpen(true)}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white bg-gray-50 hover:bg-white dark:bg-gray-800/50 dark:hover:bg-gray-800 border border-gray-100 dark:border-gray-800/50 rounded-xl transition-all shadow-sm hover:shadow active:scale-95"
+                                    className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-black uppercase tracking-wider text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white bg-gray-50 hover:bg-white dark:bg-gray-800/50 dark:hover:bg-gray-800 border border-gray-100 dark:border-gray-800/50 rounded-xl transition-all shadow-xs hover:shadow active:scale-95"
                                 >
                                     <Upload size={12} />
                                     {t('settings.proxy_pool.batch_import', 'Import')}
@@ -310,7 +310,7 @@ export default function ProxyPoolSettings({ config, onChange }: ProxyPoolSetting
             </div>
 
             {/* Proxy List - Always visible, with status context */}
-            <div className="relative border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden bg-white dark:bg-gray-900 shadow-sm transition-all duration-300">
+            <div className="relative border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden bg-white dark:bg-gray-900 shadow-xs transition-all duration-300">
                 {!safeConfig.enabled && (
                     <div className="absolute inset-x-0 top-0 z-10 bg-amber-50/80 dark:bg-amber-900/10 backdrop-blur-[2px] px-3 py-1 flex items-center justify-center border-b border-amber-100/50 dark:border-amber-900/20">
                         <span className="text-[10px] font-black text-amber-600/80 dark:text-amber-500/80 uppercase tracking-[0.2em] pointer-events-none">

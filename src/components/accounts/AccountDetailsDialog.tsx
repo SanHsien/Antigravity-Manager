@@ -129,7 +129,7 @@ export default function AccountDetailsDialog({ account, onClose }: AccountDetail
                                     uniqueLabels.add(m.label);
                                     return true;
                                 }).map(({ model, label }) => (
-                                    <div key={model.name} className="p-4 rounded-xl border border-gray-100 dark:border-base-200 bg-white dark:bg-base-100 hover:border-blue-100 dark:hover:border-blue-900 hover:shadow-sm transition-all group">
+                                    <div key={model.name} className="p-4 rounded-xl border border-gray-100 dark:border-base-200 bg-white dark:bg-base-100 hover:border-blue-100 dark:hover:border-blue-900 hover:shadow-xs transition-all group">
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center gap-2">
@@ -196,7 +196,7 @@ export default function AccountDetailsDialog({ account, onClose }: AccountDetail
                                         {(group.buckets || []).map((bucket, bIdx) => {
                                             const percentage = Math.round(bucket.remaining_fraction * 100);
                                             return (
-                                                <div key={bIdx} className="bg-white dark:bg-base-200 p-3 rounded-lg border border-gray-100 dark:border-white/5 shadow-sm">
+                                                <div key={bIdx} className="bg-white dark:bg-base-200 p-3 rounded-lg border border-gray-100 dark:border-white/5 shadow-xs">
                                                     <div className="flex justify-between items-center mb-2">
                                                         <span className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">{bucket.window}</span>
                                                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${percentage >= 50 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : percentage >= 20 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>

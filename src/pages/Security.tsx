@@ -60,7 +60,7 @@ const Security: React.FC = () => {
                 )}
             </div>
 
-            <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200 mt-2">
+            <div className="bg-white dark:bg-base-100 rounded-xl shadow-xs border border-gray-100 dark:border-base-200 mt-2">
                 <div className="flex border-b border-gray-100 dark:border-base-200">
                     {tabs.map((tab) => (
                         <button
@@ -84,7 +84,7 @@ const Security: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200">
+            <div className="flex-1 overflow-hidden flex flex-col bg-white dark:bg-base-100 rounded-xl shadow-xs border border-gray-100 dark:border-base-200">
                 {renderContent()}
             </div>
         </div>

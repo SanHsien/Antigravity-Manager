@@ -103,7 +103,7 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
                 <div className="relative">
                     <button
                         onClick={() => setShowLangMenu(!showLangMenu)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-base-100 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-all"
+                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-base-100 rounded-2xl shadow-xs border border-slate-100 dark:border-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-all"
                     >
                         <Globe className="w-4 h-4" />
                         <span className="text-sm font-medium uppercase">{i18n.language.split('-')[0]}</span>
@@ -140,7 +140,7 @@ export const AdminAuthGuard: React.FC<{ children: React.ReactNode }> = ({ childr
                             <input
                                 type="password"
                                 placeholder={t('login.placeholder')}
-                                className={`w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-base-200 border-2 rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all outline-none text-slate-900 dark:text-white ${error ? 'border-red-400' : 'border-transparent'}`}
+                                className={`w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-base-200 border-2 rounded-2xl focus:ring-2 focus:ring-blue-500 transition-all outline-hidden text-slate-900 dark:text-white ${error ? 'border-red-400' : 'border-transparent'}`}
                                 value={apiKey}
                                 onChange={(e) => { setApiKey(e.target.value); setError(''); }}
                                 autoFocus

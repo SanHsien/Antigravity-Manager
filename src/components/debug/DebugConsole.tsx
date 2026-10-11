@@ -145,7 +145,7 @@ const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) => {
                 "bg-white dark:bg-[#1e1e1e]",
                 "text-zinc-700 dark:text-zinc-300",
                 embedded
-                    ? "h-full w-full rounded-xl border border-zinc-200 dark:border-white/10 shadow-sm overflow-hidden"
+                    ? "h-full w-full rounded-xl border border-zinc-200 dark:border-white/10 shadow-xs overflow-hidden"
                     : "fixed bottom-0 left-0 right-0 border-t border-zinc-200 dark:border-zinc-800 shadow-2xl z-[9999]"
             )}
             style={embedded ? undefined : { height }}
@@ -181,7 +181,7 @@ const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) => {
                                 className={cn(
                                     "px-2.5 py-0.5 text-[10px] uppercase font-bold rounded-[3px] transition-all",
                                     filter.includes(level)
-                                        ? LEVEL_CONFIG[level].color + " bg-zinc-100 dark:bg-white/10 shadow-sm"
+                                        ? LEVEL_CONFIG[level].color + " bg-zinc-100 dark:bg-white/10 shadow-xs"
                                         : "text-zinc-400 dark:text-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-white/5"
                                 )}
                             >
@@ -199,7 +199,7 @@ const DebugConsole: React.FC<DebugConsoleProps> = ({ embedded = false }) => {
                             onChange={e => setSearchTerm(e.target.value)}
                             placeholder="Filter logs..."
                             className={cn(
-                                "border border-transparent rounded-md pl-8 pr-3 py-1 text-xs w-40 focus:w-64 transition-all focus:outline-none placeholder:text-zinc-400",
+                                "border border-transparent rounded-md pl-8 pr-3 py-1 text-xs w-40 focus:w-64 transition-all focus:outline-hidden placeholder:text-zinc-400",
                                 "bg-zinc-100 dark:bg-black/20",
                                 "text-zinc-800 dark:text-zinc-300",
                                 "focus:bg-white dark:focus:bg-black/40",

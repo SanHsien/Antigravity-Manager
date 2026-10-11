@@ -40,7 +40,7 @@ export default function ImageThinkingMode({
                             key={option.value}
                             onClick={() => onChange(option.value)}
                             className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${value === option.value
-                                ? 'bg-white dark:bg-gray-700 text-pink-600 dark:text-pink-400 shadow-sm'
+                                ? 'bg-white dark:bg-gray-700 text-pink-600 dark:text-pink-400 shadow-xs'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                 }`}
                         >

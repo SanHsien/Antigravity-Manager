@@ -23,6 +23,10 @@ npm run build
 if ($LASTEXITCODE -ne 0) {
     throw "Frontend build failed with exit code $LASTEXITCODE"
 }
+npm run test:tailwind-regressions
+if ($LASTEXITCODE -ne 0) {
+    throw "Tailwind CSS regressions failed with exit code $LASTEXITCODE"
+}
 
 Write-Host "==> Compiling Python tools"
 python -m compileall -q tools

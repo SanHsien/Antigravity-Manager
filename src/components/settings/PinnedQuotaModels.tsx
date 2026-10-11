@@ -134,7 +134,7 @@ const PinnedQuotaModels = ({ config, onChange }: PinnedQuotaModelsProps) => {
                                     </span>
                                 </div>
                                 <div className={`
-                                    w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300 flex-shrink-0 ml-1
+                                    w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300 shrink-0 ml-1
                                     ${isSelected ? 'bg-indigo-500 text-white scale-100' : 'bg-gray-200 dark:bg-base-300 text-transparent scale-75 opacity-0'}
                                 `}>
                                     <Check size={10} strokeWidth={4} />

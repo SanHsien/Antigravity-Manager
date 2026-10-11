@@ -27,7 +27,7 @@ function AccountGrid({ accounts, selectedIds, refreshingIds, onToggleSelect, cur
     const { t } = useTranslation();
     if (accounts.length === 0) {
         return (
-            <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-sm border border-gray-100 dark:border-base-200 text-center">
+            <div className="bg-white dark:bg-base-100 rounded-2xl p-12 shadow-xs border border-gray-100 dark:border-base-200 text-center">
                 <p className="text-gray-400 mb-2">{t('accounts.empty.title')}</p>
                 <p className="text-sm text-gray-400">{t('accounts.empty.desc')}</p>
             </div>

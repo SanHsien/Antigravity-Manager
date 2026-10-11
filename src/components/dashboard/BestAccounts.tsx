@@ -155,7 +155,7 @@ function BestAccounts({ accounts, currentAccountId, onSwitch }: BestAccountsProp
     const bestClaudeRender = bestClaude ? { ...bestClaude, claudeQuota: bestClaude.quotaVal } : undefined;
 
     return (
-        <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 h-full flex flex-col">
+        <div className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 h-full flex flex-col">
             <h2 className="text-base font-semibold text-gray-900 dark:text-base-content mb-3 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-blue-500 dark:text-blue-400" />
                 {t('dashboard.best_accounts')}

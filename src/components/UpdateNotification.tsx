@@ -154,7 +154,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onClose 
         <div className="relative z-10">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 shadow-sm">
+              <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 shadow-xs">
                 {updateState === 'ready' ? (
                   <CheckCircle className="w-4 h-4 text-white" />
                 ) : (

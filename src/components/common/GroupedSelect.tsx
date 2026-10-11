@@ -138,7 +138,7 @@ export default function GroupedSelect({
                     'flex items-center justify-between gap-2',
                     'transition-all duration-200',
                     'hover:border-blue-400 dark:hover:border-blue-500',
-                    'focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+                    'focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent',
                     disabled && 'opacity-50 cursor-not-allowed',
                     isOpen && 'ring-2 ring-blue-500 border-transparent'
                 )}
@@ -200,7 +200,7 @@ export default function GroupedSelect({
                                 >
                                     <span className="truncate">{option.label}</span>
                                     {option.value === value && (
-                                        <Check size={12} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                        <Check size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
                                     )}
                                 </button>
                             ))}
@@ -211,7 +211,7 @@ export default function GroupedSelect({
                     {allowCustomInput && (
                         <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-2">
                             <div className="flex items-center gap-1.5">
-                                <Edit3 size={12} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                                <Edit3 size={12} className="text-gray-400 dark:text-gray-500 shrink-0" />
                                 <input
                                     ref={customInputRef}
                                     type="text"
@@ -228,7 +228,7 @@ export default function GroupedSelect({
                                         'flex-1 px-2 py-1 text-[10px] font-mono',
                                         'bg-white dark:bg-gray-800',
                                         'border border-gray-300 dark:border-gray-600',
-                                        'rounded focus:outline-none focus:ring-1 focus:ring-blue-500',
+                                        'rounded focus:outline-hidden focus:ring-1 focus:ring-blue-500',
                                         'text-gray-900 dark:text-gray-100',
                                         'placeholder:text-gray-400 dark:placeholder:text-gray-500'
                                     )}

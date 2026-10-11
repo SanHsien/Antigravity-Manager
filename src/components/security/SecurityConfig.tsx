@@ -79,7 +79,7 @@ export const SecurityConfig: React.FC = () => {
             </div>
 
             {/* Blacklist Settings */}
-            <div className="card bg-base-100 border border-gray-200 dark:border-base-300 shadow-sm">
+            <div className="card bg-base-100 border border-gray-200 dark:border-base-300 shadow-xs">
                 <div className="card-body">
                     <h3 className="card-title flex items-center gap-2 text-red-500">
                         <Shield size={24} />
@@ -123,7 +123,7 @@ export const SecurityConfig: React.FC = () => {
             </div>
 
             {/* Whitelist Settings */}
-            <div className="card bg-base-100 border border-gray-200 dark:border-base-300 shadow-sm">
+            <div className="card bg-base-100 border border-gray-200 dark:border-base-300 shadow-xs">
                 <div className="card-body">
                     <h3 className="card-title flex items-center gap-2 text-green-500">
                         <ShieldCheck size={24} />

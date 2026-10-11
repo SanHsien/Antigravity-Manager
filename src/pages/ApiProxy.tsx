@@ -81,7 +81,7 @@ function CollapsibleCard({
     const { t } = useTranslation();
 
     return (
-        <div className="bg-white dark:bg-base-100 rounded-xl shadow-xs border border-gray-200/80 dark:border-base-200 overflow-hidden transition-all duration-200 hover:shadow-sm">
+        <div className="bg-white dark:bg-base-100 rounded-xl shadow-xs border border-gray-200/80 dark:border-base-200 overflow-hidden transition-all duration-200 hover:shadow-xs">
             <div
                 className="px-5 py-3.5 flex items-center justify-between cursor-pointer bg-gray-50/70 dark:bg-base-200 hover:bg-gray-100/70 dark:hover:bg-base-300/70 transition-colors"
                 onClick={(e) => {
@@ -1132,7 +1132,7 @@ print(response.choices[0].message.content)`;
                                 {t('proxy.router.subtitle_simple')}
                             </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2.5 bg-white dark:bg-base-100 p-1.5 rounded-xl border border-gray-100 dark:border-gray-700/50 shadow-sm">
+                        <div className="flex flex-wrap items-center gap-2.5 bg-white dark:bg-base-100 p-1.5 rounded-xl border border-gray-100 dark:border-gray-700/50 shadow-xs">
                             {/* 仅暴露真实配额模型开关 */}
                             <label
                                 className="flex items-center gap-2 px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-base-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-base-300 transition-colors h-9 select-none"
@@ -1177,7 +1177,7 @@ print(response.choices[0].message.content)`;
 
                             <button
                                 onClick={handleApplyPresets}
-                                className="btn btn-sm btn-primary h-9 min-h-0 gap-1.5 shadow-sm text-xs"
+                                className="btn btn-sm btn-primary h-9 min-h-0 gap-1.5 shadow-xs text-xs"
                             >
                                 <Check size={14} />
                                 {t('proxy.router.apply_selected')}
@@ -1278,7 +1278,7 @@ print(response.choices[0].message.content)`;
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                                     {appConfig.proxy.custom_mapping && Object.entries(appConfig.proxy.custom_mapping).length > 0 ? (
                                         Object.entries(appConfig.proxy.custom_mapping).map(([key, val]) => (
-                                            <div key={key} className={`flex items-center justify-between p-1.5 rounded-md transition-all border group ${editingKey === key ? 'bg-blue-50/80 dark:bg-blue-900/15 border-blue-300/50 dark:border-blue-500/30 shadow-sm' : 'border-transparent hover:bg-gray-100 dark:hover:bg-white/5 hover:border-gray-200 dark:hover:border-white/10'}`}>
+                                            <div key={key} className={`flex items-center justify-between p-1.5 rounded-md transition-all border group ${editingKey === key ? 'bg-blue-50/80 dark:bg-blue-900/15 border-blue-300/50 dark:border-blue-500/30 shadow-xs' : 'border-transparent hover:bg-gray-100 dark:hover:bg-white/5 hover:border-gray-200 dark:hover:border-white/10'}`}>
                                                 <div className="flex items-center gap-2 overflow-hidden flex-1">
                                                     <div className="flex items-center gap-1.5 min-w-0">
                                                         <span className="font-mono text-[10px] font-bold text-blue-600 dark:text-blue-400 truncate max-w-[140px]" title={key}>{key}</span>
@@ -1310,7 +1310,7 @@ print(response.choices[0].message.content)`;
 
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     {editingKey === key ? (
-                                                        <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-md border border-blue-200 dark:border-blue-800 p-0.5 shadow-sm">
+                                                        <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-md border border-blue-200 dark:border-blue-800 p-0.5 shadow-xs">
                                                             <button
                                                                 className="btn btn-ghost btn-xs text-primary hover:bg-blue-50 dark:hover:bg-blue-900/30 p-0 h-6 w-6 min-h-0"
                                                                 onClick={() => {
@@ -1370,7 +1370,7 @@ print(response.choices[0].message.content)`;
                                         id="custom-key"
                                         type="text"
                                         placeholder={t('proxy.router.original_placeholder') || "Original (e.g. gpt-4 or gpt-4*)"}
-                                        className="input input-xs input-bordered flex-1 font-mono text-[11px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 h-8"
+                                        className="input input-xs input-bordered flex-1 font-mono text-[11px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 h-8"
                                     />
                                     <div className="w-full sm:w-48">
                                         <GroupedSelect
@@ -1409,7 +1409,7 @@ print(response.choices[0].message.content)`;
     const renderMultiProtocolSection = () => {
         if (!appConfig) return null;
         return (
-            <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200 overflow-hidden">
+            <div className="bg-white dark:bg-base-100 rounded-xl shadow-xs border border-gray-100 dark:border-base-200 overflow-hidden">
                 <div className="p-3">
                     <div className="flex items-center gap-3 mb-3">
                         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md">
@@ -1523,7 +1523,7 @@ print(response.choices[0].message.content)`;
     const renderSupportedModelsSection = () => {
         if (!appConfig) return null;
         return (
-            <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200 overflow-hidden">
+            <div className="bg-white dark:bg-base-100 rounded-xl shadow-xs border border-gray-100 dark:border-base-200 overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-gray-100 dark:border-base-200">
                     <h2 className="text-base font-bold text-gray-900 dark:text-base-content flex items-center gap-2">
                         <Terminal size={18} />
@@ -2354,7 +2354,7 @@ print(response.choices[0].message.content)`;
                                     <div className="flex gap-2 text-[10px]">
                                         {['web_search', 'web_reader', 'vision'].map(f =>
                                             appConfig.proxy.zai?.mcp?.[(f + '_enabled') as keyof typeof appConfig.proxy.zai.mcp] && (
-                                                <span key={f} className="bg-blue-500 dark:bg-blue-600 px-1.5 py-0.5 rounded text-white font-semibold shadow-sm">
+                                                <span key={f} className="bg-blue-500 dark:bg-blue-600 px-1.5 py-0.5 rounded text-white font-semibold shadow-xs">
                                                     {t(`proxy.config.zai.mcp.${f}`).split(' ')[0]}
                                                 </span>
                                             )
@@ -2618,7 +2618,7 @@ print(response.choices[0].message.content)`;
                                             </p>
                                         </div>
                                         <select
-                                            className="select select-sm select-bordered w-48 text-xs font-normal focus:outline-none dark:bg-base-300 dark:text-base-content border-gray-200 dark:border-base-400"
+                                            className="select select-sm select-bordered w-48 text-xs font-normal focus:outline-hidden dark:bg-base-300 dark:text-base-content border-gray-200 dark:border-base-400"
                                             value={appConfig.proxy.experimental?.compression_level || (appConfig.proxy.experimental?.enable_usage_scaling ? 'high' : 'disabled')}
                                             onChange={(e) => {
                                                 const val = e.target.value;
@@ -2994,7 +2994,7 @@ print(response.choices[0].message.content)`;
                                     </div>
                                 ) : (
                                     customPresets.map(preset => (
-                                        <div key={preset.id} className="flex items-center justify-between p-3 bg-white dark:bg-base-200 border border-gray-100 dark:border-gray-700 rounded-xl hover:shadow-sm transition-all group">
+                                        <div key={preset.id} className="flex items-center justify-between p-3 bg-white dark:bg-base-200 border border-gray-100 dark:border-gray-700 rounded-xl hover:shadow-xs transition-all group">
                                             <div className="flex-1 min-w-0">
                                                 <div className="font-bold text-sm text-gray-800 dark:text-gray-200 truncate">{preset.name}</div>
                                                 <div className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
