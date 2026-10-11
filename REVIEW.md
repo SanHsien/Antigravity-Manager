@@ -305,3 +305,24 @@ fork 的 `src-tauri/src/proxy` 精準搜尋未找到 `ok go on` 或該兩條完�
 - fork 的 `AccountResponse` 確實缺少 `validation_url`，而前端 `AccountErrorDialog` 有讀取它；#3631 的欄位缺口具有靜態依據。PR 補齊三個 response 建構點並清除過期 URL；採用前須驗證管理 API 序列化、URL 安全檢查與清理一致性，不使用真實帳號作 smoke。
 
 本輪只記錄審查，沒有移植該 PR 或宣稱 runtime 已修復。PR 水位至 `#3632`，issue 水位至 `#3631`；release／commit 水位不變。
+
+### 10.7 Beta 後續項目逐項審查（2026-10-11）
+
+已逐一閱讀下列 issue／PR 的說明與實際 diff，並以 fork 現有對應模組作靜態比對。本輪只更新 `follow-upstream` 紀錄，**沒有移植任何上游程式碼**；release／commit 水位仍維持 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 diff 與 fork 對照、後續理由 |
+| --- | --- | --- |
+| [Issue #3633](https://github.com/lbjlaq/Antigravity-Manager/issues/3633) | defer／follow-upstream | 回報 Claude Code 串流終止、重試與狀態問題，後續由 #3634 的 lifecycle 改寫處理。fork 未採用該 lifecycle，且沒有 fork runtime 串流重現；保留「錯誤後不得追加成功尾幀」作為日後採用前回歸條件。 |
+| [PR #3634](https://github.com/lbjlaq/Antigravity-Manager/pull/3634) | defer／follow-upstream | 已關閉且曾合併 beta；實際變更多達 10 檔（Claude/OpenAI handler、mapper、common 與文件），加入 heartbeat、terminal state machine、429/403 分流與 timeout/budget 行為。fork 的 Claude mapper 雖有 `message_stop_sent`，但沒有相同 `stream_lifecycle`／heartbeat 架構；此為相依的協定生命週期改寫，不能片段移植。 |
+| [Issue #3635](https://github.com/lbjlaq/Antigravity-Manager/issues/3635) | defer／follow-upstream | 針對 overloaded/error 傳播，與 #3634 同一串流狀態問題相關。fork 已有部分 `overloaded_error` mapper 邏輯，但沒有問題 payload 的 runtime 證據；且需與先前 #3625／#3628 的互斥方案一併判定，不能單獨改尾幀行為。 |
+| [PR #3636](https://github.com/lbjlaq/Antigravity-Manager/pull/3636) | not-applicable | 已關閉且合併的 10 檔 React/UI 動畫（entry／hover，含 motion 相關改動），不是安全或功能缺陷修補。fork 已有自己的 UI 與本輪已驗收的 layout；導入會造成無授權的視覺設計變更。 |
+| [Issue #3637](https://github.com/lbjlaq/Antigravity-Manager/issues/3637) | needs-info／follow-upstream | Standalone language server 熱切換回報只提供特定 Windows vendor app 經驗，沒有可驗證的目標 executable／版本／父子程序或未儲存緩衝資料。fork 有 integration/process 路徑，但不可據此直接調整程序生命週期；待可重現資料或上游修補。 |
+| [PR #3638](https://github.com/lbjlaq/Antigravity-Manager/pull/3638) | not-applicable | 已關閉未合併的 token stats 擴充，實際跨 63 檔、約 +5,407/-1,573，涵蓋資料模型、設定、後端、UI、文件與 heatmap。是未發行大型功能而非可獨立修補，且會和 fork 自有文件／在地化相衝突。 |
+| [Issue #3639](https://github.com/lbjlaq/Antigravity-Manager/issues/3639) | defer／follow-upstream | 請求在帳號配額歸零時自動切換；#3642 提出 beta 實作。沒有 fork 帳號排程、速率帳務與使用者選擇的驗收證據，不應藉由猜測直接改切換行為。 |
+| [PR #3640](https://github.com/lbjlaq/Antigravity-Manager/pull/3640) | defer／follow-upstream | OPEN beta，`token_manager.rs` 約 +175/-34，將 quota reset 查詢改為 per-account/per-model。fork 有相同 `get_quota_reset_time` 與呼叫點，故具相關性；但 API 語意與模型選擇需 unit/integration 測試，不能只移植函式簽章。 |
+| [PR #3641](https://github.com/lbjlaq/Antigravity-Manager/pull/3641) | defer／follow-upstream | OPEN beta，3 個 Rust 檔約 +84，擴展 Imagen grace retry 與 cooldown rescue。fork 已有 `GraceRetry` 與帳號協調邏輯；直接疊加可能重複 retry／冷卻排程，需 account-pool/queue 時序測試後才可評估。 |
+| [PR #3642](https://github.com/lbjlaq/Antigravity-Manager/pull/3642) | defer／follow-upstream | OPEN beta，`token_manager.rs` 約 +200/-8，處理固定帳號配額歸零後的自動切換。fork 已有 model quota 與 target filtering；仍需釐清固定帳號語意、限流與使用者意圖，沒有真實帳號或隔離 scheduler 測試時不採用。 |
+| [PR #3643](https://github.com/lbjlaq/Antigravity-Manager/pull/3643) | not-applicable | OPEN beta，新增 Veo video 端點、模型 mapping 與 OpenAI handler 路由（5 檔約 +327）。不是本輪安全鏈或既有 bug 修補，也沒有此 API capability 的產品需求；不擴大 fork 功能面。 |
+| [PR #3644](https://github.com/lbjlaq/Antigravity-Manager/pull/3644) | defer／follow-upstream | OPEN beta，2 檔約 +63，將 Cowork deep compact 的 immunity／scan 閾值調整為 60／5。fork 沒有對應 compact detector 常數與 RFC state machine，孤立移植只會引入不可驗證的行為差異。 |
+
+水位更新為 PR 至 `#3644`、issue 至 `#3639`，只表示每項已讀說明、相關 diff 與 fork 對照後作出採用判定；**不表示這些上游程式碼已合併、已修復或通過 fork runtime 驗收。**
