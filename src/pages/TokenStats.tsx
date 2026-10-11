@@ -254,7 +254,7 @@ const TokenStats: React.FC = () => {
                         return (
                             <div key={index} className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-2 overflow-hidden">
-                                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+                                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
                                     <span className="text-gray-500 dark:text-gray-400 truncate max-w-[120px]" title={name}>
                                         {displayName}
                                     </span>
@@ -341,7 +341,7 @@ const TokenStats: React.FC = () => {
                             <button
                                 onClick={() => setTimeRange('hourly')}
                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${timeRange === 'hourly'
-                                    ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
+                                    ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-xs'
                                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-800'
                                     }`}
                             >
@@ -351,7 +351,7 @@ const TokenStats: React.FC = () => {
                             <button
                                 onClick={() => setTimeRange('daily')}
                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${timeRange === 'daily'
-                                    ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
+                                    ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-xs'
                                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-800'
                                     }`}
                             >
@@ -361,7 +361,7 @@ const TokenStats: React.FC = () => {
                             <button
                                 onClick={() => setTimeRange('weekly')}
                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${timeRange === 'weekly'
-                                    ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
+                                    ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-xs'
                                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-800'
                                     }`}
                             >
@@ -381,7 +381,7 @@ const TokenStats: React.FC = () => {
 
                 {summary && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                        <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/50 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/50 rounded-xl p-4 shadow-xs border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-2">
                                 <div className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700">
                                     <Zap className="w-4 h-4 text-gray-600 dark:text-gray-300" />
@@ -392,7 +392,7 @@ const TokenStats: React.FC = () => {
                                 {formatNumber(summary.total_tokens)}
                             </div>
                         </div>
-                        <div className="bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-gray-800 rounded-xl p-4 shadow-sm border border-blue-100 dark:border-blue-900/30 hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-br from-blue-50/50 to-white dark:from-blue-900/10 dark:to-gray-800 rounded-xl p-4 shadow-xs border border-blue-100 dark:border-blue-900/30 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-2 text-blue-600/80 dark:text-blue-400/80 text-sm mb-2">
                                 <div className="p-1.5 rounded-lg bg-blue-100/50 dark:bg-blue-900/30">
                                     <TrendingUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -403,7 +403,7 @@ const TokenStats: React.FC = () => {
                                 {formatNumber(summary.total_input_tokens)}
                             </div>
                         </div>
-                        <div className="bg-gradient-to-br from-purple-50/50 to-white dark:from-purple-900/10 dark:to-gray-800 rounded-xl p-4 shadow-sm border border-purple-100 dark:border-purple-900/30 hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-br from-purple-50/50 to-white dark:from-purple-900/10 dark:to-gray-800 rounded-xl p-4 shadow-xs border border-purple-100 dark:border-purple-900/30 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-2 text-purple-600/80 dark:text-purple-400/80 text-sm mb-2">
                                 <div className="p-1.5 rounded-lg bg-purple-100/50 dark:bg-purple-900/30">
                                     <TrendingUp className="w-4 h-4 rotate-180 text-purple-600 dark:text-purple-400" />
@@ -414,7 +414,7 @@ const TokenStats: React.FC = () => {
                                 {formatNumber(summary.total_output_tokens)}
                             </div>
                         </div>
-                        <div className="bg-gradient-to-br from-sky-50/50 to-white dark:from-sky-900/10 dark:to-gray-800 rounded-xl p-4 shadow-sm border border-sky-100 dark:border-sky-900/30 hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-br from-sky-50/50 to-white dark:from-sky-900/10 dark:to-gray-800 rounded-xl p-4 shadow-xs border border-sky-100 dark:border-sky-900/30 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-2 text-sky-600/80 dark:text-sky-400/80 text-sm mb-2">
                                 <div className="p-1.5 rounded-lg bg-sky-100/50 dark:bg-sky-900/30">
                                     <Zap className="w-4 h-4 text-sky-600 dark:text-sky-400" />
@@ -425,7 +425,7 @@ const TokenStats: React.FC = () => {
                                 {formatNumber(summary.total_cached_tokens)}
                             </div>
                         </div>
-                        <div className="bg-gradient-to-br from-green-50/50 to-white dark:from-green-900/10 dark:to-gray-800 rounded-xl p-4 shadow-sm border border-green-100 dark:border-green-900/30 hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-br from-green-50/50 to-white dark:from-green-900/10 dark:to-gray-800 rounded-xl p-4 shadow-xs border border-green-100 dark:border-green-900/30 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-2 text-green-600/80 dark:text-green-400/80 text-sm mb-2">
                                 <div className="p-1.5 rounded-lg bg-green-100/50 dark:bg-green-900/30">
                                     <Users className="w-4 h-4 text-green-600 dark:text-green-400" />
@@ -436,7 +436,7 @@ const TokenStats: React.FC = () => {
                                 {summary.unique_accounts}
                             </div>
                         </div>
-                        <div className="bg-gradient-to-br from-orange-50/50 to-white dark:from-orange-900/10 dark:to-gray-800 rounded-xl p-4 shadow-sm border border-orange-100 dark:border-orange-900/30 hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-br from-orange-50/50 to-white dark:from-orange-900/10 dark:to-gray-800 rounded-xl p-4 shadow-xs border border-orange-100 dark:border-orange-900/30 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-2 text-orange-600/80 dark:text-orange-400/80 text-sm mb-2">
                                 <div className="p-1.5 rounded-lg bg-orange-100/50 dark:bg-orange-900/30">
                                     <Cpu className="w-4 h-4 text-orange-600 dark:text-orange-400" />
@@ -450,7 +450,7 @@ const TokenStats: React.FC = () => {
                     </div>
                 )}
 
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xs border border-gray-200 dark:border-gray-700">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg font-semibold text-gray-800 dark:text-white flex items-center gap-2">
                             {viewMode === 'model' ? (
@@ -467,7 +467,7 @@ const TokenStats: React.FC = () => {
                             <button
                                 onClick={() => setViewMode('model')}
                                 className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'model'
-                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-xs'
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                     }`}
                             >
@@ -476,7 +476,7 @@ const TokenStats: React.FC = () => {
                             <button
                                 onClick={() => setViewMode('account')}
                                 className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'account'
-                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-xs'
                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                                     }`}
                             >
@@ -550,7 +550,7 @@ const TokenStats: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col">
+                    <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xs border border-gray-200 dark:border-gray-700 flex flex-col">
                         <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
                             {t('token_stats.usage_trend', 'Token 使用趋势')}
                         </h2>
@@ -596,7 +596,7 @@ const TokenStats: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xs border border-gray-200 dark:border-gray-700">
                         <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
                             {t('token_stats.by_account', '分账号统计')}
                         </h2>
@@ -658,7 +658,7 @@ const TokenStats: React.FC = () => {
 
                 {
                     modelData.length > 0 && viewMode === 'model' && (
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xs border border-gray-200 dark:border-gray-700">
                             <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
                                 <Cpu className="w-5 h-5 text-blue-500" />
                                 {t('token_stats.model_details', '分模型详细统计')}
@@ -754,7 +754,7 @@ const TokenStats: React.FC = () => {
 
                 {
                     accountData.length > 0 && viewMode === 'account' && (
-                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-xs border border-gray-200 dark:border-gray-700">
                             <h2 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
                                 {t('token_stats.account_details', '账号详细统计')}
                             </h2>

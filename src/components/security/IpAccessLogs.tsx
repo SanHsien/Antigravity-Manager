@@ -110,7 +110,7 @@ export const IpAccessLogs: React.FC<Props> = ({ refreshKey }) => {
             {/* Table */}
             <div className="flex-1 overflow-auto">
                 <table className="table table-xs w-full">
-                    <thead className="sticky top-0 bg-gray-100 dark:bg-base-200 z-10 shadow-sm text-gray-600 dark:text-gray-400">
+                    <thead className="sticky top-0 bg-gray-100 dark:bg-base-200 z-10 shadow-xs text-gray-600 dark:text-gray-400">
                         <tr>
                             <th className="w-20">{t('security.logs.status')}</th>
                             <th className="w-32">{t('security.logs.ip_address')}</th>

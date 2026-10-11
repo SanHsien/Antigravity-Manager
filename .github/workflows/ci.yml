@@ -41,6 +41,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Tailwind CSS regressions
+        run: npm run test:tailwind-regressions
+
   # Rust 代码检查
   check-rust:
     name: Check Rust Code

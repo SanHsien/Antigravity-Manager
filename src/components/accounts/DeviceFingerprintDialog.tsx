@@ -190,7 +190,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
                     </div>
                     {actionMessage && <div className="text-xs text-blue-600 dark:text-blue-300">{actionMessage}</div>}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="p-4 rounded-xl border border-gray-100 dark:border-base-200 bg-white dark:bg-base-100 shadow-sm">
+                        <div className="p-4 rounded-xl border border-gray-100 dark:border-base-200 bg-white dark:bg-base-100 shadow-xs">
                             <div className="flex items-center justify-between mb-1">
                                 <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('accounts.device_fingerprint_dialog.current_storage')}</div>
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300 border border-blue-100 dark:border-blue-400/40">{t('accounts.device_fingerprint_dialog.effective')}</span>
@@ -198,7 +198,7 @@ export default function DeviceFingerprintDialog({ account, onClose }: DeviceFing
                             <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">{t('accounts.device_fingerprint_dialog.current_storage_desc')}</p>
                             {loadingDevice ? <div className="text-xs text-gray-400">{t('accounts.device_fingerprint_dialog.loading')}</div> : renderProfile(deviceProfiles?.current_storage)}
                         </div>
-                        <div className="p-4 rounded-xl border border-gray-100 dark:border-base-200 bg-white dark:bg-base-100 shadow-sm">
+                        <div className="p-4 rounded-xl border border-gray-100 dark:border-base-200 bg-white dark:bg-base-100 shadow-xs">
                             <div className="flex items-center justify-between mb-1">
                                 <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('accounts.device_fingerprint_dialog.account_binding')}</div>
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300 border border-amber-100 dark:border-amber-400/40">{t('accounts.device_fingerprint_dialog.pending_application')}</span>

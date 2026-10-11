@@ -216,7 +216,7 @@ export function HermesSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncD
                                         value={customBaseUrl}
                                         onChange={event => setCustomBaseUrl(event.target.value)}
                                         placeholder="http://host.docker.internal:8045/v1"
-                                        className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                                        className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-base-200 border border-gray-200 dark:border-base-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:border-purple-500 outline-hidden"
                                     />
                                 )}
                             </section>
@@ -319,7 +319,7 @@ export function HermesSyncModal({ apiKey, getFormattedProxyUrl, onClose, onSyncD
                     </button>
                     <button
                         type="button"
-                        className="px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white shadow-sm disabled:opacity-50"
+                        className="px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white shadow-xs disabled:opacity-50"
                         disabled={loading || syncing || !status}
                         onClick={executeSync}
                     >

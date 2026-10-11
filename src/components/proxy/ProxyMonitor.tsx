@@ -1143,7 +1143,7 @@ const TimingDiagnosticsCard: React.FC<TimingDiagnosticsCardProps> = ({ timing, o
     }
 
     return (
-        <div className="mb-3 rounded-xl overflow-hidden border border-emerald-500/30 dark:border-emerald-500/25 bg-emerald-50/25 dark:bg-base-100 shadow-sm">
+        <div className="mb-3 rounded-xl overflow-hidden border border-emerald-500/30 dark:border-emerald-500/25 bg-emerald-50/25 dark:bg-base-100 shadow-xs">
             {/* Card Header */}
             <div
                 className={`px-3 py-2 bg-emerald-500/10 dark:bg-emerald-950/30 flex items-center justify-between gap-2 select-none cursor-pointer hover:bg-emerald-500/15 transition-colors ${
@@ -1892,7 +1892,7 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                             <button
                                 onClick={handleSaveLogSettings}
                                 disabled={isSavingConfig}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all text-white active:scale-95 ${
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all text-white active:scale-95 ${
                                     saveSuccess
                                         ? 'bg-emerald-600 hover:bg-emerald-700'
                                         : 'bg-blue-600 hover:bg-blue-700'
@@ -2102,7 +2102,7 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                         <div className="flex-1 min-h-0 flex flex-col p-3 sm:p-4 space-y-2.5 bg-gray-100/50 dark:bg-base-100 overflow-hidden">
                             {/* Metadata Section (Collapsible) */}
                             {showMetadata && (
-                                <div className="bg-white dark:bg-base-200 p-3 sm:p-3.5 rounded-xl border border-gray-200 dark:border-base-300 shadow-sm shrink-0 text-xs transition-all duration-200">
+                                <div className="bg-white dark:bg-base-200 p-3 sm:p-3.5 rounded-xl border border-gray-200 dark:border-base-300 shadow-xs shrink-0 text-xs transition-all duration-200">
                                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                                         <div>
                                             <span className="block text-gray-500 dark:text-gray-400 uppercase font-bold text-[10px] tracking-wider">{t('monitor.details.time')}</span>
@@ -2178,7 +2178,7 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                                             onClick={() => setPayloadViewMode('concise')}
                                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer select-none ${
                                                 payloadViewMode === 'concise'
-                                                    ? 'bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm border border-gray-200 dark:border-base-300'
+                                                    ? 'bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs border border-gray-200 dark:border-base-300'
                                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                                             }`}
                                         >
@@ -2190,7 +2190,7 @@ export const ProxyMonitor: React.FC<ProxyMonitorProps> = ({ className }) => {
                                             onClick={() => setPayloadViewMode('full')}
                                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer select-none ${
                                                 payloadViewMode === 'full'
-                                                    ? 'bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-sm border border-gray-200 dark:border-base-300'
+                                                    ? 'bg-white dark:bg-base-100 text-blue-600 dark:text-blue-400 shadow-xs border border-gray-200 dark:border-base-300'
                                                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                                             }`}
                                         >

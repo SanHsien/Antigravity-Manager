@@ -42,7 +42,7 @@ export function NavMenu({ navItems }: NavMenuProps) {
                             transition-all 
                             whitespace-nowrap
                             ${isActive(location.pathname, item.path)
-                                ? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+                                ? 'bg-gray-900 text-white shadow-xs dark:bg-white dark:text-gray-900'
                                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-base-content dark:hover:bg-base-100'
                             }
                         `}
@@ -64,7 +64,7 @@ export function NavMenu({ navItems }: NavMenuProps) {
                             rounded-full
                             transition-all
                             ${isActive(location.pathname, item.path)
-                                ? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+                                ? 'bg-gray-900 text-white shadow-xs dark:bg-white dark:text-gray-900'
                                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-base-content dark:hover:bg-base-100'
                             }
                         `}
@@ -87,7 +87,7 @@ export function NavMenu({ navItems }: NavMenuProps) {
                             rounded-full
                             transition-all
                             ${isActive(location.pathname, item.path)
-                                ? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+                                ? 'bg-gray-900 text-white shadow-xs dark:bg-white dark:text-gray-900'
                                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-base-content dark:hover:bg-base-100'
                             }
                         `}
@@ -110,7 +110,7 @@ export function NavMenu({ navItems }: NavMenuProps) {
                             rounded-full
                             transition-all
                             ${isActive(location.pathname, item.path)
-                                ? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+                                ? 'bg-gray-900 text-white shadow-xs dark:bg-white dark:text-gray-900'
                                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-base-content dark:hover:bg-base-100'
                             }
                         `}

@@ -80,7 +80,7 @@ function Pagination({
                             <select
                                 value={itemsPerPage}
                                 onChange={(e) => onPageSizeChange(parseInt(e.target.value))}
-                                className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-base-100 text-gray-900 dark:text-base-content focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-base-100 text-gray-900 dark:text-base-content focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                             >
                                 {pageSizeOptions.map(size => (
                                     <option key={size} value={size}>{size} {t('common.items')}</option>
@@ -90,7 +90,7 @@ function Pagination({
                     )}
                 </div>
                 <div>
-                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-xs" aria-label="Pagination">
                         <button
                             onClick={() => onPageChange(currentPage - 1)}
                             disabled={currentPage === 1}

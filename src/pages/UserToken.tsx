@@ -250,7 +250,7 @@ const UserToken: React.FC = () => {
                     </button>
                     <button
                         onClick={() => setShowCreateModal(true)}
-                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2 shadow-sm shadow-blue-500/20"
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2 shadow-xs shadow-blue-500/20"
                     >
                         <Plus size={16} />
                         <span>{t('user_token.create', { defaultValue: 'Create Token' })}</span>
@@ -262,7 +262,7 @@ const UserToken: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200"
                 >
                     <div className="flex items-center justify-between mb-2">
                         <div className="p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-md">
@@ -275,7 +275,7 @@ const UserToken: React.FC = () => {
 
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200"
                 >
                     <div className="flex items-center justify-between mb-2">
                         <div className="p-1.5 bg-green-50 dark:bg-green-900/20 rounded-md">
@@ -288,7 +288,7 @@ const UserToken: React.FC = () => {
 
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200"
                 >
                     <div className="flex items-center justify-between mb-2">
                         <div className="p-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-md">
@@ -301,7 +301,7 @@ const UserToken: React.FC = () => {
 
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200"
                 >
                     <div className="flex items-center justify-between mb-2">
                         <div className="p-1.5 bg-orange-50 dark:bg-orange-900/20 rounded-md">
@@ -314,7 +314,7 @@ const UserToken: React.FC = () => {
             </div>
 
             {/* Token List */}
-            <div className="flex-1 overflow-auto bg-white dark:bg-base-100 rounded-2xl shadow-sm border border-gray-100 dark:border-base-200">
+            <div className="flex-1 overflow-auto bg-white dark:bg-base-100 rounded-2xl shadow-xs border border-gray-100 dark:border-base-200">
                 <table className="table table-pin-rows">
                     <thead>
                         <tr className="bg-gray-50/50 dark:bg-base-200/50">
@@ -570,7 +570,7 @@ const UserToken: React.FC = () => {
                                 {t('common.cancel', { defaultValue: 'Cancel' })}
                             </button>
                             <button
-                                className={`px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-all shadow-sm shadow-blue-500/20 flex items-center gap-2 ${creating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-all shadow-xs shadow-blue-500/20 flex items-center gap-2 ${creating ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 onClick={handleCreate}
                                 disabled={creating}
                             >
@@ -660,7 +660,7 @@ const UserToken: React.FC = () => {
                                 {t('common.cancel', { defaultValue: 'Cancel' })}
                             </button>
                             <button
-                                className={`px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-all shadow-sm shadow-blue-500/20 flex items-center gap-2 ${updating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-all shadow-xs shadow-blue-500/20 flex items-center gap-2 ${updating ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 onClick={handleUpdate}
                                 disabled={updating}
                             >

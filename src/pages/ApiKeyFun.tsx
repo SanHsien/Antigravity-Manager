@@ -491,7 +491,7 @@ export const ApiKeyFun: React.FC = () => {
 
                 <div className="flex flex-col md:flex-row items-center md:items-center gap-5 text-center md:text-left z-10 w-full md:w-auto">
                     {/* Branded Logo Box */}
-                    <div className="w-14 h-14 md:w-16 md:h-16 bg-white dark:bg-base-100 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.15)] dark:shadow-[0_0_25px_rgba(59,130,246,0.3)] border border-blue-100 dark:border-blue-900/50 flex-shrink-0 select-none transform transition-transform duration-300 hover:scale-105">
+                    <div className="w-14 h-14 md:w-16 md:h-16 bg-white dark:bg-base-100 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.15)] dark:shadow-[0_0_25px_rgba(59,130,246,0.3)] border border-blue-100 dark:border-blue-900/50 shrink-0 select-none transform transition-transform duration-300 hover:scale-105">
                         <span className="text-xl md:text-2xl font-bold text-[#e05220] font-sans">
                             {"{AK}"}
                         </span>
@@ -517,7 +517,7 @@ export const ApiKeyFun: React.FC = () => {
                     href="https://apikey.fan/register?aff=AntManager"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="bg-white hover:bg-blue-50 dark:bg-base-200 dark:hover:bg-base-300 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-md shadow-blue-500/10 dark:shadow-none flex-shrink-0 hover:scale-[1.02] active:scale-[0.98] duration-200 z-10"
+                    className="bg-white hover:bg-blue-50 dark:bg-base-200 dark:hover:bg-base-300 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-md shadow-blue-500/10 dark:shadow-none shrink-0 hover:scale-[1.02] active:scale-[0.98] duration-200 z-10"
                 >
                     <ExternalLink size={16} className="text-blue-500 dark:text-blue-400" />
                     <span>{t('apiKeyFun.viewNow', { defaultValue: '立即查看' })}</span>
@@ -529,9 +529,9 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Remaining */}
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
                 >
-                    <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-xl flex-shrink-0 text-green-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
+                    <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-xl shrink-0 text-green-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
                         <Coins className="w-5 h-5" />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -547,9 +547,9 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Used */}
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
                 >
-                    <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-xl flex-shrink-0 text-blue-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-xl shrink-0 text-blue-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
                         <DollarSign className="w-5 h-5" />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -565,9 +565,9 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Today Requests */}
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
                 >
-                    <div className="p-3 bg-orange-50 dark:bg-orange-950/20 rounded-xl flex-shrink-0 text-orange-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
+                    <div className="p-3 bg-orange-50 dark:bg-orange-950/20 rounded-xl shrink-0 text-orange-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
                         <Flame className="w-5 h-5" />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -583,9 +583,9 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Today Tokens */}
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
                 >
-                    <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-xl flex-shrink-0 text-purple-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
+                    <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-xl shrink-0 text-purple-500 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
                         <Cpu className="w-5 h-5" />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -601,9 +601,9 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Total Requests */}
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
                 >
-                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 rounded-xl flex-shrink-0 text-indigo-500 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 rounded-xl shrink-0 text-indigo-500 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
                         <TrendingUp className="w-5 h-5" />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -619,9 +619,9 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Total Tokens */}
                 <motion.div
                     whileHover={{ y: -2 }}
-                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
+                    className="bg-white dark:bg-base-100 rounded-xl p-4 shadow-xs border border-gray-100 dark:border-base-200 flex flex-row items-center gap-3.5 transition-all duration-300 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900/30 group"
                 >
-                    <div className="p-3 bg-pink-50 dark:bg-pink-950/20 rounded-xl flex-shrink-0 text-pink-500 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
+                    <div className="p-3 bg-pink-50 dark:bg-pink-950/20 rounded-xl shrink-0 text-pink-500 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
                         <Hash className="w-5 h-5" />
                     </div>
                     <div className="flex flex-col min-w-0">
@@ -639,7 +639,7 @@ export const ApiKeyFun: React.FC = () => {
             <div className="grid grid-cols-1 xl:grid-cols-12 lg:grid-cols-12 gap-6 items-start mt-2 pb-8">
                 
                 {/* Left Sidebar: Saved Keys List */}
-                <div className="xl:col-span-4 lg:col-span-4 bg-white dark:bg-base-100 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-base-200 sticky top-5">
+                <div className="xl:col-span-4 lg:col-span-4 bg-white dark:bg-base-100 rounded-xl p-5 shadow-xs border border-gray-100 dark:border-base-200 sticky top-5">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
                         <Settings size={18} className="text-blue-500" />
                         {t('apiKeyFun.keyManager.title', { defaultValue: 'Key Management' })}
@@ -662,7 +662,7 @@ export const ApiKeyFun: React.FC = () => {
                                     onClick={() => !isEditing && handleSelectKey(item)}
                                     className={`p-4 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group ${
                                         isActive
-                                            ? 'border-blue-500 bg-blue-50/40 dark:bg-blue-500/10 shadow-sm shadow-blue-500/10'
+                                            ? 'border-blue-500 bg-blue-50/40 dark:bg-blue-500/10 shadow-xs shadow-blue-500/10'
                                             : 'border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 bg-white dark:bg-white/[0.02]'
                                     }`}
                                 >
@@ -754,7 +754,7 @@ export const ApiKeyFun: React.FC = () => {
                                                     aria-busy={isThisKeySyncing}
                                                     aria-disabled={Boolean(syncingKey) || (isActiveKey && querying)}
                                                     tabIndex={0}
-                                                    className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none rounded focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                                    className="flex items-center gap-1.5 min-w-0 cursor-pointer select-none rounded focus:outline-hidden focus:ring-1 focus:ring-teal-500"
                                                     onClick={() => handleToggleOpenCodeProfile(item.key, effectiveUrl, currentModels)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter' || e.key === ' ') {
@@ -820,7 +820,7 @@ export const ApiKeyFun: React.FC = () => {
                 {/* Right Main Panel: Query and Models */}
                 <div className="xl:col-span-8 lg:col-span-8 space-y-6">
                     {/* Query Form */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-base-200">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-5 shadow-xs border border-gray-100 dark:border-base-200">
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                             <Activity size={18} className="text-blue-500" />
                             {t('apiKeyFun.queryTitle', { defaultValue: 'Key Quota Query' })}
@@ -835,7 +835,7 @@ export const ApiKeyFun: React.FC = () => {
                                     <div className="relative">
                                         <input
                                             type={showApiKey ? 'text' : 'password'}
-                                            className="w-full h-14 pl-5 pr-36 font-mono text-sm bg-slate-50 dark:bg-black/20 border-2 border-slate-200 dark:border-white/10 rounded-2xl focus:bg-white dark:focus:bg-black/40 focus:border-blue-500 dark:focus:border-blue-500/80 focus:ring-4 focus:ring-blue-500/20 dark:focus:ring-blue-500/10 transition-all shadow-sm outline-none text-gray-800 dark:text-gray-200 placeholder-slate-400 dark:placeholder-gray-600"
+                                            className="w-full h-14 pl-5 pr-36 font-mono text-sm bg-slate-50 dark:bg-black/20 border-2 border-slate-200 dark:border-white/10 rounded-2xl focus:bg-white dark:focus:bg-black/40 focus:border-blue-500 dark:focus:border-blue-500/80 focus:ring-4 focus:ring-blue-500/20 dark:focus:ring-blue-500/10 transition-all shadow-xs outline-hidden text-gray-800 dark:text-gray-200 placeholder-slate-400 dark:placeholder-gray-600"
                                             placeholder={t('apiKeyFun.apiKeyPlaceholder', { defaultValue: 'Paste your API Key...' })}
                                             value={apiKey}
                                             onChange={e => handleApiKeyChange(e.target.value)}
@@ -864,7 +864,7 @@ export const ApiKeyFun: React.FC = () => {
                                             </button>
                                             <div className="w-px h-5 bg-slate-200 dark:bg-white/10 mx-1"></div>
                                             <button
-                                                className="p-2 rounded-xl bg-white dark:bg-white/5 hover:bg-blue-50 dark:hover:bg-blue-500/20 text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all border border-slate-200 dark:border-white/5 shadow-sm"
+                                                className="p-2 rounded-xl bg-white dark:bg-white/5 hover:bg-blue-50 dark:hover:bg-blue-500/20 text-slate-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all border border-slate-200 dark:border-white/5 shadow-xs"
                                                 onClick={() => handleCopy(apiKey)}
                                                 disabled={!apiKey}
                                                 title="Copy"
@@ -887,14 +887,14 @@ export const ApiKeyFun: React.FC = () => {
                             </div>
                             
                             {/* Premium CLI Actions Banner */}
-                            <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-blue-50/80 to-purple-50/80 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-500/20 shadow-sm relative overflow-hidden group/banner transition-all hover:shadow-md">
+                            <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-blue-50/80 to-purple-50/80 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-500/20 shadow-xs relative overflow-hidden group/banner transition-all hover:shadow-md">
                                 {/* Subtle Background Effect */}
                                 <div className="absolute -right-6 -top-6 text-purple-500/10 dark:text-purple-400/5 rotate-12 transition-transform group-hover/banner:rotate-45 duration-700">
                                     <Wand2 size={80} />
                                 </div>
                                 
                                 <div className="flex items-center gap-3 z-10 mb-3 sm:mb-0">
-                                    <div className="p-2 rounded-lg bg-base-100/80 shadow-sm border border-base-300 backdrop-blur-sm">
+                                    <div className="p-2 rounded-lg bg-base-100/80 shadow-xs border border-base-300 backdrop-blur-sm">
                                         <Zap size={16} className="text-amber-500" />
                                     </div>
                                     <div className="flex flex-col">
@@ -1005,7 +1005,7 @@ export const ApiKeyFun: React.FC = () => {
                     </div>
 
                     {/* Available Models */}
-                    <div className="bg-white dark:bg-base-100 rounded-xl p-5 shadow-sm border border-gray-100 dark:border-base-200">
+                    <div className="bg-white dark:bg-base-100 rounded-xl p-5 shadow-xs border border-gray-100 dark:border-base-200">
                         <h2 className="text-base font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                             <Layers size={16} className="text-blue-500" />
                             {t('apiKeyFun.models.title', { defaultValue: 'Available Models' })}
@@ -1024,7 +1024,7 @@ export const ApiKeyFun: React.FC = () => {
                         ) : (
                             <div className="flex flex-wrap gap-1.5 max-h-[400px] overflow-y-auto pt-2">
                                 {models.map(m => (
-                                    <span key={m} className="px-2.5 py-1 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 text-xs rounded-md border border-gray-200 dark:border-base-300 font-mono hover:bg-gray-100 dark:hover:bg-base-300 transition-colors shadow-sm cursor-default">
+                                    <span key={m} className="px-2.5 py-1 bg-gray-50 dark:bg-base-200 text-gray-700 dark:text-gray-300 text-xs rounded-md border border-gray-200 dark:border-base-300 font-mono hover:bg-gray-100 dark:hover:bg-base-300 transition-colors shadow-xs cursor-default">
                                         {m}
                                     </span>
                                 ))}

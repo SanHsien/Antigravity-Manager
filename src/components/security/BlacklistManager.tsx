@@ -102,7 +102,7 @@ export const BlacklistManager: React.FC<Props> = ({ refreshKey }) => {
             <div className="p-5 border-b border-gray-100 dark:border-base-200 flex items-center gap-4">
                 <button
                     onClick={() => setIsAddOpen(true)}
-                    className="px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-sm border border-gray-200/50 dark:border-base-300"
+                    className="px-4 py-2 bg-white dark:bg-base-100 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-base-200 transition-colors flex items-center gap-2 shadow-xs border border-gray-200/50 dark:border-base-300"
                 >
                     <Plus size={16} /> {t('security.blacklist.add_ip')}
                 </button>
@@ -124,7 +124,7 @@ export const BlacklistManager: React.FC<Props> = ({ refreshKey }) => {
             <div className="flex-1 overflow-auto p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredEntries.map(entry => (
-                        <div key={entry.ip_pattern} className="bg-white dark:bg-base-100 border border-gray-100 dark:border-base-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow relative group">
+                        <div key={entry.ip_pattern} className="bg-white dark:bg-base-100 border border-gray-100 dark:border-base-200 rounded-lg p-4 shadow-xs hover:shadow-md transition-shadow relative group">
                             <div className="flex items-start justify-between mb-2">
                                 <h3 className="font-mono font-bold text-lg">{entry.ip_pattern}</h3>
                                 <button

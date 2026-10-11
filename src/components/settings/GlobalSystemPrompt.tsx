@@ -41,7 +41,7 @@ export default function GlobalSystemPrompt({
                             onChange={(e) => onChange({ ...config, enabled: e.target.checked })}
                             className="sr-only peer"
                         />
-                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:after:border-gray-600 peer-checked:bg-purple-600"></div>
+                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-hidden rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:after:border-gray-600 peer-checked:bg-purple-600"></div>
                     </label>
                 </div>
             </div>
@@ -56,7 +56,7 @@ export default function GlobalSystemPrompt({
                             defaultValue: "输入全局系统提示词...\n例如：你是一位资深的全栈开发工程师，擅长 React 和 Rust。请使用简体中文回复。",
                         })}
                         rows={6}
-                        className="w-full bg-white dark:bg-base-100 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500/20 outline-none transition-all resize-y min-h-[120px]"
+                        className="w-full bg-white dark:bg-base-100 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-purple-500/20 outline-hidden transition-all resize-y min-h-[120px]"
                     />
                     <div className="flex items-center justify-between">
                         <p className="text-xs text-gray-400 dark:text-gray-500">

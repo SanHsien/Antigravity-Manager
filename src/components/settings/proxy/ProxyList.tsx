@@ -162,12 +162,12 @@ export default function ProxyList({ proxies, onUpdate, accountBindings, accounts
                                             <div className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-tighter border transition-all duration-300 ${!proxy.enabled
                                                 ? 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
                                                 : proxy.latency !== undefined && proxy.latency !== null
-                                                    ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50 shadow-sm'
+                                                    ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50 shadow-xs'
                                                     : isTesting
                                                         ? 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/50 animate-pulse'
                                                         : proxy.is_healthy
                                                             ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50'
-                                                            : 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800/50 shadow-sm'
+                                                            : 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800/50 shadow-xs'
                                                 }`}>
                                                 {!proxy.enabled
                                                     ? t('settings.proxy_pool.status.inactive', 'Inactive')

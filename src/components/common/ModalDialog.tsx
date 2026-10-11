@@ -69,7 +69,7 @@ export default function ModalDialog({
 
             <div className="modal-box relative max-w-sm bg-white dark:bg-base-100 shadow-2xl rounded-2xl p-0 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex flex-col items-center text-center p-6 pt-8">
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 shadow-sm ${getIconBg()}`}>
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 shadow-xs ${getIconBg()}`}>
                         {getIcon()}
                     </div>
 
@@ -87,7 +87,7 @@ export default function ModalDialog({
                         {showCancel && (
                             <button
                                 disabled={isLoading}
-                                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-base-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-base-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-base-200 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-base-300 transition-colors focus:outline-hidden focus:ring-2 focus:ring-gray-200 dark:focus:ring-base-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                 onClick={onCancel}
                             >
                                 {finalCancelText}
@@ -95,7 +95,7 @@ export default function ModalDialog({
                         )}
                         <button
                             disabled={isLoading}
-                            className={`flex-1 px-4 py-2.5 text-white font-medium rounded-xl shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${isDestructive && type === 'confirm'
+                            className={`flex-1 px-4 py-2.5 text-white font-medium rounded-xl shadow-md transition-all focus:outline-hidden focus:ring-2 focus:ring-offset-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${isDestructive && type === 'confirm'
                                 ? 'bg-red-500 hover:bg-red-600 focus:ring-red-500 shadow-red-100'
                                 : 'bg-blue-500 hover:bg-blue-600 focus:ring-blue-500 shadow-blue-100'
                                 }`}

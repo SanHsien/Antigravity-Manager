@@ -98,14 +98,14 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
 
                     <div className="flex items-center gap-1.5 shrink-0">
                         {isCurrent && (
-                            <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-[10px] font-bold shadow-sm border border-blue-200/50 dark:border-blue-800/50">
+                            <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-[10px] font-bold shadow-xs border border-blue-200/50 dark:border-blue-800/50">
                                 {t('accounts.current').toUpperCase()}
                             </span>
                         )}
 
                         {isDisabled && (
                             <span
-                                className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-rose-200/50"
+                                className="px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 text-[10px] font-bold flex items-center gap-1 shadow-xs border border-rose-200/50"
                                 title={account.disabled_reason || t('accounts.disabled_tooltip')}
                             >
                                 <Ban className="w-2.5 h-2.5" />
@@ -115,7 +115,7 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
 
                         {account.proxy_disabled && (
                             <span
-                                className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-orange-200/50"
+                                className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-[10px] font-bold flex items-center gap-1 shadow-xs border border-orange-200/50"
                                 title={account.proxy_disabled_reason || t('accounts.proxy_disabled_tooltip')}
                             >
                                 <Ban className="w-2.5 h-2.5" />
@@ -124,7 +124,7 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                         )}
 
                         {account.quota?.is_forbidden && (
-                            <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[10px] font-bold flex items-center gap-1 shadow-sm border border-red-200/50" title={t('accounts.forbidden_tooltip')}>
+                            <span className="px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-[10px] font-bold flex items-center gap-1 shadow-xs border border-red-200/50" title={t('accounts.forbidden_tooltip')}>
                                 <Lock className="w-2.5 h-2.5" />
                                 <span>{t('accounts.forbidden')}</span>
                             </span>
@@ -135,21 +135,21 @@ function AccountRow({ account, selected, onSelect, isCurrent, isRefreshing, isSw
                             const tier = getAccountTier(account);
                             if (tier === 'ultra') {
                                 return (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold shadow-sm hover:scale-105 transition-transform cursor-default">
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[10px] font-bold shadow-xs hover:scale-105 transition-transform cursor-default">
                                         <Gem className="w-2.5 h-2.5 fill-current" />
                                         ULTRA
                                     </span>
                                 );
                             } else if (tier === 'pro') {
                                 return (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-sm hover:scale-105 transition-transform cursor-default">
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-xs hover:scale-105 transition-transform cursor-default">
                                         <Diamond className="w-2.5 h-2.5 fill-current" />
                                         PRO
                                     </span>
                                 );
                             } else {
                                 return (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 text-[10px] font-bold shadow-sm border border-gray-200 dark:border-white/10 hover:bg-gray-200 transition-colors cursor-default">
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400 text-[10px] font-bold shadow-xs border border-gray-200 dark:border-white/10 hover:bg-gray-200 transition-colors cursor-default">
                                         <Circle className="w-2.5 h-2.5" />
                                         FREE
                                     </span>

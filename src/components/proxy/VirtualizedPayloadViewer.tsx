@@ -208,9 +208,9 @@ const renderLineContent = (
                     data-card-id={cardId}
                     data-match-index={m.globalIndex}
                     data-active-match={isActive ? 'true' : undefined}
-                    className={`rounded-sm px-0.5 font-bold transition-all duration-150 select-text ${
+                    className={`rounded-xs px-0.5 font-bold transition-all duration-150 select-text ${
                         isActive
-                            ? 'bg-amber-400 text-gray-950 ring-2 ring-amber-500 shadow-sm z-10'
+                            ? 'bg-amber-400 text-gray-950 ring-2 ring-amber-500 shadow-xs z-10'
                             : 'bg-amber-400/40 text-amber-950 dark:text-amber-100'
                     }`}
                 >
@@ -692,7 +692,7 @@ export const VirtualizedPayloadViewer: React.FC<VirtualizedPayloadViewerProps> =
 
     return (
         <div
-            className="payload-viewer-card flex flex-col h-full bg-slate-50/50 dark:bg-base-200 rounded-xl border border-gray-200 dark:border-base-300 overflow-hidden shadow-sm outline-none"
+            className="payload-viewer-card flex flex-col h-full bg-slate-50/50 dark:bg-base-200 rounded-xl border border-gray-200 dark:border-base-300 overflow-hidden shadow-xs outline-hidden"
             tabIndex={-1}
             onKeyDown={(e) => {
                 if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
@@ -912,7 +912,7 @@ export const VirtualizedPayloadViewer: React.FC<VirtualizedPayloadViewerProps> =
                                 <div
                                     key={m.globalIndex}
                                     style={{ top: `${topPct}%` }}
-                                    className={`absolute right-0.5 w-1.5 rounded-sm transition-all ${
+                                    className={`absolute right-0.5 w-1.5 rounded-xs transition-all ${
                                         isActive
                                             ? 'h-2 bg-amber-500 ring-2 ring-amber-300 z-30 shadow'
                                             : 'h-1 bg-amber-400/80 dark:bg-amber-400/70'
@@ -931,7 +931,7 @@ export const VirtualizedPayloadViewer: React.FC<VirtualizedPayloadViewerProps> =
                     <div
                         ref={containerRef}
                         tabIndex={0}
-                        className="h-full overflow-y-auto overflow-x-auto font-mono text-[11px] outline-none focus:ring-1 focus:ring-blue-500/20 select-text payload-viewer-scroll"
+                        className="h-full overflow-y-auto overflow-x-auto font-mono text-[11px] outline-hidden focus:ring-1 focus:ring-blue-500/20 select-text payload-viewer-scroll"
                     >
                         {/* 隐藏的等宽字符基准测量节点 */}
                         <span

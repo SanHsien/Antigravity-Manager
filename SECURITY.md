@@ -45,15 +45,17 @@ Send a filename only in `path`; absolute paths, nested paths and symlinks are re
 Keep this dedicated directory writable only by trusted administrators. Imports open SQLite
 read-only. Desktop file selection remains available without this environment variable.
 
-## 依賴修補與未完成風險（2026-10-09）
+## 依賴修補（2026-10-11）
 
-KaTeX 固定解析至 `0.18.2`，selector parser 至 `7.1.6`；以 npm overrides 修補間接依賴，
-保留現有 Tailwind v3 的 PostCSS 設定。`npm run test:security-dependencies` 驗證
+KaTeX 固定解析至 `0.18.2`，selector parser 至 `7.1.6`；以 npm overrides 修補間接依賴。
+Tailwind 已升至 v4，PostCSS 改用官方 `@tailwindcss/postcss`，並以 CSS `@config`／daisyUI 5
+CSS plugin 保留 baseline 實際使用的 light/dark 預設主題與 base 色票。`npm run test:security-dependencies` 驗證
 KaTeX 預設不繼承污染的 `trust`、正常明確授權連結與 selector 解析相容性，並納入 CI。
 
-`npm audit` 仍有 5 筆 high，均來自同一未修補的
-[braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
-及其 Tailwind v3 間接依賴鏈。GitHub advisory 的 patched version 為空，npm 最新 braces
-仍是受影響的 `3.0.3`。本批不宣稱 audit 歸零，也不 dismiss 或排除告警。
-後續須獨立評估 Tailwind v4 遷移或官方修補；不可只升主套件後留下失效的 PostCSS 設定。
-在此之前，建置僅處理可信任的本機來源，不把 glob／brace pattern 解析暴露給遠端輸入。
+`npm run test:tailwind-regressions` 針對實際編譯 CSS 驗證 dark selector、baseline dark base 色票、原有 v3
+shadow/radius/ring/outline 尺寸相容性、container query 和 important utility；並驗證
+`tailwind-merge` 的 v4 utility 衝突處理。`npm audit --json` 必須在交付時重新執行並保留結果；
+不 dismiss 或排除任何 advisory。
+
+Tailwind v4 的最低瀏覽器要求是 Safari 16.4、Chrome 111、Firefox 128；較舊 WebView／瀏覽器
+不在此升級組合的支援範圍，應保留在 v3.4 或先升級其 WebKit。

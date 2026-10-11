@@ -135,7 +135,7 @@ export default function BatchImportModal({ isOpen, onClose, onImport }: BatchImp
                             {t('settings.proxy_pool.import_hint', 'Supported formats: protocol://user:pass@host:port, host:port:user:pass')}
                         </div>
                         <textarea
-                            className="w-full h-40 px-4 py-3 border border-gray-200 dark:border-base-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-base-200 text-gray-900 dark:text-base-content font-mono text-sm resize-none"
+                            className="w-full h-40 px-4 py-3 border border-gray-200 dark:border-base-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-base-200 text-gray-900 dark:text-base-content font-mono text-sm resize-none"
                             placeholder="http://user:pass@127.0.0.1:8080&#10;127.0.0.1:8080:user:pass"
                             value={rawText}
                             onChange={handleTextChange}
@@ -193,7 +193,7 @@ export default function BatchImportModal({ isOpen, onClose, onImport }: BatchImp
                     <button
                         onClick={handleImport}
                         disabled={preview.length === 0}
-                        className="px-5 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 active:scale-95 text-white font-medium shadow-sm shadow-blue-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="px-5 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 active:scale-95 text-white font-medium shadow-xs shadow-blue-200 dark:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                         <CheckCircle2 size={18} />
                         {t('settings.proxy_pool.import_confirm', 'Import {{count}} Proxies', { count: preview.length })}

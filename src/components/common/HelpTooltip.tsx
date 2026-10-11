@@ -30,7 +30,7 @@ export default function HelpTooltip({
         <span className={`relative inline-flex items-center group ${className || ''}`}>
             <button
                 type="button"
-                className="inline-flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                className="inline-flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
                 aria-label={ariaLabel}
                 onClick={(e) => {
                     e.preventDefault();
