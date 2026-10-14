@@ -326,3 +326,115 @@ fork 的 `src-tauri/src/proxy` 精準搜尋未找到 `ok go on` 或該兩條完�
 | [PR #3644](https://github.com/lbjlaq/Antigravity-Manager/pull/3644) | defer／follow-upstream | OPEN beta，2 檔約 +63，將 Cowork deep compact 的 immunity／scan 閾值調整為 60／5。fork 沒有對應 compact detector 常數與 RFC state machine，孤立移植只會引入不可驗證的行為差異。 |
 
 水位更新為 PR 至 `#3644`、issue 至 `#3639`，只表示每項已讀說明、相關 diff 與 fork 對照後作出採用判定；**不表示這些上游程式碼已合併、已修復或通過 fork runtime 驗收。**
+
+### 11. Dependency freshness major deferrals 與 Action patch（2026-10-11）
+
+本輪針對 freshness report 的十個過期 major deferral，讀取各發布者的 registry metadata／release notes及 fork 實際引用；只更新有到期點的治理紀錄，沒有變更產品依賴或 Rust runtime。全部十項的 major migration 風險仍成立：
+
+| 項目 | 最新審查版本與來源 | fork 對照與判定 | 下次重查條件 |
+| --- | --- | --- | --- |
+| `@lobehub/ui` | [`5.57.3`](https://www.npmjs.com/package/@lobehub/ui/v/5.57.3) | v5 要求 Node `>=22.22` 與 `antd ^6.1.1`，但 fork CI 是 Node 20、直接使用 antd 5；defer。 | 核准 Node/antd 協同遷移後，build 與 light/dark UI 驗收。 |
+| `@vitejs/plugin-react` | [`6.1.2`](https://github.com/vitejs/vite-plugin-react/releases/tag/plugin-react%406.1.2) | v6 peer 為 Vite `^8`；defer，不能與 Vite 8/Rolldown toolchain 分拆。 | 與 Vite 8 一併遷移並 clean-install build。 |
+| `framer-motion` | [Motion upgrade guide](https://motion.dev/docs/react-upgrade-guide)／`14.1.0` | 11→14 跨越 v12 render scheduling 與 v13 Emotion prop-filtering；fork 有 animated modal/mini/debug UI 及 Emotion 相依；defer。 | 動畫互動與 accessibility focused regression。 |
+| `i18next` | [`26.4.3`](https://github.com/i18next/i18next/releases/tag/v26.4.3) | `react-i18next` 17 同時將 peer floor 提至 `>=26.2`；fork 的初始化與全部 locale type surface 必須配對驗證；defer。 | 與 `react-i18next` 升級、typecheck、切換語言驗收。 |
+| `lucide-react` | [Lucide v1 guide](https://lucide.dev/guide/version-1)／`1.55.0` | v1 移除品牌圖示並將裝飾圖示預設 `aria-hidden`；fork 59 個檔案引用 icons，屬可見及可及性行為面；defer。 | 全部 import audit，加上鍵盤／螢幕閱讀器驗收。 |
+| `react-i18next` | [`17.0.16`](https://www.npmjs.com/package/react-i18next/v/17.0.16) | v17 peer 需要 i18next `>=26.2`；不能單獨升級；defer。 | 與 i18next 26 同批驗證。 |
+| `vite` | [`8.3.4`](https://github.com/vitejs/vite/releases/tag/v8.3.4) | v8 引入 Rolldown toolchain dependency，且 React plugin v6 peer 為 Vite 8；defer。 | Vite/plugin-react 協同遷移、clean-install frontend build。 |
+| `toml` | [`1.1.8+spec-1.1.0`](https://crates.io/crates/toml/1.1.8%2Bspec-1.1.0) | TOML 1.1 新增 inline-table、escape、datetime parse 語意；defer，避免未驗證地改寫設定解析。 | 與 `toml_edit` 升級、managed-config fixtures、完整 Tauri build。 |
+| `toml_edit` | [`0.25.17+spec-1.1.0`](https://crates.io/crates/toml_edit/0.25.17%2Bspec-1.1.0) | `cli_sync.rs` 直接用 `DocumentMut`/`Item` 改寫 CLI TOML；格式保留與 parser 行為需要驗證；defer。 | 與 `toml` 升級、preservation fixtures、完整 Tauri build。 |
+| `windows` | [`0.62.2`](https://crates.io/crates/windows/0.62.2) | 0.x minor 為 major-series；fork 直接使用 Windows shortcut/COM bindings；defer。 | Windows shortcut test 與 Windows Tauri debug/signed build。 |
+
+Actions 的官方 release notes已覆核；維護候選已準備上述不可變 SHA，尚待獨立維護 PR 合併，未在 owner main 採用。本輪更新的 Action `uses:` 都維持不可變 commit SHA 與版本註解，沒有轉為 floating tag；release workflow 沒有被執行。
+
+### 12. 新增 upstream beta／issue 逐項審查（2026-10-11）
+
+已讀取下列五個 OPEN beta PR 的說明與實際 diff，以及 [Issue #3648](https://github.com/lbjlaq/Antigravity-Manager/issues/3648)；並對照 fork 的相應模組。這一輪只更新治理水位，**沒有移植上游程式碼或變更產品 runtime**；release／commit 基線維持 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 diff、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3645](https://github.com/lbjlaq/Antigravity-Manager/pull/3645) | defer／follow-upstream | 對 `token_manager.rs` 加入 weekly reset 欄位、24 小時 EDF 優先權與約 344 行排程變更。fork 有 model quota／reset 排程，但沒有此週期資料契約或對應測試；這會改變帳號選擇與限流行為，須以遮罩 quota fixture 與 scheduler 時序測試整批驗證，不能片段採用。 |
+| [PR #3646](https://github.com/lbjlaq/Antigravity-Manager/pull/3646) | defer／follow-upstream | 對 `model_mapping.rs` 正規化 Claude Pro tier alias 至 Gemini 上游 ID。fork 有同一 mapping surface，但 custom mapping、實體 upstream ID 與 provider alias 的優先順序相依；上游 PR 仍 OPEN 且未有 fork 的問題請求重現，待以 alias matrix／實際 provider error fixture 驗證後再決定。 |
+| [PR #3647](https://github.com/lbjlaq/Antigravity-Manager/pull/3647) | not-applicable | 將 Cowork compact 的免疫 lease／掃描深度改為 90 秒／五則，連同 README。fork 沒有相同 Cowork compact detector state machine；單獨加入常數不會修到既有路徑，且屬 beta 行為調校，不擴大功能面。 |
+| [PR #3649](https://github.com/lbjlaq/Antigravity-Manager/pull/3649) | 需獨立產品安全修補；本批未採用 | 上游只把 Gemini 空輪次 fallback 改為惰性 `.`。fork `src-tauri/src/proxy/mappers/common_utils.rs` 的 `TRANSIT_DEFENSE_FALLBACK_TEXT = "Please continue your analysis."` 仍被 `ensure_gemini_payload_ends_with_user` 注入空／末尾 model／空 user turn，並由 Claude、Gemini、OpenAI handlers 呼叫；這是已確認的合成 user 指令面，不能視為操作者授權。後續應在獨立產品變更以隔離 payload fixture 驗證惰性填補、協定合法性與 Agent confirmation 狀態，再採用最小修補。 |
+| [Issue #3648](https://github.com/lbjlaq/Antigravity-Manager/issues/3648) | needs fork reproduction／follow-upstream | 回報上游忽略 `thinkingBudget=4000` 而產生約 82k thought tokens。fork `mappers/gemini/wrapper.rs` 確會讀／注入 `thinkingBudget`，但目前只使 request 的 `maxOutputTokens > thinkingBudget` 並依模型 static cap 限制 request；沒有 provider response thought-token 計數或 stream cutoff。這證實同類成本風險可達，但沒有 fork 帳號 telemetry／response payload，不能宣稱已重現或安全地中止 stream；後續需以可重現的 provider 回應 fixture 定義計數、終止與錯誤語意。 |
+| [PR #3650](https://github.com/lbjlaq/Antigravity-Manager/pull/3650) | defer／follow-upstream | 調整 Claude Code session 的 usage scaling 與 95% compact probe，改動 handler compact／quota 路徑。fork 有自己的 thinking/compact 與 quota 行為，沒有對應帳號 session 的 usage data；直接套用可能改變自動壓縮與用量判斷，待上游收斂及隔離 compact regression 後評估。 |
+
+PR 水位提升至 `#3650`、issue 水位提升至 `#3648`；release／commit 水位不變。水位只表示已逐項讀取、對照與作出決策，**不表示 OPEN beta 已採用、fork runtime 已修復，或 #3649 的產品安全修補已完成。**
+
+### 13. Dependency freshness 六項重審（2026-10-13）
+
+本輪只處理 freshness report 的六個到期項目。已讀取官方 registry/crates metadata、相容性文件與 fork 實際引用；**沒有調高相依版本、修改 lockfile、Cargo 或產品碼**。下列 `deferredLatest` 均精準更新至本輪檢查版本，下一個更新版本會再次要求實質重審。
+
+| 項目 | 官方來源與 fork 對照 | 判定與下一步 |
+| --- | --- | --- |
+| [`@lobehub/ui` 5.62.1](https://www.npmjs.com/package/@lobehub/ui/v/5.62.1) | registry metadata 要求 Node `>=22.22.0`、`antd ^6.1.1`；fork 有五個檔案直接 import `@lobehub/icons`，且 `npm ls` 顯示目前 `@lobehub/icons` 的 UI v5 peer 與 resolved UI v4 不相容。 | defer；不是單純延後。應獨立決定移除未直接 import 的 UI package/lockfile，或做 Node、UI、antd、icons 的協同遷移，再 clean-install、build 與 light/dark 驗收。 |
+| [`antd` 6.6.6](https://ant.design/docs/react/migration-v6/) | 官方 v6 指南要求 `@ant-design/icons >=6`，並列出 CSS variables、DOM 與 component API 調整；fork 直接宣告 antd/icons v5，且是上述 Lobe peer topology 的一部分。 | defer；不得把 antd 單獨升到 v6。與 Lobe cleanup 或 antd/icons v6 協同工作一併做，包含 clean install 和視覺驗收。 |
+| [`framer-motion` 14.2.0](https://motion.dev/docs/react-upgrade-guide) | 2026-10-13 補查 14.2.0 metadata；fork 在 DebugConsole、MiniView、ApiKeyFun、UserToken 有直接 import。官方升級指南指出 v13 對 Emotion prop filtering 需顯式注入，v14 則收緊內部相依版本配對。 | defer；14.2.0 沒有消除 major migration 風險。日後以互動動畫、prop forwarding 與 accessibility regression 覆核。 |
+| [`i18next` 26.4.4](https://www.i18next.com/misc/migration-guide) | fork 在 `src/i18n.ts` 初始化並在多個畫面切換語言；目前 `react-i18next` v16（宣告 `^16.5.0`；lock `16.5.4`）peer 是 i18next `>=25.6.2`，並不強制 v17。 | defer；改正先前錯誤的 paired-v17 敘述。這是獨立 core major migration，需 typecheck/build 與語言切換驗收。 |
+| [`lucide-react` 1.56.0](https://lucide.dev/guide/version-1) | fork 有 59 個直接 import；官方 v1 移除 brand icons，且預設 `aria-hidden`。 | defer；仍須完整 import audit 及鍵盤／螢幕閱讀器驗收，不能因 patch 更新而跳過 v0→v1 影響。 |
+| [`sha2` 0.11.1](https://docs.rs/crate/sha2/0.11.1) | crates metadata 為 digest `0.11`、Rust `1.88`、edition `2024`；fork 在 crypto、cache、session、schema、thinking-store 路徑使用 SHA-256。 | defer；hash 輸出屬 runtime/persistent identifier 行為，須以 coordinated Cargo update、hash-stability fixture 與 Windows Tauri build 驗證，不能只為 freshness 調高版本。 |
+
+本輪的 package/lockfile、Node、Cargo 與產品 runtime 工作均超出本次治理檔 ownership，應另立工作；本紀錄不把 deferral 當成已完成的遷移或相容性承諾。
+
+### 14. 新增 upstream beta／issue 批次審查（2026-10-14）
+
+本輪逐一讀取下列九個 PR 的 metadata、完整 diff 與檔案清單，並讀取兩個可存取 issue；各原始輸入保存在本次 checkpoint `upstream-3651-3663`。沒有移植上游程式碼、調整產品、manifest、workflow 或 checker。release／commit 基線仍為 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3651](https://github.com/lbjlaq/Antigravity-Manager/pull/3651) | reject | 已關閉未合併、目標 beta，實際跨 20 檔 `+1535/-73`：混合 HTTP API validation 欄位、帳號／device storage、CLI sync、handler、token manager、測試及其他 proxy 功能。這不是可獨立採用的 #3630／#3631 修補；fork 的 API 欄位與 validation 清理若要處理，須另以最小 API serialization／狀態轉換 fixture 審查。 |
+| [PR #3652](https://github.com/lbjlaq/Antigravity-Manager/pull/3652) | defer | 已合併 beta，4 個 pipeline／mapper／model-spec／token-manager 檔 `+149/-35`，實際含 safety category 過濾、Claude tool sentinel、shell alias 與 Pro output cap。它改變安全分類與工具協定，不以 upstream 測試代替 fork payload fixture；待 release 與隔離 request/response regression 後再評估。 |
+| [PR #3655](https://github.com/lbjlaq/Antigravity-Manager/pull/3655) | reject | 已關閉未合併，只改 `AccountCard`／`AccountTable` 的 weekly quota pill 排版（2 檔 `+82/-39`）。沒有 fork bug 或可驗收需求，不擴大自有 UI。 |
+| [PR #3656](https://github.com/lbjlaq/Antigravity-Manager/pull/3656) | reject | 已關閉未合併，68 檔 `+6160/-1578` 同時重寫帳號排程、proxy handlers、token stats、設定、UI、README 與 scripts。minute stats 與 multi-agent spillover 不是小修補，且與 #3662／#3663 重疊；不可片段採用。 |
+| [PR #3657](https://github.com/lbjlaq/Antigravity-Manager/pull/3657) | defer | 已關閉未合併，5 個 Rust 模組 `+303/-36`，加入跨 quota／project resolver／proxy pool 共用的 endpoint health tracker，並改動 `loadCodeAssist` 與 quota timeout／retry 次序。fork 有相近路徑，但沒有 provider timing、重試與帳號池 fixture；先保留 upstream 追蹤。 |
+| [PR #3658](https://github.com/lbjlaq/Antigravity-Manager/pull/3658) | reject | 已關閉未合併，11 檔 `+174/-14` 把實際 upstream model 寫入 proxy DB、三個 handler、warmup、monitor 與 UI。這是監控功能擴張（對應 #3654），沒有 fork 產品需求；也不能在未定義 log retention／隱私語意下新增持久化欄位。 |
+| [PR #3660](https://github.com/lbjlaq/Antigravity-Manager/pull/3660) | defer／獨立 security follow-up | 已關閉未合併，3 檔 `+70/-5` 以 `ConnectInfo` 嚴格判定 TCP loopback、拒絕偽造 forwarded header，並在停服時只放行 loopback `/internal/`。fork 靜態確認現有 auth 與 service-status 都無條件放行 `/internal/`，而 local warmup 本身呼叫 `127.0.0.1`；缺陷已確認但**尚未修復**。後續必須獨立以外部／偽造 header／IPv4、IPv6、mapped loopback／停服 fixture 驗證最小修補。 |
+| [PR #3662](https://github.com/lbjlaq/Antigravity-Manager/pull/3662) | defer | 已合併 beta，9 檔 `+346/-18` 在三個 handler 與 token manager 引入 in-flight guard、priority spillover 與 `max_spillover_accounts`。這會改變帳號選擇、公平性與配額消耗；fork 現有排程不可直接疊加，待有 account-pool 時序 fixture 再評估。 |
+| [PR #3663](https://github.com/lbjlaq/Antigravity-Manager/pull/3663) | defer | 已合併 beta，8 檔 `+264/-6` 新增 minute bucket 統計 query、Tauri commands 與 token-stats UI。fork 已有 hourly/daily/weekly 統計；新增 minute-level 儲存／查詢與本地時區語意是產品與資料契約變更，沒有本輪需求或 migration 驗收。 |
+| [Issue #3654](https://github.com/lbjlaq/Antigravity-Manager/issues/3654) | reject | 僅請求顯示實際路由模型名稱，對應 #3658 的持久化／monitor 功能，沒有 fork 驗收需求；不因單一請求新增 proxy log 資料面。 |
+| [Issue #3659](https://github.com/lbjlaq/Antigravity-Manager/issues/3659) | defer／獨立 security follow-up | 回報非 loopback `/internal/warmup` 無鑑權與停服仍可達。已用 fork 現行 auth、service-status、server `ConnectInfo` 與 local warmup 呼叫作靜態對照，確認根因；不把 #3660 視為已採用或已修。 |
+| [Issue #3661](https://github.com/lbjlaq/Antigravity-Manager/issues/3661) | reject／無可審 delta | GitHub REST 精準讀取 `issues/3661` 回覆 404，且同次 `gh issue list --state all` 的 `#3651+` 清單只有 #3654、#3659、#3665；目前沒有可讀 issue 內容或 diff。此編號保留為不存在／已刪除的水位缺口，不虛構議題或修補。 |
+
+PR 水位提升至 `#3663`，issue 水位提升至 `#3661`，只表示上述範圍已有逐項結論；release／commit 基線不變。執行 strict checker 時另發現 **PR #3664** 與 **Issue #3665**，兩項不在本批授權範圍，故本輪不審、不提高水位跨過它們，也不宣稱 upstream gate 已清除。
+
+### 15. 剩餘 upstream gate 審查（2026-10-14）
+
+本輪只處理前一批 focused strict checker 列出的 [PR #3664](https://github.com/lbjlaq/Antigravity-Manager/pull/3664) 與 [Issue #3665](https://github.com/lbjlaq/Antigravity-Manager/issues/3665)。已讀取 PR metadata、五檔完整 diff 與 issue 原文；原始輸入保存在 checkpoint `upstream-3664-3665`。沒有移植上游程式碼或改動產品／checker／workflow。release／commit 基線仍為 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3664](https://github.com/lbjlaq/Antigravity-Manager/pull/3664) | defer | 已合併 beta，5 個 Rust 檔 `+253/-46`：切號 fallback 再寫憑據、保留大小寫 restart args、OpenAI 429 fast mark、`QuotaExhausted` 後即時將 `model_quotas` 設為 0，及 optimistic reset 保留未到期的 quota lock。fork 已有 `credentials_applied`、`mark_rate_limited_fast`、`QuotaExhausted` 與 `clear_for_optimistic_reset` 相鄰路徑，表示風險相關；但切號重啟、帳號池選擇、quota 快取與鎖定期限具相依時序，且沒有 fork account-pool／provider fixture 或 Windows Rust runtime 驗證，不能片段採用。後續須獨立以 cold-restart、大小寫 workspace、429 重選、quota-zero 與 reset-time fixture 評估。 |
+| [Issue #3665](https://github.com/lbjlaq/Antigravity-Manager/issues/3665) | reject | 只有「Gemini4」請求，無描述、模型 ID、provider capability、錯誤 payload 或預期路由契約。fork 的 generic Gemini flash 規則已涵蓋部分 4.x 名稱判定，但這不能證明真實 upstream model 可用、thinking／quota／fallback 語意正確；不因無規格請求擴張 model mapping。 |
+
+PR 水位提升至 `#3664`，issue 水位提升至 `#3665`；只表示兩項已讀取並有結論，release／commit 基線不變，亦不表示 #3664 已採用或 fork runtime 已修復。
+
+### 16. Dependency freshness：兩個新 release 重評（2026-10-14）
+
+root freshness run 只列出這兩個新 release。本輪讀取官方 metadata 與有界 tag diff；此紀錄**不宣稱**任一 patch release 已在本 fork 完成相容性驗證。
+
+| 套件 | 已讀證據 | 判定與明確重查條件 |
+| --- | --- | --- |
+| `@lobehub/ui` 5.64.2 | [npm 5.62.1](https://registry.npmjs.org/@lobehub/ui/5.62.1) 與 [npm 5.64.2](https://registry.npmjs.org/@lobehub/ui/5.64.2) 都要求 Node `>=22.22.0`、`antd ^6.1.1`、`@lobehub/icons ^5`、React 19 與 Motion 12。官方 [v5.62.1...v5.64.2 compare](https://github.com/lobehub/lobe-ui/compare/v5.62.1...v5.64.2) 為 19 commits／107 files，包含 DatePicker、theme 與 layout 變更。fork 仍直接宣告 antd v5、resolved UI 4.34.1、有既有 icon/UI peer mismatch，且 CI 為 Node 20。 | **defer**，reviewed watermark 前進至 5.64.2。僅在核准 package/lockfile cleanup，或完成 Node／antd／icons／UI 協同遷移後，以 clean install、frontend build 及 light/dark UI acceptance 重查。 |
+| `lucide-react` 1.57.0 | [npm 1.56.0](https://registry.npmjs.org/lucide-react/1.56.0) 與 [npm 1.57.0](https://registry.npmjs.org/lucide-react/1.57.0) 的 React peer range 相同。官方 [1.56.0...1.57.0 compare](https://github.com/lucide-icons/lucide/compare/1.56.0...1.57.0) 為 12 commits／35 files，主要是新增 icon assets 與 versioning，並未驗證本 fork 獨立的 0.561.0-to-v1 migration；有界 source audit 為 59 個 `lucide-react` use sites。 | **defer**，reviewed watermark 前進至 1.57.0。既有 v1 accessibility-default／brand-icon-removal 風險仍需在核准 v1 migration 後，以完整 import audit、keyboard 與 screen-reader acceptance 重查。 |
+
+### 17. 最終 maintenance gate 的兩項新增 delta（2026-10-15）
+
+本輪只處理 root final run 列出的 [PR #3666](https://github.com/lbjlaq/Antigravity-Manager/pull/3666) 與 i18next 26.4.5；原始官方輸入、完整 PR diff、fork 對照與命令紀錄保存在 checkpoint `maintenance-two-deltas-20261015`。沒有採用上游產品 patch、變更 manifest／lockfile／workflow／checker，release／commit 基線維持 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [`i18next` 26.4.5](https://www.npmjs.com/package/i18next/v/26.4.5) | defer | 官方 [v26.4.5 release](https://github.com/i18next/i18next/releases/tag/v26.4.5) 修正 `hasLoadedNamespace(ns, { lng })` 對 resolved／unsupported language code 的 readiness：否則 react-i18next 的 `useTranslation(ns, { lng })` 可能永遠不 ready，造成 Suspense retry／SSR 卡住。這是實質上游修正，但 fork 目前是內嵌本地 resources aliases、未設定 `supportedLngs`，且 source 沒有帶 `lng` 的 `useTranslation` 呼叫，不能把它當作已驗證的 v26 採用理由。v26 仍會影響 locale 初始化、型別與切換；現有 react-i18next 16 peer `>=25.6.2` 並不強制 v17。僅於獨立 core migration 進行 typecheck／build 與 language-switch acceptance 時重查。 |
+| [PR #3666](https://github.com/lbjlaq/Antigravity-Manager/pull/3666) | defer | 已合併 beta，5 個 Rust 檔 `+302/-100`：對低於 10% quota 的 EDF／P2C 候選移除 imminent-reset 提權、將 proxy toggle 改為帳號檔與 `accounts.json` index 的 locked 同步，並在已輸出內容後的 upstream error／idle timeout 以 Claude terminal triad 結束串流。fork 的 token manager 也有 quota／reset 排序及 P2C；command 仍直接寫 account 檔，雖已有可同步 index 的 `modules::account::toggle_proxy_status`；但 fork 沒有相同 `stream_lifecycle.rs`，Claude mapper 有不同的 thinking-without-content recovery。直接摘取會同時改變帳號公平性、持久化原子性與跨協定 client stream 語意。後續僅能在獨立產品候選，以低 quota/reset EDF-P2C、account/index atomicity、content/tool-after-error 與 idle-timeout 的 protocol fixtures 評估。 |
+
+PR 水位提升至 `#3666`；issue 水位仍為 `#3665`，release／commit 基線不變。水位只表示完整 diff 與 fork 對照已作出結論，**不表示 #3666 已採用、i18next v26 已遷移或 runtime 已驗證。**
+
+### 18. Full gate 新增 upstream PR #3667／#3668（2026-10-15）
+
+本輪只處理 root final Full 列出的 [PR #3667](https://github.com/lbjlaq/Antigravity-Manager/pull/3667) 與 [PR #3668](https://github.com/lbjlaq/Antigravity-Manager/pull/3668)。兩項的 metadata、完整 diff、檔案清單與 fork 對照保存在 checkpoint `upstream-3667-3668-20261015`。兩項都是已關閉、未合併的 beta 變更；沒有採用產品 patch、改動 runtime／manifest／workflow／checker，issue／release／commit 基線維持不變。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3667](https://github.com/lbjlaq/Antigravity-Manager/pull/3667) | defer／獨立 cost-safety 候選 | 已關閉未合併，9 個 Rust 檔 `+388/-17`：新增 thinking-budget runaway circuit breaker、thought-token 增量累計、Claude/OpenAI budget 傳遞與通用 `stream_lifecycle` 熔斷。fork 已有全域 thinking-budget config、model-spec budget 解析與 request 注入，且 #3648 已確認 provider 可能無視 budget；但 fork 沒有相同 lifecycle 驅動器，現有 #3648 紀錄也沒有 provider response thought-token 計數或安全 cutoff 語意。不能以文字長度估算、閾值預設或 upstream beta 測試直接改寫本 fork。後續需獨立以遮罩 provider stream fixture 驗證累積 thought-token、閾值／budget 邊界、純 thinking 中止、content/tool 後豁免、帳號 quota 成本與各協定錯誤語意。 |
+| [PR #3668](https://github.com/lbjlaq/Antigravity-Manager/pull/3668) | defer／獨立 protocol 候選 | 已關閉未合併，2 個 Rust 檔 `+180/-92`：在通用 lifecycle 對 content 或 thinking 後的 error／idle timeout／非正常 EOF 執行 protocol-specific finalize；Claude 另插入 interruption notice 以閉合 thinking block。fork 沒有該 `stream_lifecycle.rs`，Claude mapper 已有 thinking-without-content recovery 與直接 timeout 路徑，且 #3666 已被記為相鄰但未採用的 triad 行為。直接移植會同時改變 Claude／OpenAI／Gemini 的中斷、重試、history 與 tool-block 語意。後續只能以各協定的 pre-output error、thinking-only、content、tool-use、idle timeout 與 premature EOF fixture 驗證完整 closure，並明確決定 interruption notice 是否屬產品契約。 |
+
+PR 水位提升至 `#3668`；issue 水位仍為 `#3665`，release／commit 基線不變。水位只表示兩份完整 diff 已有採用判定，**不表示 #3667／#3668 已採用、#3648 已修復，或任何 client stream 行為已通過 runtime 驗證。**
