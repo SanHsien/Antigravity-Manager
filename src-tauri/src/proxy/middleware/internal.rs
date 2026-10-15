@@ -15,6 +15,7 @@ use std::{
 pub(crate) const INTERNAL_REQUEST_CREDENTIAL_HEADER: &str = "x-antigravity-internal-secret";
 static INTERNAL_REQUEST_CREDENTIAL: OnceLock<String> = OnceLock::new();
 
+#[derive(Clone)]
 struct ValidatedInternalRequest;
 
 pub(crate) fn internal_request_credential() -> &'static str {
