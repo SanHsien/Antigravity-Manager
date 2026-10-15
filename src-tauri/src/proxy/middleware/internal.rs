@@ -1,6 +1,8 @@
 use axum::{
     extract::{ConnectInfo, Request},
     http::StatusCode,
+    middleware::Next,
+    response::{IntoResponse, Response},
 };
 use std::net::{IpAddr, SocketAddr};
 
@@ -30,6 +32,16 @@ pub fn require_internal_loopback(request: &Request) -> Result<(), StatusCode> {
     }
 }
 
+/// Enforces the TCP loopback boundary before outer layers can short-circuit
+/// internal requests, including CORS preflight.
+pub async fn internal_loopback_middleware(request: Request, next: Next) -> Response {
+    if let Err(status) = require_internal_loopback(&request) {
+        return status.into_response();
+    }
+
+    next.run(request).await
+}
+
 fn is_loopback_peer(peer: SocketAddr) -> bool {
     match peer.ip() {
         IpAddr::V4(ip) => ip.is_loopback(),
@@ -48,11 +60,19 @@ mod tests {
     use crate::proxy::{
         config::SecurityMonitorConfig,
         middleware::{
-            auth::auth_middleware, service_status::service_status_middleware_with_running,
+            auth::auth_middleware, cors::cors_layer,
+            service_status::service_status_middleware_with_running,
         },
         ProxyAuthMode, ProxySecurityConfig,
     };
-    use axum::{body::Body, extract::State, http::Method, middleware, routing::any, Router};
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{header, Method},
+        middleware,
+        routing::any,
+        Router,
+    };
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -113,6 +133,32 @@ mod tests {
             .layer(middleware::from_fn(|request, next| {
                 service_status_middleware_with_running(false, request, next)
             }))
+    }
+
+    /// Mirrors the server's effective relevant order:
+    /// BodyLimit -> internal guard -> CORS -> service status -> routes.
+    fn cors_guard_router(counter: Arc<AtomicUsize>, running: bool) -> Router {
+        Router::new()
+            .route("/internal/warmup", any(counted_handler))
+            .route("/v1/normal", any(counted_handler))
+            .with_state(counter)
+            .layer(middleware::from_fn(|request, next| {
+                service_status_middleware_with_running(running, request, next)
+            }))
+            .layer(cors_layer())
+            .layer(middleware::from_fn(internal_loopback_middleware))
+    }
+
+    fn preflight_request(path: &str, peer: Option<SocketAddr>) -> Request {
+        let mut request = request(path, Method::OPTIONS, peer);
+        request
+            .headers_mut()
+            .insert(header::ORIGIN, "https://example.test".parse().unwrap());
+        request.headers_mut().insert(
+            header::ACCESS_CONTROL_REQUEST_METHOD,
+            Method::POST.as_str().parse().unwrap(),
+        );
+        request
     }
 
     #[tokio::test]
@@ -223,6 +269,78 @@ mod tests {
         assert_eq!(external.status(), StatusCode::FORBIDDEN);
         assert_eq!(loopback.status(), StatusCode::NO_CONTENT);
         assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_rejects_internal_external_missing_and_mapped_external_peers() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let app = cors_guard_router(counter.clone(), false);
+
+        for peer in [
+            Some("198.51.100.8:8045".parse().unwrap()),
+            None,
+            Some("[::ffff:198.51.100.8]:8045".parse().unwrap()),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(preflight_request("/internal/warmup", peer))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert!(response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none());
+        }
+
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_allows_loopback_internal_and_preserves_cors_headers() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let app = cors_guard_router(counter.clone(), false);
+
+        for peer in ["127.0.0.1:8045", "[::1]:8045", "[::ffff:127.0.0.1]:8045"] {
+            let response = app
+                .clone()
+                .oneshot(preflight_request(
+                    "/internal/warmup",
+                    Some(peer.parse().unwrap()),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "peer={peer}");
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                    .unwrap(),
+                "*",
+                "peer={peer}"
+            );
+        }
+
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn noninternal_preflight_remains_cors_enabled_when_service_is_stopped() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let response = cors_guard_router(counter.clone(), false)
+            .oneshot(preflight_request("/v1/normal", None))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            "*"
+        );
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
