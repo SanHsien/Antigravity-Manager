@@ -466,3 +466,23 @@ PR 水位提升至 `#3672`，issue 水位提升至 `#3675`；只表示上述 7 �
 | [Issue #3677](https://github.com/lbjlaq/Antigravity-Manager/issues/3677) | defer／獨立 models capability contract 候選 | 原文要求把帳號 `quota.models[]` 的 image／thinking／token-limit metadata 透過 `/v1/models` 等清單回應。fork 實際的 `get_all_dynamic_models` 合併 raw quota、normalized bucket、custom mapping 與內建 ID 後只回 `Vec<String>`；OpenAI、Claude 清單皆輸出固定四欄，Gemini 則輸出靜態 limits。這不是只加欄位：跨帳號 quota 可能互相衝突，tier alias／內建與 custom ID 未必有同一 capability，且三協定 schema 不同。僅在 owner 定義公開 metadata schema、帳號衝突優先序與 cache/privacy 契約後，以完整／缺欄舊帳號、衝突帳號、tier alias、custom/builtin、only-raw mode 與 OpenAI／Claude／Gemini compatibility fixture 實作並驗收。 |
 
 PR 水位提升至 `#3678`，issue 水位提升至 `#3677`；只表示此三項已逐項讀取並作出結論。release／commit 基線不變，**不表示 request probe、明文 API key 查詢或 models capability metadata 已採用、已修復或已通過 runtime 驗證。**
+
+### 21. Full gate 新增 upstream Issue #3679（2026-10-16）
+
+本輪只讀取 [Issue #3679](https://github.com/lbjlaq/Antigravity-Manager/issues/3679) 原文與留言（metadata `comments=0`）。回報稱原始 request 沒有 `unknown`，但轉出報文出現 `function.name: "unknown"` 而被上游拒絕；沒有附可重放的 request／provider response、協定、模型、stream 狀態或實際 function-call payload。輸入 URL、SHA-256、fork 檔案 hash 與命令／exit 紀錄保存在 checkpoint `upstream-triage-3679-20261016`。沒有採用上游程式碼或改動產品、manifest、lockfile、workflow 或 checker；release／commit 基線仍為 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [Issue #3679](https://github.com/lbjlaq/Antigravity-Manager/issues/3679) | defer／獨立 malformed tool-call 修補候選 | fork 可確認 OpenAI 非串流 `src-tauri/src/proxy/mappers/openai/response.rs:92` 與兩個串流 function-call 分支 `streaming.rs:165`、`:757`，都在 Gemini `functionCall.name` 缺失或非字串時以 `unwrap_or("unknown")` 產出下游 function name；`response.rs:26-31` 的 `resolve_shell_tool_name` 又保持該值透傳。這與回報的輸出形狀相符，但 issue 沒有 payload，不能證明是哪一分支、哪一 provider 回應或 name 應如何還原；直接以 client tool 清單猜配，會在多工具、namespace／shell alias、retries 或 tool-call id 下改變協定語意。僅在獨立產品修補中，以 Gemini functionCall 有效 name、缺 name、非字串 name、空 client tool／單一工具／多工具、非串流與兩個串流路徑的 fixture，明確決定 fail-closed error、丟棄 malformed call 或可證明映射的契約，並驗證不輸出 literal `unknown`、不虛構 tool call、SSE completion／error 語意與 interaction ledger。 |
+
+issue 水位提升至 `#3679`；PR 水位仍為 `#3678`，release／commit 基線不變。水位只表示 #3679 已讀取並有結論，**不表示 unknown function name 已修復、任何 provider response 已重現，或上述獨立產品修補已採用或通過 runtime 驗證。**
+
+### 22. Full gate 新增 upstream PR #3680（2026-10-16）
+
+本輪只讀取 [PR #3680](https://github.com/lbjlaq/Antigravity-Manager/pull/3680) 的 metadata、5 個 commits 與 9 檔完整 diff（`+481/-89`）；PR 開啟中、目標為 upstream `beta`。輸入 URL、SHA-256、fork 檔案 hash 與命令／exit 紀錄保存在 checkpoint `upstream-triage-3680-20261016`。沒有採用上游程式碼或改動產品、manifest、lockfile、workflow 或 checker；release／commit 基線仍為 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3680](https://github.com/lbjlaq/Antigravity-Manager/pull/3680) | defer／拆分為 routing/retry、account-state 與 Claude contract 的獨立產品候選 | 此 PR 同時改 `modules/{account,quota}.rs`、`proxy/{upstream/client,project_resolver,handlers/common,handlers/claude,common/model_mapping,token_manager}.rs` 與 retry tests：最終 diff 把端點設為 Daily→Sandbox→Prod、Sandbox 400 視為可 fallback、候選端點加 12 秒 response-header watchdog、health cooldown 改 300 秒、請求級無 delay 429 在第一輪全池後直接 `NoRetry`、entity/index 停用狀態互相同步、剝除 Claude model `[1m]` 類後綴並合併 client `anthropic-beta`／頂級 `effort`。commit 歷史卻先後主張 Daily→Prod→Sandbox、Prod→Daily→Sandbox、再切回 Daily→Sandbox→Prod，不能把 PR 標題或個別 benchmark 主張當成穩定端點契約。fork 現行 `upstream/client.rs:74-77` 是 Sandbox→Daily→Prod 且兩個 client 皆為 60 秒 TCP keepalive；`handlers/common.rs:246-319` 已讓多帳號第一輪全池快切、第二輪依 `Retry-After`／quota 再退避；`token_manager.rs:260-334` 僅按 entity 載入，`modules/account.rs:1208-1225` 亦未回寫 index；`model_mapping.rs`／`handlers/claude.rs:1300-1305` 尚未有 bracket canonicalization 或 client beta 合併。直接合併會在沒有 provider 實證下同時改端點地域失敗、長流首包、帳號檔案權威性、全池 rate-limit 成本與出站 Claude headers。僅在獨立批次以 fake endpoint 驗證 Daily/Sandbox/Prod 的 400／408／429／5xx、11/12/13 秒首包、最後候選與 health cooldown；以單／多帳號、explicit retry delay、hard quota、request-level 429 與 account rotation fixture 決定 retry 契約；以 index/entity 一致、漂移、毀損、並行 reload／quota update、停用持久化 fixture 決定原子來源；並以 bracket model、top-level effort、client/official beta 去重與非 Claude header fixture 驗證出站契約後，才可分項評估。 |
+
+PR 水位提升至 `#3680`；issue 水位仍為 `#3679`，release／commit 基線不變。水位只表示 #3680 已讀取並有結論，**不表示端點排序、429 fail-fast、帳號狀態同步或 Claude Code 相容性已採用、已修復或通過 runtime 驗證。**
