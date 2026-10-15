@@ -4,7 +4,24 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::OnceLock,
+};
+
+/// Process-local capability carried only by the quota warmup caller.
+/// It is generated once per process, never configured or persisted, and is
+/// stripped before any downstream middleware or handler can observe it.
+pub(crate) const INTERNAL_REQUEST_CREDENTIAL_HEADER: &str = "x-antigravity-internal-secret";
+static INTERNAL_REQUEST_CREDENTIAL: OnceLock<String> = OnceLock::new();
+
+struct ValidatedInternalRequest;
+
+pub(crate) fn internal_request_credential() -> &'static str {
+    INTERNAL_REQUEST_CREDENTIAL
+        .get_or_init(|| uuid::Uuid::new_v4().to_string())
+        .as_str()
+}
 
 /// Returns true only for the `/internal` namespace boundary.
 pub fn is_internal_path(path: &str) -> bool {
@@ -32,11 +49,47 @@ pub fn require_internal_loopback(request: &Request) -> Result<(), StatusCode> {
     }
 }
 
-/// Enforces the TCP loopback boundary before outer layers can short-circuit
-/// internal requests, including CORS preflight.
-pub async fn internal_loopback_middleware(request: Request, next: Next) -> Response {
+/// Requires the private marker that only the outer internal middleware may add.
+/// The marker is intentionally not derived from any HTTP-provided extension.
+pub fn require_validated_internal_request(request: &Request) -> Result<(), StatusCode> {
+    if is_internal_path(request.uri().path())
+        && request
+            .extensions()
+            .get::<ValidatedInternalRequest>()
+            .is_none()
+    {
+        Err(StatusCode::FORBIDDEN)
+    } else {
+        Ok(())
+    }
+}
+
+/// Enforces the internal capability before outer layers can short-circuit
+/// requests, including CORS preflight. TCP loopback alone is insufficient
+/// because a local tunnel forwarder may originate a loopback connection.
+pub async fn internal_loopback_middleware(mut request: Request, next: Next) -> Response {
     if let Err(status) = require_internal_loopback(&request) {
         return status.into_response();
+    }
+
+    if is_internal_path(request.uri().path()) {
+        let values = request
+            .headers()
+            .get_all(INTERNAL_REQUEST_CREDENTIAL_HEADER);
+        let mut values = values.iter();
+        let has_exact_credential = matches!(
+            (values.next(), values.next()),
+            (Some(value), None) if value.as_bytes() == internal_request_credential().as_bytes()
+        );
+
+        if !has_exact_credential {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+
+        request
+            .headers_mut()
+            .remove(INTERNAL_REQUEST_CREDENTIAL_HEADER);
+        request.extensions_mut().insert(ValidatedInternalRequest);
     }
 
     next.run(request).await
@@ -68,7 +121,7 @@ mod tests {
     use axum::{
         body::Body,
         extract::State,
-        http::{header, Method},
+        http::{header, HeaderMap, Method},
         middleware,
         routing::any,
         Router,
@@ -83,6 +136,14 @@ mod tests {
     async fn counted_handler(State(counter): State<Arc<AtomicUsize>>) -> StatusCode {
         counter.fetch_add(1, Ordering::SeqCst);
         StatusCode::NO_CONTENT
+    }
+
+    async fn header_stripped_handler(headers: HeaderMap) -> StatusCode {
+        if headers.contains_key(INTERNAL_REQUEST_CREDENTIAL_HEADER) {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::NO_CONTENT
+        }
     }
 
     fn security(mode: ProxyAuthMode) -> Arc<RwLock<ProxySecurityConfig>> {
@@ -112,9 +173,19 @@ mod tests {
         request
     }
 
+    fn internal_request(path: &str, method: Method, peer: Option<SocketAddr>) -> Request {
+        let mut request = request(path, method, peer);
+        request.headers_mut().insert(
+            INTERNAL_REQUEST_CREDENTIAL_HEADER,
+            internal_request_credential().parse().unwrap(),
+        );
+        request
+    }
+
     fn auth_router(counter: Arc<AtomicUsize>, mode: ProxyAuthMode) -> Router {
         Router::new()
             .route("/internal/warmup", any(counted_handler))
+            .route("/internal/header-check", any(header_stripped_handler))
             .route("/internal-warmup", any(counted_handler))
             .route("/health", any(counted_handler))
             .route("/v1/normal", any(counted_handler))
@@ -123,6 +194,7 @@ mod tests {
                 security(mode),
                 auth_middleware,
             ))
+            .layer(middleware::from_fn(internal_loopback_middleware))
     }
 
     fn stopped_service_router(counter: Arc<AtomicUsize>) -> Router {
@@ -133,6 +205,7 @@ mod tests {
             .layer(middleware::from_fn(|request, next| {
                 service_status_middleware_with_running(false, request, next)
             }))
+            .layer(middleware::from_fn(internal_loopback_middleware))
     }
 
     /// Mirrors the server's effective relevant order:
@@ -161,10 +234,19 @@ mod tests {
         request
     }
 
+    fn internal_preflight_request(path: &str, peer: Option<SocketAddr>) -> Request {
+        let mut request = preflight_request(path, peer);
+        request.headers_mut().insert(
+            INTERNAL_REQUEST_CREDENTIAL_HEADER,
+            internal_request_credential().parse().unwrap(),
+        );
+        request
+    }
+
     #[tokio::test]
     async fn auth_guard_rejects_external_peer_when_auth_is_off_and_headers_are_forged() {
         let counter = Arc::new(AtomicUsize::new(0));
-        let mut external = request(
+        let mut external = internal_request(
             "/internal/warmup",
             Method::POST,
             Some("198.51.100.8:8045".parse().unwrap()),
@@ -199,6 +281,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn auth_guard_rejects_loopback_without_or_with_invalid_internal_credential() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let app = auth_router(counter.clone(), ProxyAuthMode::Off);
+
+        let missing_post = app
+            .clone()
+            .oneshot(request(
+                "/internal/warmup",
+                Method::POST,
+                Some("127.0.0.1:8045".parse().unwrap()),
+            ))
+            .await
+            .unwrap();
+        let missing_options = app
+            .clone()
+            .oneshot(request(
+                "/internal/warmup",
+                Method::OPTIONS,
+                Some("127.0.0.1:8045".parse().unwrap()),
+            ))
+            .await
+            .unwrap();
+        let mut wrong = request(
+            "/internal/warmup",
+            Method::POST,
+            Some("127.0.0.1:8045".parse().unwrap()),
+        );
+        wrong
+            .headers_mut()
+            .insert(INTERNAL_REQUEST_CREDENTIAL_HEADER, "wrong".parse().unwrap());
+        wrong
+            .headers_mut()
+            .insert("authorization", "Bearer forged-api-key".parse().unwrap());
+        let wrong = app.clone().oneshot(wrong).await.unwrap();
+
+        let mut duplicate = internal_request(
+            "/internal/warmup",
+            Method::POST,
+            Some("127.0.0.1:8045".parse().unwrap()),
+        );
+        duplicate.headers_mut().append(
+            INTERNAL_REQUEST_CREDENTIAL_HEADER,
+            "duplicate".parse().unwrap(),
+        );
+        let duplicate = app.oneshot(duplicate).await.unwrap();
+
+        for response in [missing_post, missing_options, wrong, duplicate] {
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn auth_guard_rejects_missing_and_mapped_external_peers() {
         let counter = Arc::new(AtomicUsize::new(0));
         let app = auth_router(counter.clone(), ProxyAuthMode::Off);
@@ -223,14 +358,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auth_guard_allows_ipv4_ipv6_and_mapped_loopback_peers() {
+    async fn auth_guard_allows_credentialed_ipv4_ipv6_and_mapped_loopback_peers() {
         let counter = Arc::new(AtomicUsize::new(0));
         let app = auth_router(counter.clone(), ProxyAuthMode::Off);
 
         for peer in ["127.0.0.1:8045", "[::1]:8045", "[::ffff:127.0.0.1]:8045"] {
             let response = app
                 .clone()
-                .oneshot(request(
+                .oneshot(internal_request(
                     "/internal/warmup",
                     Method::POST,
                     Some(peer.parse().unwrap()),
@@ -241,6 +376,20 @@ mod tests {
         }
 
         assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn internal_credential_is_stripped_before_the_handler() {
+        let response = auth_router(Arc::new(AtomicUsize::new(0)), ProxyAuthMode::Strict)
+            .oneshot(internal_request(
+                "/internal/header-check",
+                Method::POST,
+                Some("127.0.0.1:8045".parse().unwrap()),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
 
     #[tokio::test]
@@ -258,7 +407,7 @@ mod tests {
             .await
             .unwrap();
         let loopback = app
-            .oneshot(request(
+            .oneshot(internal_request(
                 "/internal/warmup",
                 Method::POST,
                 Some("127.0.0.1:8045".parse().unwrap()),
@@ -280,6 +429,7 @@ mod tests {
             Some("198.51.100.8:8045".parse().unwrap()),
             None,
             Some("[::ffff:198.51.100.8]:8045".parse().unwrap()),
+            Some("127.0.0.1:8045".parse().unwrap()),
         ] {
             let response = app
                 .clone()
@@ -304,7 +454,7 @@ mod tests {
         for peer in ["127.0.0.1:8045", "[::1]:8045", "[::ffff:127.0.0.1]:8045"] {
             let response = app
                 .clone()
-                .oneshot(preflight_request(
+                .oneshot(internal_preflight_request(
                     "/internal/warmup",
                     Some(peer.parse().unwrap()),
                 ))

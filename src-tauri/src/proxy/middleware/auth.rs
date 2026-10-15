@@ -48,9 +48,10 @@ async fn auth_middleware_internal(
         tracing::trace!("Heartbeat/Health: {} {}", method, path);
     }
 
-    // Internal endpoints require an actual TCP loopback peer before any bypass.
+    // Internal endpoints require the outer middleware's private validation marker
+    // before any auth or OPTIONS bypass.
     if is_internal_endpoint {
-        crate::proxy::middleware::internal::require_internal_loopback(&request)?;
+        crate::proxy::middleware::internal::require_validated_internal_request(&request)?;
     }
 
     // Allow CORS preflight regardless of auth policy.

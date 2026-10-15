@@ -709,16 +709,27 @@ pub async fn warmup_model_directly(
         "project_id": project_id
     });
 
-    // Use a no-proxy client for local loopback requests
-    // This prevents Docker environments from routing localhost through external proxies
-    let client = rquest::Client::builder()
+    // Use a no-proxy, no-redirect client for the process-local internal capability.
+    // A redirect must not replay that credential to another origin.
+    let client = match rquest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .no_proxy()
+        .redirect(rquest::redirect::Policy::none())
         .build()
-        .unwrap_or_else(|_| rquest::Client::new());
+    {
+        Ok(client) => client,
+        Err(_) => {
+            crate::modules::logger::log_warn("[Warmup] unable to construct internal client");
+            return false;
+        }
+    };
     let resp = client
         .post(&warmup_url)
         .header("Content-Type", "application/json")
+        .header(
+            crate::proxy::middleware::internal::INTERNAL_REQUEST_CREDENTIAL_HEADER,
+            crate::proxy::middleware::internal::internal_request_credential(),
+        )
         .json(&body)
         .send()
         .await;

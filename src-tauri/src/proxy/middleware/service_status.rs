@@ -24,7 +24,9 @@ pub(crate) async fn service_status_middleware_with_running(
     request: Request,
     next: Next,
 ) -> Response {
-    if let Err(status) = crate::proxy::middleware::internal::require_internal_loopback(&request) {
+    if let Err(status) =
+        crate::proxy::middleware::internal::require_validated_internal_request(&request)
+    {
         return status.into_response();
     }
 
