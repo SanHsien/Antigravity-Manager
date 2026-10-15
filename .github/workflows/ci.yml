@@ -94,9 +94,30 @@ jobs:
           cargo check
 
       - name: Test Gemini inert protocol padding defense
+        if: runner.os != 'Windows'
         run: |
           cd src-tauri
           cargo test --locked --lib proxy::mappers::common_utils::defense_tests
+
+      - name: Test Gemini inert protocol padding defense (Windows loader diagnostics)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $testStartedAt = Get-Date
+          Push-Location src-tauri
+          cargo test --locked --lib proxy::mappers::common_utils::defense_tests
+          $testExit = $LASTEXITCODE
+          Pop-Location
+
+          if ($testExit -ne 0) {
+            Start-Sleep -Seconds 2
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $testStartedAt.AddSeconds(-5) } -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProviderName -in @('Application Error', 'Windows Error Reporting', 'SideBySide') -or $_.Message -match 'antigravity_tools_lib|STATUS_ENTRYPOINT_NOT_FOUND' } |
+              Select-Object TimeCreated, Id, ProviderName, LevelDisplayName, Message |
+              Format-List
+          }
+
+          exit $testExit
 
       - name: Test Windows shortcut COM interfaces
         if: runner.os == 'Windows'
