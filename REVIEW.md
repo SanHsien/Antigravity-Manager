@@ -344,7 +344,7 @@ fork 的 `src-tauri/src/proxy` 精準搜尋未找到 `ok go on` 或該兩條完�
 | `toml_edit` | [`0.25.17+spec-1.1.0`](https://crates.io/crates/toml_edit/0.25.17%2Bspec-1.1.0) | `cli_sync.rs` 直接用 `DocumentMut`/`Item` 改寫 CLI TOML；格式保留與 parser 行為需要驗證；defer。 | 與 `toml` 升級、preservation fixtures、完整 Tauri build。 |
 | `windows` | [`0.62.2`](https://crates.io/crates/windows/0.62.2) | 0.x minor 為 major-series；fork 直接使用 Windows shortcut/COM bindings；defer。 | Windows shortcut test 與 Windows Tauri debug/signed build。 |
 
-Actions 的官方 release notes已覆核；維護候選已準備上述不可變 SHA，尚待獨立維護 PR 合併，未在 owner main 採用。本輪更新的 Action `uses:` 都維持不可變 commit SHA 與版本註解，沒有轉為 floating tag；release workflow 沒有被執行。
+Actions 的官方 release notes已覆核並直接採用 patch：download/upload artifact `v8.0.2`／`v7.0.2` 改善 429 Retry-After；setup-node `v7.1.0` 增加版本驗證與 manifest retry；CodeQL `v4.38.3` 更新 bundle 並修正 custom-query bundle 選擇。本輪更新的 Action `uses:` 都維持不可變 commit SHA 與版本註解，沒有轉為 floating tag；release workflow 沒有被執行。
 
 ### 12. 新增 upstream beta／issue 逐項審查（2026-10-11）
 

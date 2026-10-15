@@ -6,36 +6,36 @@
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
     "@lobehub/ui": {
-      "deferredLatest": "5.51.2",
-      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+      "deferredLatest": "5.64.2",
+      "reason": "Official v5.64.2 metadata still requires Node >=22.22.0, antd ^6.1.1, @lobehub/icons ^5, React 19, and Motion 12; the official 5.62.1-to-5.64.2 diff adds 19 commits across 107 UI files, including DatePicker, theme, and layout changes, rather than removing migration constraints. This fork remains on CI Node 20, direct antd v5, and resolved UI 4.34.1 with the existing icon/UI peer mismatch. Recheck only with either approved package/lockfile cleanup or a coordinated Node/antd/icons/UI migration, clean install, frontend build, and light/dark UI acceptance"
     },
     "@vitejs/plugin-react": {
-      "deferredLatest": "6.1.1",
-      "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
+      "deferredLatest": "6.1.2",
+      "reason": "v6 peers Vite ^8, so it cannot be isolated from the Vite 8/Rolldown toolchain migration; recheck with that coordinated migration, a clean install, and a frontend build"
     },
     "antd": {
-      "deferredLatest": "6.6.5",
-      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+      "deferredLatest": "6.6.6",
+      "reason": "v6 requires @ant-design/icons >=6 and changes CSS-variable, DOM, and component API behavior; this fork currently declares antd/icons v5 and has a Lobe peer-resolution mismatch, so do not bump antd in isolation. Recheck with an explicit package/lockfile cleanup or coordinated Lobe UI/antd/icons migration, clean install, and light/dark UI acceptance"
     },
     "antd-style": {
       "deferredLatest": "4.1.0",
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
     "framer-motion": {
-      "deferredLatest": "13.4.6",
-      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+      "deferredLatest": "14.2.0",
+      "reason": "the 11-to-14 path includes Motion 13's explicit Emotion prop-filtering injection and v14's stricter internal dependency versioning; this fork directly uses AnimatePresence/layout/hover animations and @emotion dependencies, so recheck with focused interaction, prop-forwarding, and accessibility regression coverage"
     },
     "i18next": {
-      "deferredLatest": "26.4.2",
-      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+      "deferredLatest": "26.4.5",
+      "reason": "v26 remains a core i18next migration across the fork's locale initialization, translation types, and language switching. Official 26.4.5 fixes hasLoadedNamespace({ lng }) readiness for resolved or unsupported language codes, but this fork currently ships local resource aliases, has no supportedLngs setting, and has no useTranslation call with lng; it does not make the major migration safe to adopt. Current react-i18next 16 accepts i18next >=25.6.2, so this is not falsely deferred as a required v17 pair; recheck the actual core upgrade with typecheck/build and language-switch acceptance"
     },
     "lucide-react": {
-      "deferredLatest": "1.49.0",
-      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+      "deferredLatest": "1.57.0",
+      "reason": "Official 1.57.0 metadata retains the React peer range, and the precise 1.56.0-to-1.57.0 tag diff is 12 commits across 35 files dominated by added icon assets and package versioning; it does not validate this fork's separate 0.561.0-to-v1 migration. The existing v1 accessibility-default and brand-icon-removal audit remains necessary across 59 lucide-react source uses. Recheck with a complete import audit and keyboard/screen-reader acceptance after an approved v1 migration"
     },
     "react-i18next": {
-      "deferredLatest": "17.0.15",
-      "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
+      "deferredLatest": "17.0.16",
+      "reason": "v17 raises its i18next peer floor to >=26.2; recheck only as the paired i18next 26 migration with locale initialization, typecheck, and language-switch acceptance"
     },
     "react-router": {
       "deferredLatest": "8.4.0",
@@ -54,8 +54,8 @@
       "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
     },
     "vite": {
-      "deferredLatest": "8.3.1",
-      "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
+      "deferredLatest": "8.3.4",
+      "reason": "v8 introduces the Rolldown toolchain dependency and @vitejs/plugin-react v6 peers Vite ^8; recheck as one Vite/plugin-react migration with a clean install and frontend build"
     },
     "aes-gcm": {
       "deferredLatest": "0.11.1",
@@ -94,8 +94,8 @@
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
     },
     "sha2": {
-      "deferredLatest": "0.11.0",
-      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+      "deferredLatest": "0.11.1",
+      "reason": "v0.11 moves to digest 0.11 and declares Rust 1.88/edition 2024; this fork uses Sha256 for crypto, cache, session, schema, and thinking-store identifiers. Recheck with a coordinated Cargo update, hash-stability fixtures, and a Windows Tauri build rather than changing persistent/runtime hash behavior unchecked"
     },
     "socket2": {
       "deferredLatest": "0.6.5",
@@ -106,12 +106,12 @@
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
     },
     "toml": {
-      "deferredLatest": "1.1.6+spec-1.1.0",
-      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+      "deferredLatest": "1.1.8+spec-1.1.0",
+      "reason": "v1 implements TOML 1.1 syntax/parse semantics; recheck together with toml_edit using fixture coverage for managed config files and a full Tauri build"
     },
     "toml_edit": {
-      "deferredLatest": "0.25.15+spec-1.1.0",
-      "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+      "deferredLatest": "0.25.17+spec-1.1.0",
+      "reason": "the formatter/parser is used to edit CLI TOML configuration and tracks the TOML 1.1 transition; recheck together with toml using preservation fixtures and a full Tauri build"
     },
     "tower": {
       "deferredLatest": "0.5.3",
@@ -120,6 +120,10 @@
     "tower-http": {
       "deferredLatest": "0.7.1",
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
+    },
+    "windows": {
+      "deferredLatest": "0.62.2",
+      "reason": "v0.62 remains a 0.x minor major-series change for direct Windows shortcut/COM bindings; recheck with the Windows shortcut test and a signed-or-debug Windows Tauri build"
     },
     "docker/build-push-action": {
       "deferredLatest": "7.4.0",
