@@ -15,6 +15,9 @@ param(
     [ValidateRange(1, 64)]
     [int]$MaxSymbolsPerModule = 32,
 
+    [ValidateRange(1, 16)]
+    [int]$MaxDumpbinCandidates = 8,
+
     [ValidateRange(100, 4000)]
     [int]$MaxDumpbinOutputLines = 2000,
 
@@ -25,11 +28,32 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $auditStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$script:DumpbinResolverEvidence = [ordered]@{
+    status                    = 'not_started'
+    vswhere_path              = $null
+    vswhere_exit_code         = $null
+    vswhere_timed_out         = $false
+    vswhere_output_truncated  = $false
+    installation_path          = $null
+    default_version_file       = $null
+    default_tool_version       = $null
+    candidate_count_observed   = 0
+    candidate_limit            = $MaxDumpbinCandidates
+    candidate_count_truncated  = $false
+    candidates                 = @()
+    selection_reason           = $null
+    selected_path              = $null
+}
 
 function Assert-AuditBudget {
     if ($auditStopwatch.Elapsed.TotalSeconds -gt $MaxAuditSeconds) {
         throw "PE audit exceeded its $MaxAuditSeconds-second budget; root cause remains unknown."
     }
+}
+
+function Get-RemainingAuditSeconds {
+    Assert-AuditBudget
+    return [Math]::Max(1, [Math]::Floor($MaxAuditSeconds - $auditStopwatch.Elapsed.TotalSeconds))
 }
 
 function Initialize-BoundedNativeRunner {
@@ -100,25 +124,133 @@ function Invoke-BoundedNative {
     return [AntigravityBoundedNativeRunner]::Run($FilePath, $Arguments, $TimeoutSeconds, $MaxOutputLines)
 }
 
+function Select-DumpbinCandidate {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Candidates,
+        [AllowNull()][string]$DefaultToolVersion
+    )
+
+    $valid = @($Candidates | Where-Object { $_.valid -and $_.version })
+    if ($valid.Count -eq 0) {
+        return [pscustomobject]@{ status = 'no_valid_hostx64_x64_candidate'; selected = $null }
+    }
+
+    if ($DefaultToolVersion) {
+        try {
+            $defaultVersion = [version]$DefaultToolVersion
+        } catch {
+            return [pscustomobject]@{ status = 'default_tool_version_invalid'; selected = $null }
+        }
+
+        $matchingDefault = @($valid | Where-Object { ([version]$_.version) -eq $defaultVersion })
+        if ($matchingDefault.Count -eq 1) {
+            return [pscustomobject]@{ status = 'selected_default_tool_version'; selected = $matchingDefault[0] }
+        }
+
+        return [pscustomobject]@{ status = 'default_tool_version_not_available'; selected = $null }
+    }
+
+    if ($valid.Count -eq 1) {
+        return [pscustomobject]@{ status = 'selected_only_valid_candidate'; selected = $valid[0] }
+    }
+
+    $ordered = @($valid | Sort-Object { [version]$_.version } -Descending)
+    $highestVersion = [version]$ordered[0].version
+    $highest = @($ordered | Where-Object { ([version]$_.version) -eq $highestVersion })
+    if ($highest.Count -eq 1) {
+        return [pscustomobject]@{ status = 'selected_highest_valid_version_without_default'; selected = $highest[0] }
+    }
+
+    return [pscustomobject]@{ status = 'ambiguous_highest_valid_version'; selected = $null }
+}
+
 function Get-DumpbinPath {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $script:DumpbinResolverEvidence.vswhere_path = $vswhere
     if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+        $script:DumpbinResolverEvidence.status = 'vswhere_unavailable'
         throw 'vswhere.exe is unavailable; PE import/export audit is unknown.'
     }
 
-    $candidates = @(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe')
-    if ($LASTEXITCODE -ne 0 -or $candidates.Count -ne 1 -or -not (Test-Path -LiteralPath $candidates[0] -PathType Leaf)) {
-        throw 'Unable to resolve exactly one VS dumpbin.exe; PE import/export audit is unknown.'
+    $vswhereResult = Invoke-BoundedNative -FilePath $vswhere -Arguments @('-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath') -TimeoutSeconds (Get-RemainingAuditSeconds) -MaxOutputLines 16
+    $script:DumpbinResolverEvidence.vswhere_exit_code = $vswhereResult.ExitCode
+    $script:DumpbinResolverEvidence.vswhere_timed_out = $vswhereResult.TimedOut
+    $script:DumpbinResolverEvidence.vswhere_output_truncated = $vswhereResult.OutputTruncated
+    if ($vswhereResult.TimedOut -or $vswhereResult.OutputTruncated -or $vswhereResult.ExitCode -ne 0) {
+        $script:DumpbinResolverEvidence.status = 'vswhere_unavailable_or_bounded_failure'
+        throw 'vswhere did not produce bounded successful installation metadata; PE import/export audit is unknown.'
     }
 
-    return $candidates[0]
+    $installations = @($vswhereResult.Lines | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+    if ($installations.Count -ne 1 -or -not (Test-Path -LiteralPath $installations[0] -PathType Container)) {
+        $script:DumpbinResolverEvidence.status = 'vswhere_installation_path_unavailable_or_ambiguous'
+        throw 'vswhere did not resolve exactly one valid Visual Studio installation; PE import/export audit is unknown.'
+    }
+
+    $installationPath = $installations[0]
+    $script:DumpbinResolverEvidence.installation_path = $installationPath
+    $toolRoot = Join-Path $installationPath 'VC\Tools\MSVC'
+    if (-not (Test-Path -LiteralPath $toolRoot -PathType Container)) {
+        $script:DumpbinResolverEvidence.status = 'msvc_tool_root_unavailable'
+        throw 'Visual Studio MSVC tool root is unavailable; PE import/export audit is unknown.'
+    }
+
+    $versionDirectories = @(
+        Get-ChildItem -LiteralPath $toolRoot -Directory | ForEach-Object {
+            try {
+                [void][version]$_.Name
+                $_
+            } catch {
+                $null
+            }
+        } | Where-Object { $_ } | Sort-Object { [version]$_.Name } -Descending
+    )
+    $script:DumpbinResolverEvidence.candidate_count_observed = $versionDirectories.Count
+    if ($versionDirectories.Count -gt $MaxDumpbinCandidates) {
+        $script:DumpbinResolverEvidence.candidate_count_truncated = $true
+        $script:DumpbinResolverEvidence.candidates = @($versionDirectories | Select-Object -First $MaxDumpbinCandidates | ForEach-Object {
+            $candidatePath = Join-Path $_.FullName 'bin\Hostx64\x64\dumpbin.exe'
+            [ordered]@{ version = $_.Name; path = $candidatePath; valid = (Test-Path -LiteralPath $candidatePath -PathType Leaf) }
+        })
+        $script:DumpbinResolverEvidence.status = 'too_many_msvc_tool_versions'
+        throw "MSVC tool-version candidate count exceeds the $MaxDumpbinCandidates-item bound; PE import/export audit is unknown."
+    }
+
+    $candidates = @($versionDirectories | ForEach-Object {
+        $candidatePath = Join-Path $_.FullName 'bin\Hostx64\x64\dumpbin.exe'
+        [pscustomobject]@{
+            version = $_.Name
+            path    = $candidatePath
+            valid   = Test-Path -LiteralPath $candidatePath -PathType Leaf
+        }
+    })
+    $script:DumpbinResolverEvidence.candidates = @($candidates | ForEach-Object { [ordered]@{ version = $_.version; path = $_.path; valid = $_.valid } })
+
+    $defaultVersionFile = Join-Path $installationPath 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'
+    $script:DumpbinResolverEvidence.default_version_file = $defaultVersionFile
+    $defaultToolVersion = $null
+    if (Test-Path -LiteralPath $defaultVersionFile -PathType Leaf) {
+        $defaultToolVersion = @(Get-Content -LiteralPath $defaultVersionFile -TotalCount 2 | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -First 1)[0]
+        $script:DumpbinResolverEvidence.default_tool_version = $defaultToolVersion
+    }
+
+    $selection = Select-DumpbinCandidate -Candidates $candidates -DefaultToolVersion $defaultToolVersion
+    $script:DumpbinResolverEvidence.selection_reason = $selection.status
+    if ($null -eq $selection.selected) {
+        $script:DumpbinResolverEvidence.status = $selection.status
+        throw "Unable to select a validated VS Hostx64/x64 dumpbin.exe ($($selection.status)); PE import/export audit is unknown."
+    }
+
+    $script:DumpbinResolverEvidence.status = 'selected'
+    $script:DumpbinResolverEvidence.selected_path = $selection.selected.path
+    return $selection.selected.path
 }
 
 function Invoke-Dumpbin {
     param([string[]]$Arguments)
 
     Assert-AuditBudget
-    $remainingSeconds = [Math]::Max(1, [Math]::Floor($MaxAuditSeconds - $auditStopwatch.Elapsed.TotalSeconds))
+    $remainingSeconds = Get-RemainingAuditSeconds
     $result = Invoke-BoundedNative -FilePath $script:Dumpbin -Arguments $Arguments -TimeoutSeconds $remainingSeconds -MaxOutputLines $MaxDumpbinOutputLines
     if ($result.TimedOut) {
         throw "dumpbin timed out within the remaining overall audit budget; root cause remains unknown."
@@ -247,6 +379,28 @@ function Invoke-SelfTest {
 
     $exports = ConvertFrom-DumpbinExportLines -Lines @('      1    0 00001000 RequiredExport', '      2    1 ForwardedExport = KERNEL32.ForwardedExport')
     Assert-SelfTest ($exports -is [System.Collections.Generic.HashSet[string]] -and $exports.Contains('RequiredExport') -and $exports.Contains('ForwardedExport')) 'export parser and HashSet preservation'
+
+    $zeroSelection = Select-DumpbinCandidate -Candidates @() -DefaultToolVersion $null
+    Assert-SelfTest ($zeroSelection.status -eq 'no_valid_hostx64_x64_candidate' -and $null -eq $zeroSelection.selected) 'zero dumpbin candidates'
+
+    $oneSelection = Select-DumpbinCandidate -Candidates @([pscustomobject]@{ version = '14.40.33807'; path = 'C:\\vs\\VC\\Tools\\MSVC\\14.40.33807\\bin\\Hostx64\\x64\\dumpbin.exe'; valid = $true }) -DefaultToolVersion $null
+    Assert-SelfTest ($oneSelection.status -eq 'selected_only_valid_candidate' -and $oneSelection.selected.version -eq '14.40.33807') 'one validated dumpbin candidate'
+
+    $multipleCandidates = @(
+        [pscustomobject]@{ version = '14.39.33519'; path = 'C:\\vs\\VC\\Tools\\MSVC\\14.39.33519\\bin\\Hostx64\\x64\\dumpbin.exe'; valid = $true },
+        [pscustomobject]@{ version = '14.40.33807'; path = 'C:\\vs\\VC\\Tools\\MSVC\\14.40.33807\\bin\\Hostx64\\x64\\dumpbin.exe'; valid = $true }
+    )
+    $defaultSelection = Select-DumpbinCandidate -Candidates $multipleCandidates -DefaultToolVersion '14.39.33519'
+    Assert-SelfTest ($defaultSelection.status -eq 'selected_default_tool_version' -and $defaultSelection.selected.version -eq '14.39.33519') 'current tool-version metadata selection'
+
+    $versionSelection = Select-DumpbinCandidate -Candidates $multipleCandidates -DefaultToolVersion $null
+    Assert-SelfTest ($versionSelection.status -eq 'selected_highest_valid_version_without_default' -and $versionSelection.selected.version -eq '14.40.33807') 'bounded version-aware fallback selection'
+
+    $invalidSelection = Select-DumpbinCandidate -Candidates @(
+        [pscustomobject]@{ version = '14.41.0'; path = 'C:\\invalid\\dumpbin.exe'; valid = $false },
+        [pscustomobject]@{ version = '14.40.0'; path = 'C:\\vs\\VC\\Tools\\MSVC\\14.40.0\\bin\\Hostx64\\x64\\dumpbin.exe'; valid = $true }
+    ) -DefaultToolVersion '14.41.0'
+    Assert-SelfTest ($invalidSelection.status -eq 'default_tool_version_not_available' -and $null -eq $invalidSelection.selected) 'invalid path never selected or executed'
 
     $cargoMessages = @(
         [pscustomobject]@{ reason = 'compiler-artifact'; profile = [pscustomobject]@{ test = $true }; executable = 'target\\debug\\deps\\antigravity_tools_lib-test.exe'; target = [pscustomobject]@{ name = 'antigravity_tools_lib'; kind = @('rlib') } },
@@ -385,6 +539,7 @@ try {
     $report = [ordered]@{
         test_executable = Get-FileVersionSummary -Path $testPath
         dumpbin = $script:Dumpbin
+        dumpbin_resolver = $script:DumpbinResolverEvidence
         bounds = [ordered]@{ max_modules = $MaxModules; max_dependencies_per_module = $MaxDependenciesPerModule; max_symbols_per_module = $MaxSymbolsPerModule; max_dumpbin_output_lines = $MaxDumpbinOutputLines; max_seconds = $MaxAuditSeconds; max_candidate_paths_per_dll = 3; max_recursion_depth = 2 }
         modules = $modules
         interpretation = 'Only local DLL candidates are export-audited. API sets, system DLLs, and unresolved candidates are recorded as unknown, not as a proven root cause.'
@@ -405,6 +560,7 @@ try {
 catch {
     $failure = [ordered]@{
         test_executable = $TestExecutable
+        dumpbin_resolver = $script:DumpbinResolverEvidence
         error = $_.Exception.Message
         interpretation = 'PE audit was unavailable; this is diagnostic unknown and does not replace the original test failure.'
     }
