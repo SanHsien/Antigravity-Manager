@@ -142,7 +142,7 @@ mod tests {
             .route("/internal/warmup", any(counted_handler))
             .route("/v1/normal", any(counted_handler))
             .with_state(counter)
-            .layer(middleware::from_fn(|request, next| {
+            .layer(middleware::from_fn(move |request, next| {
                 service_status_middleware_with_running(running, request, next)
             }))
             .layer(cors_layer())
