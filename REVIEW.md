@@ -454,3 +454,15 @@ PR 水位提升至 `#3668`；issue 水位仍為 `#3665`，release／commit 基�
 | [Issue #3675](https://github.com/lbjlaq/Antigravity-Manager/issues/3675) | defer／與 #3674 同一 discovery 證據條件 | Jio Pro 帳號缺 Gemini 3.1 Pro 的簡短回報，留言重複 #3674 的缺模型資訊，未附 response、帳號能力、model ID 或重現條件。保留為 provider availability 信號；不推論為本 fork regression，待 #3674 所列的授權 discovery fixture 一併驗證。 |
 
 PR 水位提升至 `#3672`，issue 水位提升至 `#3675`；只表示上述 7 項均已讀取並有明確採用／延後／拒絕結論。release／commit 基線不變，**不表示 Chat、附件、Responses role 修補或任何 Gemini 4／3.1 Pro discovery 已採用、已修復或已通過 runtime 驗證。**
+
+### 20. Full gate 新增 upstream PR #3678 與 Issue #3676／#3677（2026-10-15）
+
+本輪只處理 root Full 列出的 [PR #3678](https://github.com/lbjlaq/Antigravity-Manager/pull/3678) 與 [Issue #3676](https://github.com/lbjlaq/Antigravity-Manager/issues/3676)、[Issue #3677](https://github.com/lbjlaq/Antigravity-Manager/issues/3677)。以 authenticated GitHub 讀取 PR metadata、19 檔完整 diff、檔案清單，以及兩份 issue 原文與全部當時留言；端點、SHA-256 與命令／exit 紀錄保存在 checkpoint `upstream-triage-3678-20261015`。沒有採用上游程式碼、變更產品、manifest、lockfile、workflow 或 checker。release／commit 基線仍為 `v4.9.6`／`b601f5e7`。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3678](https://github.com/lbjlaq/Antigravity-Manager/pull/3678) | defer／獨立 diagnostics 產品候選 | 開啟中，19 檔 `+1007/-12`：在 Supported Models 加入單一／並行三個的 request probe 與 model check、原始 body／headers／scheduler account／mapped model 顯示、12 語系，並把 desktop CSP 擴至 loopback、CORS 改為 expose all response headers、Vite 加 `/v1` proxy。fork 已有 `ApiProxy` Supported Models、`X-Account-Email`／`X-Mapped-Model` 與 `cors_layer()` 的 `allow_origin(Any)`；上游的 `expose_headers(Any)` 會讓跨 origin caller 讀取既有 account telemetry，probe 的 raw response 與 Test all 也會產生真實帳號配額／routing 成本。fork 另採繁中-only locale policy，不能直接併入其 12 locale UI。僅在 owner 核准此產品面後，以 auth on/off、loopback／非 loopback、可讀 header 最小 allowlist、API key 不外洩、三協定 success/429/retired-model/stream/abort、concurrency/Stop 與不重送 fixture，連同 desktop CSP 與繁中 UI acceptance 評估。 |
+| [Issue #3676](https://github.com/lbjlaq/Antigravity-Manager/issues/3676) | reject／無可審規格 | 原文只有「token 統計頁面能否依使用者 token 的 API key 查詢」標題與圖片，無預期輸出、帳號／管理員授權、查詢範圍、資料保留或錯誤重現，且沒有留言或對應 diff。fork 的 user token DB 保存 token，security log 僅保存 `api_key_hash`；不能把截圖當成可安全實作的明文 key 查詢需求。若 owner 明確提出需求，須先定義權限、hash-only lookup／遮罩、audit、retention 與無匹配行為，再以多租戶 token fixture 驗證不可枚舉或洩露 key。 |
+| [Issue #3677](https://github.com/lbjlaq/Antigravity-Manager/issues/3677) | defer／獨立 models capability contract 候選 | 原文要求把帳號 `quota.models[]` 的 image／thinking／token-limit metadata 透過 `/v1/models` 等清單回應。fork 實際的 `get_all_dynamic_models` 合併 raw quota、normalized bucket、custom mapping 與內建 ID 後只回 `Vec<String>`；OpenAI、Claude 清單皆輸出固定四欄，Gemini 則輸出靜態 limits。這不是只加欄位：跨帳號 quota 可能互相衝突，tier alias／內建與 custom ID 未必有同一 capability，且三協定 schema 不同。僅在 owner 定義公開 metadata schema、帳號衝突優先序與 cache/privacy 契約後，以完整／缺欄舊帳號、衝突帳號、tier alias、custom/builtin、only-raw mode 與 OpenAI／Claude／Gemini compatibility fixture 實作並驗收。 |
+
+PR 水位提升至 `#3678`，issue 水位提升至 `#3677`；只表示此三項已逐項讀取並作出結論。release／commit 基線不變，**不表示 request probe、明文 API key 查詢或 models capability metadata 已採用、已修復或已通過 runtime 驗證。**
