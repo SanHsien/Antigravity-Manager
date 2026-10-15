@@ -41,11 +41,16 @@ async fn auth_middleware_internal(
 
     // 过滤心跳和健康检查请求,避免日志噪音
     let is_health_check = path == "/healthz" || path == "/api/health" || path == "/health";
-    let is_internal_endpoint = path.starts_with("/internal/");
+    let is_internal_endpoint = crate::proxy::middleware::internal::is_internal_path(&path);
     if !path.contains("event_logging") && !is_health_check {
         tracing::info!("Request: {} {}", method, path);
     } else {
         tracing::trace!("Heartbeat/Health: {} {}", method, path);
+    }
+
+    // Internal endpoints require an actual TCP loopback peer before any bypass.
+    if is_internal_endpoint {
+        crate::proxy::middleware::internal::require_internal_loopback(&request)?;
     }
 
     // Allow CORS preflight regardless of auth policy.
@@ -233,37 +238,4 @@ pub struct UserTokenIdentity {
     #[allow(dead_code)] // 保留原始 token 便于审计/调试
     pub token: String,
     pub username: String,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::proxy::ProxyAuthMode;
-
-    #[tokio::test]
-    async fn test_admin_auth_with_password() {
-        let security = Arc::new(RwLock::new(ProxySecurityConfig {
-            auth_mode: ProxyAuthMode::Strict,
-            api_key: "sk-api".to_string(),
-            admin_password: Some("admin123".to_string()),
-            allow_lan_access: true,
-            port: 8045,
-            security_monitor: crate::proxy::config::SecurityMonitorConfig::default(),
-        }));
-
-        // 模拟请求 - 管理接口使用正确的管理密码
-        let req = Request::builder()
-            .header("Authorization", "Bearer admin123")
-            .uri("/admin/stats")
-            .body(axum::body::Body::empty())
-            .unwrap();
-
-        // 此测试由于涉及 Next 中间件调用比较复杂,主要验证核心逻辑
-        // 我们在 auth_middleware_internal 基础上做了逻辑校验即可
-    }
-
-    #[test]
-    fn test_auth_placeholder() {
-        assert!(true);
-    }
 }
