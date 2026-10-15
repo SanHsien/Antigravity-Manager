@@ -21,6 +21,9 @@ param(
     [ValidateRange(100, 4000)]
     [int]$MaxDumpbinOutputLines = 2000,
 
+    [ValidateRange(1024, 65536)]
+    [int]$MaxManifestBytes = 65536,
+
     [ValidateRange(5, 120)]
     [int]$MaxAuditSeconds = 60
 )
@@ -43,6 +46,10 @@ $script:DumpbinResolverEvidence = [ordered]@{
     candidates                 = @()
     selection_reason           = $null
     selected_path              = $null
+}
+$script:ManifestEvidence = [ordered]@{
+    sidecar = [ordered]@{ source = 'sidecar'; present = $null; status = 'not_inspected'; byte_count = $null; sha256 = $null; common_controls_v6_identity = $null }
+    embedded_rt_manifest_id_1 = [ordered]@{ source = 'embedded_rt_manifest_id_1'; present = $null; status = 'not_inspected'; byte_count = $null; sha256 = $null; common_controls_v6_identity = $null }
 }
 
 function Assert-AuditBudget {
@@ -107,6 +114,80 @@ public static class AntigravityBoundedNativeRunner
                 return new AntigravityBoundedNativeResult { ExitCode = timedOut ? (int?)null : process.ExitCode, TimedOut = timedOut, OutputTruncated = truncated, Lines = lines.ToArray() };
             }
         }
+    }
+}
+'@
+}
+
+function Initialize-ManifestResourceReader {
+    if ('AntigravityManifestResourceReader' -as [type]) {
+        return
+    }
+
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public sealed class AntigravityManifestResourceResult
+{
+    public string Status { get; set; }
+    public int Win32Error { get; set; }
+    public uint Size { get; set; }
+    public byte[] Bytes { get; set; }
+}
+
+public static class AntigravityManifestResourceReader
+{
+    private const uint LOAD_LIBRARY_AS_DATAFILE = 0x00000002;
+    private const uint LOAD_LIBRARY_AS_IMAGE_RESOURCE = 0x00000020;
+    private const int ERROR_RESOURCE_DATA_NOT_FOUND = 1812;
+    private const int ERROR_RESOURCE_TYPE_NOT_FOUND = 1813;
+    private const int ERROR_RESOURCE_NAME_NOT_FOUND = 1814;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadLibraryEx(string fileName, IntPtr file, uint flags);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr FindResource(IntPtr module, IntPtr name, IntPtr type);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint SizeofResource(IntPtr module, IntPtr resource);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr LoadResource(IntPtr module, IntPtr resource);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr LockResource(IntPtr resourceData);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool FreeLibrary(IntPtr module);
+
+    public static AntigravityManifestResourceResult ReadRtManifestId1(string path, uint maxBytes)
+    {
+        IntPtr module = LoadLibraryEx(path, IntPtr.Zero, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+        if (module == IntPtr.Zero)
+            return new AntigravityManifestResourceResult { Status = "load_library_failed", Win32Error = Marshal.GetLastWin32Error() };
+        try
+        {
+            IntPtr resource = FindResource(module, (IntPtr)1, (IntPtr)24);
+            if (resource == IntPtr.Zero)
+            {
+                int error = Marshal.GetLastWin32Error();
+                string status = (error == ERROR_RESOURCE_DATA_NOT_FOUND || error == ERROR_RESOURCE_TYPE_NOT_FOUND || error == ERROR_RESOURCE_NAME_NOT_FOUND)
+                    ? "absent" : "find_resource_failed";
+                return new AntigravityManifestResourceResult { Status = status, Win32Error = error };
+            }
+            uint size = SizeofResource(module, resource);
+            if (size == 0)
+                return new AntigravityManifestResourceResult { Status = "size_unavailable", Win32Error = Marshal.GetLastWin32Error() };
+            if (size > maxBytes)
+                return new AntigravityManifestResourceResult { Status = "oversize", Size = size };
+            IntPtr resourceData = LoadResource(module, resource);
+            if (resourceData == IntPtr.Zero)
+                return new AntigravityManifestResourceResult { Status = "load_resource_failed", Win32Error = Marshal.GetLastWin32Error(), Size = size };
+            IntPtr data = LockResource(resourceData);
+            if (data == IntPtr.Zero)
+                return new AntigravityManifestResourceResult { Status = "lock_resource_failed", Win32Error = Marshal.GetLastWin32Error(), Size = size };
+            byte[] bytes = new byte[size];
+            Marshal.Copy(data, bytes, 0, (int)size);
+            return new AntigravityManifestResourceResult { Status = "loaded", Size = size, Bytes = bytes };
+        }
+        finally { FreeLibrary(module); }
     }
 }
 '@
@@ -345,6 +426,287 @@ function Get-FileVersionSummary {
     }
 }
 
+function Get-BytesSha256 {
+    param([byte[]]$Bytes)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return (($sha256.ComputeHash($Bytes) | ForEach-Object ToString x2) -join '').ToUpperInvariant()
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
+function Convert-ManifestBytesToText {
+    param([byte[]]$Bytes)
+
+    if ($Bytes.Length -ge 2 -and $Bytes[0] -eq 0xFF -and $Bytes[1] -eq 0xFE) {
+        return [System.Text.Encoding]::Unicode.GetString($Bytes, 2, $Bytes.Length - 2)
+    }
+    if ($Bytes.Length -ge 2 -and $Bytes[0] -eq 0xFE -and $Bytes[1] -eq 0xFF) {
+        return [System.Text.Encoding]::BigEndianUnicode.GetString($Bytes, 2, $Bytes.Length - 2)
+    }
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        return [System.Text.Encoding]::UTF8.GetString($Bytes, 3, $Bytes.Length - 3)
+    }
+    return [System.Text.Encoding]::UTF8.GetString($Bytes)
+}
+
+function Get-ManifestEvidenceFromBytes {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][byte[]]$Bytes,
+        [Parameter(Mandatory)][string]$Source
+    )
+
+    $evidence = [ordered]@{
+        source = $Source
+        present = $true
+        status = 'unknown'
+        byte_count = $Bytes.Length
+        sha256 = Get-BytesSha256 -Bytes $Bytes
+        common_controls_v6_identity = $null
+    }
+    if ($Bytes.Length -gt $MaxManifestBytes) {
+        $evidence.status = 'oversize'
+        return [pscustomobject]$evidence
+    }
+    if ($Bytes.Length -eq 0) {
+        $evidence.status = 'empty'
+        return [pscustomobject]$evidence
+    }
+
+    $text = Convert-ManifestBytesToText -Bytes $Bytes
+    if ($text -match '(?is)<!DOCTYPE|<!ENTITY') {
+        $evidence.status = 'unsafe_xml_declaration'
+        return [pscustomobject]$evidence
+    }
+
+    $reader = $null
+    $stringReader = $null
+    try {
+        $settings = [System.Xml.XmlReaderSettings]::new()
+        $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+        $settings.XmlResolver = $null
+        $settings.MaxCharactersInDocument = $MaxManifestBytes
+        $stringReader = [System.IO.StringReader]::new($text)
+        $reader = [System.Xml.XmlReader]::Create($stringReader, $settings)
+        $document = [System.Xml.XmlDocument]::new()
+        $document.XmlResolver = $null
+        $document.Load($reader)
+        $identities = @($document.SelectNodes("//*[local-name()='assemblyIdentity']"))
+        $evidence.common_controls_v6_identity = @($identities | Where-Object {
+            $_.GetAttribute('name') -eq 'Microsoft.Windows.Common-Controls' -and $_.GetAttribute('version') -eq '6.0.0.0'
+        }).Count -gt 0
+        $evidence.status = 'parsed'
+    } catch {
+        $evidence.status = 'malformed_or_disallowed_xml'
+    } finally {
+        if ($reader) { $reader.Dispose() }
+        if ($stringReader) { $stringReader.Dispose() }
+    }
+
+    return [pscustomobject]$evidence
+}
+
+function Get-SidecarManifestEvidence {
+    param([string]$TestPath)
+
+    $sidecarPath = "$TestPath.manifest"
+    if (-not (Test-Path -LiteralPath $sidecarPath -PathType Leaf)) {
+        return [pscustomobject]@{
+            source = 'sidecar'
+            path = $sidecarPath
+            present = $false
+            status = 'absent'
+            byte_count = 0
+            declared_byte_count = 0
+            read_byte_count = 0
+            sha256 = $null
+            common_controls_v6_identity = $null
+        }
+    }
+
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open($sidecarPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        $declaredLength = $stream.Length
+        if ($declaredLength -gt $MaxManifestBytes) {
+            return [pscustomobject]@{
+                source = 'sidecar'
+                path = $sidecarPath
+                present = $true
+                status = 'oversize'
+                byte_count = $declaredLength
+                declared_byte_count = $declaredLength
+                read_byte_count = 0
+                sha256 = $null
+                common_controls_v6_identity = $null
+            }
+        }
+
+        $boundedBuffer = New-Object byte[] ($MaxManifestBytes + 1)
+        $readLength = 0
+        while ($readLength -lt $boundedBuffer.Length) {
+            $read = $stream.Read($boundedBuffer, $readLength, $boundedBuffer.Length - $readLength)
+            if ($read -eq 0) { break }
+            $readLength += $read
+        }
+        if ($readLength -gt $MaxManifestBytes) {
+            return [pscustomobject]@{
+                source = 'sidecar'
+                path = $sidecarPath
+                present = $true
+                status = 'oversize'
+                byte_count = $readLength
+                declared_byte_count = $declaredLength
+                read_byte_count = $readLength
+                sha256 = $null
+                common_controls_v6_identity = $null
+            }
+        }
+        if ($readLength -ne $declaredLength) {
+            return [pscustomobject]@{
+                source = 'sidecar'
+                path = $sidecarPath
+                present = $true
+                status = 'read_length_changed'
+                byte_count = $readLength
+                declared_byte_count = $declaredLength
+                read_byte_count = $readLength
+                sha256 = $null
+                common_controls_v6_identity = $null
+            }
+        }
+
+        $bytes = New-Object byte[] $readLength
+        if ($readLength -gt 0) {
+            [System.Array]::Copy($boundedBuffer, $bytes, $readLength)
+        }
+        $evidence = Get-ManifestEvidenceFromBytes -Bytes $bytes -Source 'sidecar'
+        $evidence | Add-Member -NotePropertyName path -NotePropertyValue $sidecarPath
+        $evidence | Add-Member -NotePropertyName declared_byte_count -NotePropertyValue $declaredLength
+        $evidence | Add-Member -NotePropertyName read_byte_count -NotePropertyValue $readLength
+        return $evidence
+    } catch {
+        return [pscustomobject]@{
+            source = 'sidecar'
+            path = $sidecarPath
+            present = $true
+            status = 'read_unknown'
+            byte_count = $null
+            declared_byte_count = $null
+            read_byte_count = $null
+            sha256 = $null
+            common_controls_v6_identity = $null
+        }
+    } finally {
+        if ($stream) { $stream.Dispose() }
+    }
+}
+
+function Get-EmbeddedManifestPresence {
+    param([string]$Status)
+
+    switch ($Status) {
+        'absent' { return $false }
+        'loaded' { return $true }
+        'size_unavailable' { return $true }
+        'oversize' { return $true }
+        'load_resource_failed' { return $true }
+        'lock_resource_failed' { return $true }
+        default { return $null }
+    }
+}
+
+function Get-EmbeddedManifestEvidence {
+    param([string]$TestPath)
+
+    Initialize-ManifestResourceReader
+    $resource = [AntigravityManifestResourceReader]::ReadRtManifestId1($TestPath, [uint32]$MaxManifestBytes)
+    if ($resource.Status -ne 'loaded') {
+        return [pscustomobject]@{
+            source = 'embedded_rt_manifest_id_1'
+            present = Get-EmbeddedManifestPresence -Status $resource.Status
+            status = $resource.Status
+            win32_error = $resource.Win32Error
+            byte_count = $resource.Size
+            sha256 = $null
+            common_controls_v6_identity = $null
+        }
+    }
+
+    $evidence = Get-ManifestEvidenceFromBytes -Bytes $resource.Bytes -Source 'embedded_rt_manifest_id_1'
+    $evidence | Add-Member -NotePropertyName win32_error -NotePropertyValue $resource.Win32Error
+    return $evidence
+}
+
+function Get-DedicatedComctl32Audit {
+    param(
+        [string[]]$DependentNames,
+        [hashtable]$Imports,
+        [string]$SystemDirectory
+    )
+
+    $requested = @($DependentNames | Where-Object { $_ -eq 'comctl32.dll' })
+    if ($requested.Count -eq 0) {
+        return [pscustomobject]@{
+            status = 'not_imported'
+            candidate_evidence_not_loaded_dll_proof = $true
+            requested_exports = @()
+            export_matches = @()
+            missing_exports = @()
+        }
+    }
+
+    $candidate = Join-Path $SystemDirectory 'comctl32.dll'
+    $requiredSymbols = @($Imports['comctl32.dll'] | Sort-Object -Unique | Select-Object -First $MaxSymbolsPerModule)
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        return [pscustomobject]@{
+            status = 'system_candidate_unavailable'
+            candidate_evidence_not_loaded_dll_proof = $true
+            candidate_path = $candidate
+            requested_exports = $requiredSymbols
+            export_matches = @()
+            missing_exports = @()
+        }
+    }
+
+    try {
+        $exports = Get-ExportedSymbols -Path $candidate
+        $matches = Get-OrdinalCaseExportMatches -RequiredSymbols $requiredSymbols -Exports $exports
+        return [pscustomobject]@{
+            status = 'system_candidate_audited'
+            candidate_evidence_not_loaded_dll_proof = $true
+            candidate = Get-FileVersionSummary -Path $candidate
+            requested_exports = $requiredSymbols
+            export_matches = $matches
+            missing_exports = @($matches | Where-Object { -not $_.ordinal_case_exported } | ForEach-Object { $_.symbol })
+            exported_symbol_count = $exports.Count
+        }
+    } catch {
+        return [pscustomobject]@{
+            status = 'system_candidate_audit_unknown'
+            candidate_evidence_not_loaded_dll_proof = $true
+            candidate_path = $candidate
+            requested_exports = $requiredSymbols
+            export_matches = @()
+            missing_exports = @()
+            error = $_.Exception.Message
+        }
+    }
+}
+
+function Get-OrdinalCaseExportMatches {
+    param(
+        [string[]]$RequiredSymbols,
+        [Parameter(Mandatory)][System.Collections.Generic.HashSet[string]]$Exports
+    )
+
+    return @($RequiredSymbols | Sort-Object -Unique | ForEach-Object {
+        [pscustomobject]@{ symbol = $_; ordinal_case_exported = $Exports.Contains($_) }
+    })
+}
+
 function Test-IsApiSet {
     param([string]$Name)
     return $Name -like 'api-ms-win-*' -or $Name -like 'ext-ms-win-*'
@@ -356,8 +718,11 @@ function Get-MissingExportFindings {
     return @(
         $Modules | ForEach-Object {
             $modulePath = $_.module.path
-            $_.dependencies | Where-Object { $_.missing_exports.Count -gt 0 } | ForEach-Object {
-                [pscustomobject]@{ module = $modulePath; dll = $_.name; candidate = $_.selected_candidate; missing_exports = $_.missing_exports }
+            $_.dependencies | ForEach-Object {
+                $missingProperty = $_.PSObject.Properties['missing_exports']
+                if ($null -ne $missingProperty -and @($missingProperty.Value).Count -gt 0) {
+                    [pscustomobject]@{ module = $modulePath; dll = $_.name; candidate = $_.selected_candidate; missing_exports = $missingProperty.Value }
+                }
             }
         } | Select-Object -First 16
     )
@@ -379,6 +744,57 @@ function Invoke-SelfTest {
 
     $exports = ConvertFrom-DumpbinExportLines -Lines @('      1    0 00001000 RequiredExport', '      2    1 ForwardedExport = KERNEL32.ForwardedExport')
     Assert-SelfTest ($exports -is [System.Collections.Generic.HashSet[string]] -and $exports.Contains('RequiredExport') -and $exports.Contains('ForwardedExport')) 'export parser and HashSet preservation'
+
+    $caseExports = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    [void]$caseExports.Add('ExactExport')
+    $zeroMissing = Get-OrdinalCaseExportMatches -RequiredSymbols @('ExactExport') -Exports $caseExports
+    Assert-SelfTest ($zeroMissing.Count -eq 1 -and $zeroMissing[0].ordinal_case_exported) 'zero missing exports'
+    $oneMissing = Get-OrdinalCaseExportMatches -RequiredSymbols @('ExactExport', 'MissingExport') -Exports $caseExports
+    Assert-SelfTest ((@($oneMissing | Where-Object { -not $_.ordinal_case_exported }).Count -eq 1) -and $oneMissing[1].symbol -eq 'MissingExport') 'one missing export'
+    $caseMismatch = Get-OrdinalCaseExportMatches -RequiredSymbols @('exactexport') -Exports $caseExports
+    Assert-SelfTest (-not $caseMismatch[0].ordinal_case_exported) 'ordinal case export matching'
+
+    Assert-SelfTest (-not (Get-EmbeddedManifestPresence -Status 'absent')) 'embedded manifest absence is false'
+    Assert-SelfTest (Get-EmbeddedManifestPresence -Status 'loaded') 'embedded manifest loaded is present'
+    foreach ($locatedStatus in @('size_unavailable', 'oversize', 'load_resource_failed', 'lock_resource_failed')) {
+        Assert-SelfTest (Get-EmbeddedManifestPresence -Status $locatedStatus) "embedded manifest $locatedStatus is present"
+    }
+    foreach ($unknownStatus in @('load_library_failed', 'find_resource_failed', 'not_inspected', 'unknown')) {
+        Assert-SelfTest ($null -eq (Get-EmbeddedManifestPresence -Status $unknownStatus)) "embedded manifest $unknownStatus is unknown"
+    }
+
+    $absentManifest = Get-SidecarManifestEvidence -TestPath (Join-Path $env:TEMP 'antigravity-nonexistent-manifest-fixture.exe')
+    Assert-SelfTest ($absentManifest.status -eq 'absent' -and -not $absentManifest.present) 'absent manifest'
+    $manifestFixtureDirectory = Join-Path $env:TEMP ("antigravity-manifest-selftest-{0}" -f [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $manifestFixtureDirectory -Force | Out-Null
+    try {
+        $oversizeFixturePath = Join-Path $manifestFixtureDirectory 'oversize.exe.manifest'
+        $oversizeFixtureStream = [System.IO.File]::Open($oversizeFixturePath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try {
+            $oversizeFixtureStream.SetLength([int64]$MaxManifestBytes + 1)
+        } finally {
+            $oversizeFixtureStream.Dispose()
+        }
+        $oversizeSidecar = Get-SidecarManifestEvidence -TestPath (Join-Path $manifestFixtureDirectory 'oversize.exe')
+        Assert-SelfTest ($oversizeSidecar.status -eq 'oversize' -and $oversizeSidecar.declared_byte_count -eq ($MaxManifestBytes + 1) -and $oversizeSidecar.read_byte_count -eq 0) 'oversize sidecar bounded before read'
+
+        $emptyFixturePath = Join-Path $manifestFixtureDirectory 'empty.exe.manifest'
+        [System.IO.File]::WriteAllBytes($emptyFixturePath, [byte[]]@())
+        $emptySidecar = Get-SidecarManifestEvidence -TestPath (Join-Path $manifestFixtureDirectory 'empty.exe')
+        Assert-SelfTest ($emptySidecar.status -eq 'empty' -and $emptySidecar.present -and $emptySidecar.read_byte_count -eq 0) 'empty sidecar remains diagnostic unknown'
+    } finally {
+        Remove-Item -LiteralPath $manifestFixtureDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $v6Manifest = Get-ManifestEvidenceFromBytes -Bytes ([System.Text.Encoding]::UTF8.GetBytes('<assembly><dependency><dependentAssembly><assemblyIdentity name="Microsoft.Windows.Common-Controls" version="6.0.0.0" /></dependentAssembly></dependency></assembly>')) -Source 'synthetic-v6'
+    Assert-SelfTest ($v6Manifest.status -eq 'parsed' -and $v6Manifest.common_controls_v6_identity) 'v6 common-controls manifest'
+    $noV6Manifest = Get-ManifestEvidenceFromBytes -Bytes ([System.Text.Encoding]::UTF8.GetBytes('<assembly><assemblyIdentity name="other" version="1.0.0.0" /></assembly>')) -Source 'synthetic-no-v6'
+    Assert-SelfTest ($noV6Manifest.status -eq 'parsed' -and -not $noV6Manifest.common_controls_v6_identity) 'no-v6 manifest'
+    $malformedManifest = Get-ManifestEvidenceFromBytes -Bytes ([System.Text.Encoding]::UTF8.GetBytes('<assembly><broken></assembly>')) -Source 'synthetic-malformed'
+    Assert-SelfTest ($malformedManifest.status -eq 'malformed_or_disallowed_xml') 'malformed manifest'
+    $oversizeManifest = Get-ManifestEvidenceFromBytes -Bytes (New-Object byte[] ($MaxManifestBytes + 1)) -Source 'synthetic-oversize'
+    Assert-SelfTest ($oversizeManifest.status -eq 'oversize') 'oversize manifest'
+    $externalManifest = Get-ManifestEvidenceFromBytes -Bytes ([System.Text.Encoding]::UTF8.GetBytes('<!DOCTYPE assembly SYSTEM "https://example.invalid/manifest.dtd"><assembly />')) -Source 'synthetic-external'
+    Assert-SelfTest ($externalManifest.status -eq 'unsafe_xml_declaration') 'external XML declaration rejected'
 
     $zeroSelection = Select-DumpbinCandidate -Candidates @() -DefaultToolVersion $null
     Assert-SelfTest ($zeroSelection.status -eq 'no_valid_hostx64_x64_candidate' -and $null -eq $zeroSelection.selected) 'zero dumpbin candidates'
@@ -415,7 +831,8 @@ function Invoke-SelfTest {
         dependencies = @(
             [pscustomobject]@{ name = 'kernel32.dll'; selected_candidate = 'C:\\Windows\\System32\\kernel32.dll'; missing_exports = @() },
             [pscustomobject]@{ name = 'local.dll'; selected_candidate = 'C:\\test\\local.dll'; missing_exports = @('RequiredExport') },
-            [pscustomobject]@{ name = 'api-ms-win-core.dll'; selected_candidate = $null; missing_exports = @() }
+            [pscustomobject]@{ name = 'api-ms-win-core.dll'; selected_candidate = $null },
+            [pscustomobject]@{ name = 'other-local.dll'; selected_candidate = 'C:\\test\\other-local.dll'; missing_exports = @() }
         )
     })
     $findings = Get-MissingExportFindings -Modules $mixedModules
@@ -425,6 +842,9 @@ function Invoke-SelfTest {
     if (-not (Test-Path -LiteralPath $powershell)) {
         $powershell = Join-Path $PSHOME 'pwsh'
     }
+    $resourceSmoke = Get-EmbeddedManifestEvidence -TestPath $powershell
+    Assert-SelfTest ($resourceSmoke.status -notin @('load_library_failed', 'find_resource_failed', 'size_unavailable', 'load_resource_failed', 'lock_resource_failed')) 'nonexecuting manifest resource reader smoke'
+    Write-Output "manifest resource reader smoke: status=$($resourceSmoke.status); present=$($resourceSmoke.present); sha256=$($resourceSmoke.sha256); common_controls_v6=$($resourceSmoke.common_controls_v6_identity)"
     $overflow = Invoke-BoundedNative -FilePath $powershell -Arguments @('-NoProfile', '-Command', '1..8 | ForEach-Object { "line$_" }') -TimeoutSeconds 5 -MaxOutputLines 3
     Assert-SelfTest ($overflow.ExitCode -eq 0 -and $overflow.OutputTruncated -and $overflow.Lines.Count -eq 3) 'native output cap'
 
@@ -455,6 +875,10 @@ try {
     $targetDebugDirectory = Split-Path -Parent $exeDirectory
     $windowsDirectory = $env:WINDIR
     $systemDirectory = Join-Path $windowsDirectory 'System32'
+    $script:ManifestEvidence = [ordered]@{
+        sidecar = Get-SidecarManifestEvidence -TestPath $testPath
+        embedded_rt_manifest_id_1 = Get-EmbeddedManifestEvidence -TestPath $testPath
+    }
 
     # Do not print PATH. Keep only existing directories and report a path only when
     # it contains an imported DLL candidate.
@@ -478,8 +902,15 @@ try {
         }
 
         $imports = Get-ImportsByDll -Path $module.path
+        $allDependentNames = @(Get-DependentNames -Path $module.path)
+        $generalDependencyNames = @($allDependentNames | Select-Object -First $MaxDependenciesPerModule)
+        $dedicatedComctl32 = if ($module.depth -eq 0) {
+            Get-DedicatedComctl32Audit -DependentNames $allDependentNames -Imports $imports -SystemDirectory $systemDirectory
+        } else {
+            $null
+        }
         $dependencies = [System.Collections.Generic.List[object]]::new()
-        foreach ($name in @(Get-DependentNames -Path $module.path | Select-Object -First $MaxDependenciesPerModule)) {
+        foreach ($name in $generalDependencyNames) {
             $requiredSymbols = @($imports[$name] | Sort-Object -Unique | Select-Object -First $MaxSymbolsPerModule)
             $candidates = [System.Collections.Generic.List[string]]::new()
             foreach ($directory in $searchDirectories) {
@@ -532,7 +963,14 @@ try {
         $modules.Add([pscustomobject]@{
             module = Get-FileVersionSummary -Path $module.path
             depth = $module.depth
+            dependency_enumeration = [ordered]@{
+                observed_count = $allDependentNames.Count
+                included_general_count = $generalDependencyNames.Count
+                general_limit = $MaxDependenciesPerModule
+                general_truncated = $allDependentNames.Count -gt $generalDependencyNames.Count
+            }
             dependencies = $dependencies
+            dedicated_comctl32_system_candidate_audit = $dedicatedComctl32
         })
     }
 
@@ -540,12 +978,13 @@ try {
         test_executable = Get-FileVersionSummary -Path $testPath
         dumpbin = $script:Dumpbin
         dumpbin_resolver = $script:DumpbinResolverEvidence
-        bounds = [ordered]@{ max_modules = $MaxModules; max_dependencies_per_module = $MaxDependenciesPerModule; max_symbols_per_module = $MaxSymbolsPerModule; max_dumpbin_output_lines = $MaxDumpbinOutputLines; max_seconds = $MaxAuditSeconds; max_candidate_paths_per_dll = 3; max_recursion_depth = 2 }
+        test_manifest = $script:ManifestEvidence
+        bounds = [ordered]@{ max_modules = $MaxModules; max_dependencies_per_module = $MaxDependenciesPerModule; max_symbols_per_module = $MaxSymbolsPerModule; max_dumpbin_output_lines = $MaxDumpbinOutputLines; max_manifest_bytes = $MaxManifestBytes; max_seconds = $MaxAuditSeconds; max_candidate_paths_per_dll = 3; max_recursion_depth = 2 }
         modules = $modules
         interpretation = 'Only local DLL candidates are export-audited. API sets, system DLLs, and unresolved candidates are recorded as unknown, not as a proven root cause.'
     }
     $reportPath = Join-Path $OutputDirectory 'windows-loader-pe-audit.json'
-    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
+    $report | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $reportPath -Encoding utf8
     $missingFindings = Get-MissingExportFindings -Modules $modules
     $summary = [ordered]@{
         report_path = $reportPath
@@ -561,6 +1000,7 @@ catch {
     $failure = [ordered]@{
         test_executable = $TestExecutable
         dumpbin_resolver = $script:DumpbinResolverEvidence
+        test_manifest = $script:ManifestEvidence
         error = $_.Exception.Message
         interpretation = 'PE audit was unavailable; this is diagnostic unknown and does not replace the original test failure.'
     }
@@ -568,9 +1008,9 @@ catch {
         New-Item -ItemType Directory -Path $OutputDirectory -Force -ErrorAction SilentlyContinue | Out-Null
         $reportPath = Join-Path $OutputDirectory 'windows-loader-pe-audit.json'
     }
-    $failure | ConvertTo-Json | Set-Content -LiteralPath $reportPath -Encoding utf8
+    $failure | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $reportPath -Encoding utf8
     Write-Warning "Windows loader PE audit unavailable: $($_.Exception.Message)"
-    $failure | ConvertTo-Json
+    $failure | ConvertTo-Json -Depth 16
 }
 
 # The workflow caller must preserve the focused cargo test exit code.
