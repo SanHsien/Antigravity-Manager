@@ -2103,7 +2103,6 @@ async fn admin_set_preferred_account(
     StatusCode::OK
 }
 
-
 async fn admin_set_proxy_monitor_enabled(
     State(state): State<AppState>,
     Json(payload): Json<serde_json::Value>,

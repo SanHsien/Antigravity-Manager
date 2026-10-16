@@ -373,7 +373,6 @@ impl Default for ProxyAuthMode {
     }
 }
 
-
 /// 实验性功能配置 (Feature Flags)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExperimentalConfig {
@@ -830,7 +829,6 @@ pub struct ProxyConfig {
     /// 是否只在 /v1/models 中暴露真实配额模型（隐藏内置虚拟别名）
     #[serde(default)]
     pub only_raw_quota_models: bool,
-
 
     /// 自定义 User-Agent 请求头 (可选覆盖)
     #[serde(default)]

@@ -465,7 +465,6 @@ pub async fn handle_messages(
         );
     }
 
-
     // [CRITICAL REFACTOR] 优先解析请求以获取模型信息(用于智能兜底判断)
     let mut request: crate::proxy::mappers::claude::models::ClaudeRequest =
         match serde_json::from_value(body.clone()) {
@@ -693,7 +692,6 @@ pub async fn handle_messages(
         );
         return create_warmup_response(&request, request.stream);
     }
-
 
     // Google Flow 继续使用 request 对象
     // (后续代码不需要再次 filter_invalid_thinking_blocks)

@@ -2833,7 +2833,8 @@ mod tests {
     fn test_profile_collision_leaves_config_unchanged() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join(OPENCODE_CONFIG_FILE);
-        let original = r#"{"provider":{"custom-provider-abcdef":{"options":{"apiKey":"first-key"}}}}"#;
+        let original =
+            r#"{"provider":{"custom-provider-abcdef":{"options":{"apiKey":"first-key"}}}}"#;
         fs::write(&path, original).unwrap();
         let error = sync_openai_provider_to_path(
             &path,

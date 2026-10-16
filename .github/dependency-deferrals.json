@@ -5,9 +5,17 @@
       "deferredLatest": "6.3.4",
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
+    "@lobehub/fluent-emoji": {
+      "deferredLatest": "5.0.0",
+      "reason": "major upgrade of an asset library needing bundle/asset compatibility audit; not now"
+    },
+    "@lobehub/icons": {
+      "deferredLatest": "6.0.0",
+      "reason": "major upgrade of an icon library needing brand asset audit and frontend build check; not now"
+    },
     "@lobehub/ui": {
-      "deferredLatest": "5.64.2",
-      "reason": "Official v5.64.2 metadata still requires Node >=22.22.0, antd ^6.1.1, @lobehub/icons ^5, React 19, and Motion 12; the official 5.62.1-to-5.64.2 diff adds 19 commits across 107 UI files, including DatePicker, theme, and layout changes, rather than removing migration constraints. This fork remains on CI Node 20, direct antd v5, and resolved UI 4.34.1 with the existing icon/UI peer mismatch. Recheck only with either approved package/lockfile cleanup or a coordinated Node/antd/icons/UI migration, clean install, frontend build, and light/dark UI acceptance"
+      "deferredLatest": "6.0.2",
+      "reason": "Official v6.x metadata requires coordinated Node, antd, icons, and React toolchain migration; not now"
     },
     "@vitejs/plugin-react": {
       "deferredLatest": "6.1.2",
@@ -22,19 +30,19 @@
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
     "framer-motion": {
-      "deferredLatest": "14.2.0",
+      "deferredLatest": "14.3.0",
       "reason": "the 11-to-14 path includes Motion 13's explicit Emotion prop-filtering injection and v14's stricter internal dependency versioning; this fork directly uses AnimatePresence/layout/hover animations and @emotion dependencies, so recheck with focused interaction, prop-forwarding, and accessibility regression coverage"
     },
     "i18next": {
-      "deferredLatest": "26.4.5",
+      "deferredLatest": "26.4.7",
       "reason": "v26 remains a core i18next migration across the fork's locale initialization, translation types, and language switching. Official 26.4.5 fixes hasLoadedNamespace({ lng }) readiness for resolved or unsupported language codes, but this fork currently ships local resource aliases, has no supportedLngs setting, and has no useTranslation call with lng; it does not make the major migration safe to adopt. Current react-i18next 16 accepts i18next >=25.6.2, so this is not falsely deferred as a required v17 pair; recheck the actual core upgrade with typecheck/build and language-switch acceptance"
     },
     "lucide-react": {
-      "deferredLatest": "1.57.0",
-      "reason": "Official 1.57.0 metadata retains the React peer range, and the precise 1.56.0-to-1.57.0 tag diff is 12 commits across 35 files dominated by added icon assets and package versioning; it does not validate this fork's separate 0.561.0-to-v1 migration. The existing v1 accessibility-default and brand-icon-removal audit remains necessary across 59 lucide-react source uses. Recheck with a complete import audit and keyboard/screen-reader acceptance after an approved v1 migration"
+      "deferredLatest": "1.58.0",
+      "reason": "Official 1.58.0 retains the React peer range; this fork's 0.561.0-to-v1 migration requires accessibility-default and brand-icon-removal audit across 59 lucide-react source uses. Recheck with a complete import audit and keyboard/screen-reader acceptance after an approved v1 migration"
     },
     "react-i18next": {
-      "deferredLatest": "17.0.16",
+      "deferredLatest": "17.0.19",
       "reason": "v17 raises its i18next peer floor to >=26.2; recheck only as the paired i18next 26 migration with locale initialization, typecheck, and language-switch acceptance"
     },
     "react-router": {
