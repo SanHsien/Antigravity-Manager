@@ -101,131 +101,15 @@ graph TD
 
 ### Option A: Terminal Installation (Recommended)
 
-#### Cross-Platform One-Line Install Scripts
-
-Automatically detects your OS, architecture, and package manager — one command to download and install.
-
-**Linux / macOS:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.sh | bash
-```
-
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/SanHsien/Antigravity-Manager/main/install.ps1 | iex
 ```
-
-> **Supported formats**: Linux (`.deb` / `.rpm` / `.AppImage`) | macOS (`.dmg`) | Windows (NSIS `.exe`)
->
-> **Advanced usage**: Install a specific version `curl -fsSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.sh | bash -s -- --version 4.6.8`, dry-run mode `curl -fsSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.sh | bash -s -- --dry-run`
-
-#### macOS - Homebrew
-If you have [Homebrew](https://brew.sh/) installed, you can also install via:
-
-```bash
-# 1. Tap the repository
-brew tap lbjlaq/antigravity-manager https://github.com/lbjlaq/Antigravity-Manager
-
-# 2. Install the app
-brew install --cask antigravity-tools
-```
-
-#### Arch Linux
-You can choose to install via the one-click script or Homebrew:
-
-**Option 1: One-click script (Recommended)**
-```bash
-curl -sSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/deploy/arch/install.sh | bash
-```
-
-**Option 2: via Homebrew** (If you have [Linuxbrew](https://sh.brew.sh/) installed)
-```bash
-brew tap lbjlaq/antigravity-manager https://github.com/lbjlaq/Antigravity-Manager
-brew install --cask antigravity-tools
-```
-
-#### Other Linux Distributions
-The AppImage will be automatically symlinked to your binary path with executable permissions.
 
 ### Option B: Manual Download
-Download from [GitHub Releases](https://github.com/lbjlaq/Antigravity-Manager/releases):
-*   **macOS**: `.dmg` (Universal, Apple Silicon & Intel)
-*   **Windows**: `.msi` or portable `.zip`
-*   **Linux**: `.deb` or `AppImage`
+Download from [GitHub Releases](https://github.com/SanHsien/Antigravity-Manager/releases):
+*   **Windows**: `.exe` (NSIS installer) or `.msi`
 
-### Option C: Docker Deployment (Recommended for NAS/Servers)
-If you prefer running in a containerized environment, we provide a native Docker image. This image supports the v4.0.3 Native Headless architecture, automatically hosts frontend static resources, and allows for direct browser-based management.
-
-```bash
-# Option 1: Direct Run (Recommended)
-# - API_KEY: Required. Used for AI request authentication.
-# - WEB_PASSWORD: Optional. Used for Web UI login. Defaults to API_KEY if NOT set.
-docker run -d --name antigravity-manager \
-  -p 8045:8045 \
-  -e API_KEY=sk-your-api-key \
-  -e WEB_PASSWORD=your-login-password \
-  -e ABV_MAX_BODY_SIZE=104857600 \
-  -v ~/.antigravity_tools:/root/.antigravity_tools \
-  lbjlaq/antigravity-manager:latest
-
-# Forgot keys? Run `docker logs antigravity-manager` or `grep -E '"api_key"|"admin_password"' ~/.antigravity_tools/gui_config.json`
-
-#### 🔐 Authentication Scenarios
-*   **Scenario A: Only `API_KEY` is set**
-    - **Web Login**: Use `API_KEY` to access the dashboard.
-    - **API Calls**: Use `API_KEY` for AI request authentication.
-*   **Scenario B: Both `API_KEY` and `WEB_PASSWORD` are set (Recommended)**
-    - **Web Login**: **Must** use `WEB_PASSWORD`. Using API Key will be rejected (more secure).
-    - **API Calls**: Continue to use `API_KEY`. This allows you to share the API Key with team members while keeping the password for administrative access only.
-
-#### 🆙 Upgrade Guide for Older Versions
-If you are upgrading from v4.0.1 or earlier, your installation won't have a `WEB_PASSWORD` set by default. You can add one using any of these methods:
-1.  **Web UI (Recommended)**: Log in using your existing `API_KEY`, go to the **API Proxy Settings** page, find the **Web UI Management Password** section below the API Key, set your new password, and save.
-2.  **Environment Variable (Docker)**: Stop the old container and start the new one with the added parameter `-e WEB_PASSWORD=your_new_password`. **Note: Environment variables have the highest priority and will override any changes in the UI.**
-3.  **Config File (Persistent)**: Directly edit `~/.antigravity_tools/gui_config.json` and add/modify `"admin_password": "your_new_password"` inside the `proxy` object.
-    - *Note: `WEB_PASSWORD` is the environment variable name, while `admin_password` is the JSON key in the config file.*
-
-> [!TIP]
-> **Priority Logic**:
-> - **Environment Variable** (`WEB_PASSWORD`) has the highest priority. If set, the application will always use it and ignore values in the configuration file.
-> - **Configuration File** (`gui_config.json`) is used for persistent storage. When you change the password via Web UI and save, it is written here.
-> - **Fallback**: If neither is set, it falls back to `API_KEY`; if even `API_KEY` is missing, a random one is generated.
-
-# Option 2: Use Docker Compose
-# 1. Enter the Docker directory
-cd docker
-# 2. Start the service
-docker compose up -d
-```
-> **Log rotation**: Compose limits JSON logs to `100m` per file and keeps `3` files by default to prevent unbounded growth.
-> **Access URL**: `http://localhost:8045` (Admin Console) | `http://localhost:8045/v1` (API Base)
-> **System Requirements**:
-> - **RAM**: **1GB** recommended (minimum 256MB).
-> - **Persistence**: Mount `/root/.antigravity_tools` to persist your data.
-> - **Architecture**: Supports x86_64 and ARM64.
-> **See**: [Docker Deployment Guide (docker)](./docker/README.md)
-
-<details>
-<summary><b>🛠️ Troubleshooting - Click to expand</b></summary>
-
-#### macOS says "App is damaged"?
-Due to macOS security gatekeeper, non-App Store apps might show this. Run this in Terminal to fix:
-```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Antigravity Tools.app"
-```
-
-#### Linux window is black or empty?
-On niri, Hyprland, Sway, and similar compositors, older builds forced `GDK_BACKEND=x11` whenever `DISPLAY` was set, and WebKit then drew a black window. Update to a build that includes this fix, or launch once with:
-
-```bash
-env WEBKIT_DISABLE_DMABUF_RENDERER=1 ANTIGRAVITY_FORCE_WAYLAND=1 antigravity-tools
-```
-
-- `ANTIGRAVITY_FORCE_WAYLAND=1`: keep native Wayland (do not force X11)
-- `ANTIGRAVITY_FORCE_X11=1`: force X11 if you still need it
-- `WEBKIT_DISABLE_DMABUF_RENDERER=1`: disable the WebKit DMA-BUF renderer
-
-</details>
 
 ## 🔌 Quick Integration Examples
 
