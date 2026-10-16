@@ -497,7 +497,7 @@ mod tests {
     #[tokio::test]
     async fn internal_namespace_boundary_and_noninternal_health_and_options_are_unchanged() {
         let counter = Arc::new(AtomicUsize::new(0));
-        let app = auth_router(counter.clone(), ProxyAuthMode::Strict);
+        let app = auth_router(counter.clone(), ProxyAuthMode::AllExceptHealth);
 
         let boundary = app
             .clone()
