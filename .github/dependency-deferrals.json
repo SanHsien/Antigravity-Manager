@@ -14,7 +14,7 @@
       "reason": "major upgrade of an icon library needing brand asset audit and frontend build check; not now"
     },
     "@lobehub/ui": {
-      "deferredLatest": "6.0.2",
+      "deferredLatest": "6.0.4",
       "reason": "Official v6.x metadata requires coordinated Node, antd, icons, and React toolchain migration; not now"
     },
     "@vitejs/plugin-react": {
@@ -42,7 +42,7 @@
       "reason": "Official 1.58.0 retains the React peer range; this fork's 0.561.0-to-v1 migration requires accessibility-default and brand-icon-removal audit across 59 lucide-react source uses. Recheck with a complete import audit and keyboard/screen-reader acceptance after an approved v1 migration"
     },
     "react-i18next": {
-      "deferredLatest": "17.0.19",
+      "deferredLatest": "17.0.20",
       "reason": "v17 raises its i18next peer floor to >=26.2; recheck only as the paired i18next 26 migration with locale initialization, typecheck, and language-switch acceptance"
     },
     "react-router": {
