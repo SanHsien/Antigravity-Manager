@@ -3,7 +3,7 @@
 > Complete version history for Antigravity Tools. Return to project home at [README_EN.md](README_EN.md).
 
 *   **Version History**:
-    *   **v4.9.0 (2026-10-16)**:
+    *   **v5.0.0 (2026-10-16)**:
         -   **[Refactoring & Sanitization] Remove Chinese Relay Services & Streamline to Pure Windows**:
             -   **Complete Relay Service Removal**: Deleted APIKEY.FUN dedicated view, navigation entries, OpenCode profile synchronization, and associated test scripts; removed z.ai (GLM) forward proxy handler, dynamic model lookup endpoint, and dedicated MCP toolset (Search / Reader / Vision).
             -   **Localization Sanitization**: Scrubbed all 11 locale files of `apiKeyFun`, `navbar.apikey_fun`, and `proxy.config.zai` keys and translations.

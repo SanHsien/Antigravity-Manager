@@ -3,8 +3,8 @@
 > 完整版本历史记录。返回项目主页请查看 [README.md](README.md) | [English Changelog](CHANGELOG_EN.md)。
 
 *   **版本演进**:
-    *   **v4.9.0 (2026-10-16)**:
-        -   **[架構重構與安全淨化] 全面移除中國資本中轉站服務與非 Windows 跨平台支援**:
+    *   **v5.0.0 (2026-10-16)**:
+        -   **[重大架構變更與安全淨化] 全面移除中國資本中轉站服務與非 Windows 跨平台支援**:
             -   **中轉站與特定上游服務物理拔除**: 徹底刪除 APIKEY.FUN 專屬頁面、導航項目、OpenCode 同步與關聯測試；拔除 z.ai (GLM) 轉發適配器、模型動態拉取端點及專屬 MCP 工具集（Search / Reader / Vision）。
             -   **語系字串完全淨化**: 遍歷並清理所有 11 國語系檔中殘留的 `apiKeyFun`、`navbar.apikey_fun` 及 `proxy.config.zai` 鍵值與翻譯。
             -   **純粹化 Windows 原生桌面環境**: 刪除 macOS Cask、Entitlements、`.icns`、Linux WebKit 圖形相容補丁、Wayland/GTK 特殊處置，以及 Android/iOS 全尺寸圖示資源。
