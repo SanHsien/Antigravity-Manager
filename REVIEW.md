@@ -507,3 +507,17 @@ issue 水位提升至 `#3682`；PR 水位仍為 `#3680`，release／commit 基�
 | [Issue #3683](https://github.com/lbjlaq/Antigravity-Manager/issues/3683) | already-implemented／本 fork 已支援 | 經對照代碼庫，本 fork 於 `src-tauri/src/proxy/common/json_schema.rs:179-210` 早已完整實作 `const` 關鍵字規範化（`#3327`）：在 `clean_json_schema_recursive` 進入時即主動判斷 `map.remove("const")`，推導其型別（string/integer/number/boolean/array/object）並插入 `type`，同時將 `const` 值注入 `enum` 陣列（去重處理）。此功能已有完整單元測試覆蓋（`test_clean_json_schema_normalizes_const_to_enum`）。上游 issue 為社群建議提案，本 fork 無需重複變更產品代碼。 |
 
 issue 水位提升至 `#3683`；PR 水位仍為 `#3680`，release／commit 基線不變。水位只表示 #3683 已讀取並比對 fork 行為，**確認本 fork 已具備該遞迴 const 轉換能力。**
+
+### 25. 安全分支整併與 PR #41 驗收落地（2026-10-16）
+
+完成對剩餘分支 `security/internal-warmup-loopback-20261015` 與 [PR #41](https://github.com/SanHsien/Antigravity-Manager/pull/41)（`fix(security): require process-local capability for internal warmup`）之排查與驗收：
+
+1. **根因定位與測試修復**：
+   - 失敗測試 `internal_namespace_boundary_and_noninternal_health_and_options_are_unchanged` 原先設定為 `ProxyAuthMode::Strict`，但在該嚴格模式下，非管理端點之 `/health` 必須攜帶 API Key，導致未帶 token 的探活請求被 `auth_middleware` 判定為 401 Unauthorized，使測試預期與實作者意圖不一致。
+   - 將測試環境改為 `ProxyAuthMode::AllExceptHealth`，精確測試「非 internal 的 health 探活豁免與 OPTIONS 預檢不受 warmup 私有 capability 限制」，且計數器恰好自增 2 次，完全符合設計規範。
+2. **CI 驗證**：
+   - 推送至遠端後，GitHub Actions CI（Run ID: 38875911592 與 38875911620）共 10 項檢查全數綠燈 PASS（涵蓋 macOS、Ubuntu、Windows-2025 的 Rust 測試與 Tauri 打包，以及 CodeQL 安全掃描）。
+3. **分支整併與清理**：
+   - PR #41 於 2026-10-16 順利合併入 `main`。
+   - 遠端分支 `security/internal-warmup-loopback-20261015` 與其餘 7 個已整併分支全數清理完畢，`origin` 僅保留單一主分支 `main` 與標籤/發布。
+
