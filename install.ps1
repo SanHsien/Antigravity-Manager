@@ -1,8 +1,8 @@
 # Antigravity Tools Install Script for Windows
-# Usage: irm https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/SanHsien/Antigravity-Manager/main/install.ps1 | iex
 #
 # Parameters (set before running):
-#   $Version = "4.2.2"  # Install specific version
+#   $Version = "5.0.0"  # Install specific version
 #   $DryRun = $true      # Preview commands without executing
 
 if (-not $Version) { $Version = "" }
@@ -10,7 +10,7 @@ if (-not $DryRun) { $DryRun = $false }
 
 $ErrorActionPreference = "Continue"
 
-$Repo = "lbjlaq/Antigravity-Manager"
+$Repo = "SanHsien/Antigravity-Manager"
 $AppName = "Antigravity Tools"
 $GithubApi = "https://api.github.com/repos/$Repo/releases"
 $script:ReleaseVersion = ""

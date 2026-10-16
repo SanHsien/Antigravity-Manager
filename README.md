@@ -4,13 +4,13 @@
 <div align="center">
   <img src="public/icon.png" width="100" height="100" alt="Antigravity Tools Logo">
   <h3>Antigravity Tools</h3>
-  <p>多平臺自動化運維與多帳號矩陣排程控制檯</p>
+  <p>Windows 原生 AI 帳號管理與多帳號矩陣排程控制檯</p>
 
   <p>
-    <a href="https://github.com/lbjlaq/Antigravity-Manager/releases">
-      <img src="https://img.shields.io/github/v/release/lbjlaq/Antigravity-Manager?color=blue&style=flat-square" alt="GitHub release">
+    <a href="https://github.com/SanHsien/Antigravity-Manager/releases">
+      <img src="https://img.shields.io/github/v/release/SanHsien/Antigravity-Manager?color=blue&style=flat-square" alt="GitHub release">
     </a>
-    <a href="https://github.com/lbjlaq/Antigravity-Manager">
+    <a href="https://github.com/SanHsien/Antigravity-Manager">
       <img src="https://img.shields.io/badge/Version-5.0.0-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Frontend-React-61DAFB?style=flat-square" alt="React">
@@ -301,7 +301,7 @@ response = client.chat.completions.create(
 
 ## 📝 更新日誌
 
-> 最新版本 **v4.8.2**（2026-10-16）：修復 Windows MSVC 環境下 Common Controls v6 清單依賴與測試二進位檔載入異常；新增 Windows 載入診斷工具；Gemini 中轉保底填充文字調整為純協定標點 `.` 避免干擾模型分析推理；同步審查上游 issue #3681、#3682 與 #3683，確認原生支援 MCP 工具之遞迴 `const` 關鍵字規範化。
+> 最新版本 **v5.0.0**（2026-10-16）：重大架構變更與安全淨化。全面移除中國資本中轉站服務（APIKEY.FUN、z.ai/GLM 轉發與專屬 MCP 工具）與非 Windows 跨平台支援；完全淨化 11 國語系檔殘留鍵值；建置與發布管線全面收斂至 Windows 原生（`windows-2025`、NSIS/MSI），更新端點遷移至 SanHsien 倉庫。
 
 👉 **[檢視完整更新日誌 CHANGELOG.md →](CHANGELOG.md)**
 

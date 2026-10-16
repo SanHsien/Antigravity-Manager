@@ -4,13 +4,13 @@
 <div align="center">
   <img src="public/icon.png" width="100" height="100" alt="Antigravity Tools Logo">
   <h3>Antigravity Tools</h3>
-  <p>Multi-platform automation & multi-account matrix dispatch console</p>
+  <p>Windows-native AI account management & multi-account matrix dispatch console</p>
 
   <p>
-    <a href="https://github.com/lbjlaq/Antigravity-Manager/releases">
-      <img src="https://img.shields.io/github/v/release/lbjlaq/Antigravity-Manager?color=blue&style=flat-square" alt="GitHub release">
+    <a href="https://github.com/SanHsien/Antigravity-Manager/releases">
+      <img src="https://img.shields.io/github/v/release/SanHsien/Antigravity-Manager?color=blue&style=flat-square" alt="GitHub release">
     </a>
-    <a href="https://github.com/lbjlaq/Antigravity-Manager">
+    <a href="https://github.com/SanHsien/Antigravity-Manager">
       <img src="https://img.shields.io/badge/Version-5.0.0-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
@@ -303,7 +303,7 @@ In clients that support OpenAI protocol (e.g., Cherry Studio), you can configure
 
 ## 📝 Changelog
 
-> Latest version **v4.8.2** (2026-10-16): Fixed Common Controls v6 manifest dependency and unit test binary loader failures on Windows MSVC; added Windows loader diagnostic tool; replaced Gemini defense fallback text with neutral dot `.` to prevent interference with model reasoning trajectories; triaged upstream issues #3681, #3682 and #3683, confirming native recursive `const` to `enum` normalization for MCP tools.
+> Latest version **v5.0.0** (2026-10-16): Major architecture refactoring and security sanitization. Completely removed Chinese relay services (APIKEY.FUN, z.ai/GLM proxy & dedicated MCP tools) and non-Windows platform support; sanitized all 11 locale files; streamlined CI and Release pipelines to pure Windows-native (`windows-2025`, NSIS/MSI), and re-pointed update endpoints to the SanHsien repository.
 
 👉 **[View Full Changelog → CHANGELOG_EN.md](CHANGELOG_EN.md)**
 
