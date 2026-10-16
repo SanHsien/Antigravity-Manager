@@ -3,6 +3,15 @@
 > 完整版本历史记录。返回项目主页请查看 [README.md](README.md) | [English Changelog](CHANGELOG_EN.md)。
 
 *   **版本演进**:
+    *   **v4.8.2 (2026-10-16)**:
+        -   **[Windows 原生維護與建置相容性] Common Controls v6 清單依賴與測試二進位檔修復**:
+            -   **MSVC 連結引數規範化**: 於 `src-tauri/build.rs` 引入全域 Cargo `rustc-link-arg` 宣告，傳遞 `/MANIFESTDEPENDENCY` 啟用 Common Controls v6，徹底解決 Windows MSVC 環境下單元測試執行時因缺少 Common Controls v6 觸發的 `0xc0000139` 載入異常，並解決 `link.exe` 雙重引號引發的 `LNK1181` 錯誤。
+            -   **Windows 載入診斷管線**: 新增 `tools/diagnose_windows_loader.ps1`，提供有界的 PE 依賴、匯出符號與清單資源診斷能力。
+        -   **[安全性與通訊協定穩固性] Gemini 填充報文惰性修補與防護 (PR #37)**:
+            -   **惰性協定填充**: 將通用中轉報文保底填充文字調整為純協定標點 `.`（`TRANSIT_DEFENSE_FALLBACK_TEXT = "."`），消除包含 `continue` 或 `analysis` 等指令性文字對模型推理的潛在干擾，確保報文末尾輪次完全符合 Google Gemini 規範。
+        -   **[治理與上游基準同步] 審查上游 issue #3681、#3682 與 #3683**:
+            -   **MCP Schema 工具相容性核驗**: 針對社群提案 #3683，確認本 fork 之 `json_schema.rs` 已原生支援遞迴將 `const` 規範化轉換為 `enum` 陣列，無縫相容各類 MCP 工具生態。
+
     *   **v4.8.1 (2026-09-25)**:
         -   **[四大协议前缀统一与前缀缓存 100% 保护] 重构四大协议转出报文，消除因格式漂移导致的前缀崩塌与思考签名异常**:
             -   **报文确定性键序排序与拓扑拉齐**: 全面重构 OpenAI Chat、OpenAI Responses、Anthropic Claude 与 Google Gemini 四大协议的中转报文处理，引入确定性键序排序（Deterministic Key Ordering）与结构规范化，四大协议任意来回切换转出报文百分之百一致，长上下文前缀缓存（Prefix Caching）通用不崩塌。

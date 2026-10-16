@@ -1,5 +1,5 @@
 # Antigravity Tools 🚀
-> 專業級 AI 帳號管理與協議代理系統 (v4.8.1)
+> 專業級 AI 帳號管理與協議代理系統 (v4.8.2)
 
 <div align="center">
   <img src="public/icon.png" width="100" height="100" alt="Antigravity Tools Logo">
@@ -11,7 +11,7 @@
       <img src="https://img.shields.io/github/v/release/lbjlaq/Antigravity-Manager?color=blue&style=flat-square" alt="GitHub release">
     </a>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-4.8.1-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-4.8.2-blue?style=flat-square" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Frontend-React-61DAFB?style=flat-square" alt="React">
     <img src="https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-lightgrey?style=flat-square" alt="License">
@@ -424,7 +424,7 @@ response = client.chat.completions.create(
 
 ## 📝 更新日誌
 
-> 最新版本 **v4.8.1**（2026-09-25）：全面重構四大協議中轉報文，引入確定性鍵序排序與拓撲拉齊，實現跨協議來回切換轉出報文 100% 位元組級一致，長上下文字首快取（Prefix Caching）通用不崩塌；徹底解決 Claude 與 Gemini 協議切換思考簽名不同引發的異常，支援 `<think>` 標籤包裝及原生思考塊無損提升與簽名因果召回；全面拋棄客戶端隨機 tool_id，改用上下文因果確定性偽雜湊 ID 統一雙向檢索；全面打通 Agent 視覺鏈路，支援工具結果中 Base64 圖片原生轉換為 Gemini 視覺輸入載荷；全面拔除介面卡層歷史遺留的 `web_search` 工具過濾與硬編碼死程式碼，統一收斂至 Pipeline 集中治理；修復客戶端預算模式下關閉思考偶發失效的問題；新增 JeikCode、Hermes、OpenClaw、Grok Build 等 Agent 客戶端一鍵配置卡片與無邊框正方形 App 圖示生態；新增全語言自適應版本升級清理思考塊快取建議彈窗。
+> 最新版本 **v4.8.2**（2026-10-16）：修復 Windows MSVC 環境下 Common Controls v6 清單依賴與測試二進位檔載入異常；新增 Windows 載入診斷工具；Gemini 中轉保底填充文字調整為純協定標點 `.` 避免干擾模型分析推理；同步審查上游 issue #3681、#3682 與 #3683，確認原生支援 MCP 工具之遞迴 `const` 關鍵字規範化。
 
 👉 **[檢視完整更新日誌 CHANGELOG.md →](CHANGELOG.md)**
 
