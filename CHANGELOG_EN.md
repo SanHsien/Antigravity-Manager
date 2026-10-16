@@ -3,6 +3,13 @@
 > Complete version history for Antigravity Tools. Return to project home at [README_EN.md](README_EN.md).
 
 *   **Version History**:
+    *   **v4.9.0 (2026-10-16)**:
+        -   **[Refactoring & Sanitization] Remove Chinese Relay Services & Streamline to Pure Windows**:
+            -   **Complete Relay Service Removal**: Deleted APIKEY.FUN dedicated view, navigation entries, OpenCode profile synchronization, and associated test scripts; removed z.ai (GLM) forward proxy handler, dynamic model lookup endpoint, and dedicated MCP toolset (Search / Reader / Vision).
+            -   **Localization Sanitization**: Scrubbed all 11 locale files of `apiKeyFun`, `navbar.apikey_fun`, and `proxy.config.zai` keys and translations.
+            -   **Windows-Native Desktop Focus**: Removed macOS Cask, Entitlements, `.icns`, Linux WebKit graphics workarounds, Wayland/GTK mitigations, and all Android/iOS icon assets.
+            -   **Build & Release Pipeline Alignment**: Streamlined CI and Release workflows to Windows-only (`windows-2025`), dropped Docker builds, locked Tauri bundles to `nsis` and `msi`, and re-pointed the update endpoint to the SanHsien repository.
+
     *   **v4.8.2 (2026-10-16)**:
         -   **[Windows Native Maintenance & Build Compatibility] Common Controls v6 Manifest Dependency & Test Binary Fixes**:
             -   **MSVC Link Argument Normalization**: Introduced Cargo global `rustc-link-arg` in `src-tauri/build.rs` to pass `/MANIFESTDEPENDENCY` enabling Common Controls v6, fixing `0xc0000139` entry point loader failures during unit tests on Windows MSVC and eliminating `LNK1181` errors caused by double quoting.
