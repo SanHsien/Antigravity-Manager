@@ -1615,8 +1615,8 @@ pub fn wrap_in_system_reminder(content: &str) -> String {
     )
 }
 
-/// [DEFENSE] 通用中转报文保底文本（温和提示继续分析，避免触发 Agent 误进入修改阶段）
-pub const TRANSIT_DEFENSE_FALLBACK_TEXT: &str = "Please continue your analysis.";
+/// [DEFENSE] 通用中转报文保底文本（仅满足协议的非指令填充）
+pub const TRANSIT_DEFENSE_FALLBACK_TEXT: &str = ".";
 
 /// [DEFENSE] 通用中转报文保底防御节点（协议无关性）
 /// 确保发给 Google Gemini 的报文末尾轮次严格符合规范：
@@ -1806,9 +1806,36 @@ mod defense_tests {
                 { "role": "user", "parts": [{ "text": "valid message" }] }
             ]
         });
+        let original = payload.clone();
         assert!(!ensure_gemini_payload_ends_with_user(&mut payload));
-        let contents = payload["contents"].as_array().unwrap();
-        assert_eq!(contents[0]["parts"][0]["text"], "valid message");
+        assert_eq!(payload, original);
+    }
+
+    #[test]
+    fn test_ensure_gemini_payload_ends_with_user_tool_and_binary_parts_untouched() {
+        let mut payload = json!({
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        { "functionResponse": { "name": "read_file", "response": { "result": "ok" } } },
+                        { "inlineData": { "mimeType": "application/octet-stream", "data": "AA==" } }
+                    ]
+                }
+            ]
+        });
+        let original = payload.clone();
+        assert!(!ensure_gemini_payload_ends_with_user(&mut payload));
+        assert_eq!(payload, original);
+    }
+
+    #[test]
+    fn test_transit_defense_fallback_text_is_inert_protocol_padding() {
+        assert_eq!(TRANSIT_DEFENSE_FALLBACK_TEXT, ".");
+        let normalized = TRANSIT_DEFENSE_FALLBACK_TEXT.to_ascii_lowercase();
+        assert!(!normalized.contains("continue"));
+        assert!(!normalized.contains("analy"));
+        assert!(!normalized.contains("authoriz"));
     }
 
     #[test]
