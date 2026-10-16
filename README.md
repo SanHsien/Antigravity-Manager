@@ -99,138 +99,15 @@ graph TD
 
 ### 選項 A: 終端安裝 (推薦)
 
-#### 跨平臺一鍵安裝指令碼
-
-自動檢測作業系統、架構和包管理器，一條命令完成下載與安裝。
-
-**Linux / macOS:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.sh | bash
-```
-
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/SanHsien/Antigravity-Manager/main/install.ps1 | iex
 ```
-
-> **支援的格式**: Linux (`.deb` / `.rpm` / `.AppImage`) | macOS (`.dmg`) | Windows (NSIS `.exe`)
->
-> **高階用法**: 安裝指定版本 `curl -fsSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.sh | bash -s -- --version 4.6.8`，預覽模式 `curl -fsSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/install.sh | bash -s -- --dry-run`
-
-#### macOS - Homebrew
-如果您已安裝 [Homebrew](https://brew.sh/)，也可以透過以下命令安裝：
-
-```bash
-# 1. 訂閱本倉庫的 Tap
-brew tap lbjlaq/antigravity-manager https://github.com/lbjlaq/Antigravity-Manager
-
-# 2. 安裝應用
-brew install --cask antigravity-tools
-```
-
-#### Arch Linux
-您可以選擇透過一鍵安裝指令碼或 Homebrew 進行安裝：
-
-**方式 1：一鍵安裝指令碼 (推薦)**
-```bash
-curl -sSL https://raw.githubusercontent.com/lbjlaq/Antigravity-Manager/main/deploy/arch/install.sh | bash
-```
-
-**方式 2：透過 Homebrew** (如果您已安裝 [Linuxbrew](https://sh.brew.sh/))
-```bash
-brew tap lbjlaq/antigravity-manager https://github.com/lbjlaq/Antigravity-Manager
-brew install --cask antigravity-tools
-```
-
-#### 其他 Linux 發行版
-安裝後會自動將 AppImage 新增到二進位制路徑並配置可執行權限。
 
 ### 選項 B: 手動下載
-前往 [GitHub Releases](https://github.com/lbjlaq/Antigravity-Manager/releases) 下載對應系統的包：
-*   **macOS**: `.dmg` (支援 Apple Silicon & Intel)
-*   **Windows**: `.msi` 或 便攜版 `.zip`
-*   **Linux**: `.deb` 或 `AppImage`
+前往 [GitHub Releases](https://github.com/SanHsien/Antigravity-Manager/releases) 下載 Windows 安裝包：
+*   **Windows**: `.exe` (NSIS 安裝包) 或 `.msi`
 
-### 選項 C: Docker 部署 (推薦用於 NAS/伺服器)
-如果您希望在容器化環境中執行，我們提供了原生的 Docker 映象。該映象內建了對 v4.0.2 原生 Headless 架構的支援，可自動託管前端靜態資源，並透過瀏覽器直接進行管理。
-
-```bash
-# 方式 1: 直接執行 (推薦)
-# - API_KEY: 必填。用於所有協議的 AI 請求鑑定。
-# - WEB_PASSWORD: 可選。用於管理後臺登入。若不設定則預設使用 API_KEY。
-docker run -d --name antigravity-manager \
-  -p 8045:8045 \
-  -e API_KEY=sk-your-api-key \
-  -e WEB_PASSWORD=your-login-password \
-  -e ABV_MAX_BODY_SIZE=104857600 \
-  -v ~/.antigravity_tools:/root/.antigravity_tools \
-  lbjlaq/antigravity-manager:latest
-
-# 忘記金鑰？執行 docker logs antigravity-manager 或 grep -E '"api_key"|"admin_password"' ~/.antigravity_tools/gui_config.json
-
-#### 🔐 鑑權邏輯說明
-*   **場景 A：僅設定了 `API_KEY`**
-    - **Web 登入**：使用 `API_KEY` 進入後臺。
-    - **API 呼叫**：使用 `API_KEY` 進行 AI 請求鑑權。
-*   **場景 B：同時設定了 `API_KEY` 和 `WEB_PASSWORD` (推薦)**
-    - **Web 登入**：**必須**使用 `WEB_PASSWORD`，使用 API Key 將被拒絕（更安全）。
-    - **API 呼叫**：統一使用 `API_KEY`。這樣您可以將 API Key 分發給成員，而保留密碼僅供管理員使用。
-
-#### 🆙 舊版本升級指引
-如果您是從 v4.0.1 及更早版本升級，系統預設未設定 `WEB_PASSWORD`。您可以透過以下任一方式設定：
-1.  **Web UI 介面 (推薦)**：使用原有 `API_KEY` 登入後，在 **API 反代設定** 頁面手動設定並儲存。新密碼將持久化儲存在 `gui_config.json` 中。
-2.  **環境變數 (Docker)**：在啟動容器時增加 `-e WEB_PASSWORD=您的新密碼`。**注意：環境變數具有最高優先順序，將覆蓋 UI 中的任何修改。**
-3.  **配置檔案 (持久化)**：直接修改 `~/.antigravity_tools/gui_config.json`，在 `proxy` 物件中修改或新增 `"admin_password": "您的新密碼"` 欄位。
-    - *注：`WEB_PASSWORD` 是環境變數名，`admin_password` 是配置檔案中的 JSON 鍵名。*
-
-> [!TIP]
-> **密碼優先順序邏輯 (Priority)**:
-> - **第一優先順序 (環境變數)**: `ABV_WEB_PASSWORD` 或 `WEB_PASSWORD`。只要設定了環境變數，系統將始終使用它。
-> - **第二優先順序 (配置檔案)**: `gui_config.json` 中的 `admin_password` 欄位。UI 的“儲存”操作會更新此值。
-> - **保底回退 (向後相容)**: 若上述均未設定，則回退使用 `API_KEY` 作為登入密碼。
-
-# 方式 2: 使用 Docker Compose
-# 1. 進入專案的 docker 目錄
-cd docker
-# 2. 啟動服務
-docker compose up -d
-```
-> **日誌輪轉**: Compose 預設將 JSON 日誌限制為單檔案 `100m`、保留 `3` 個檔案，避免日誌無限增長。
-> **訪問地址**: `http://localhost:8045` (管理後臺) | `http://localhost:8045/v1` (API Base)
-> **系統要求**:
-> - **記憶體**: 建議 **1GB** (最小 256MB)。
-> - **持久化**: 需掛載 `/root/.antigravity_tools` 以儲存資料。
-> - **架構**: 支援 x86_64 和 ARM64。
-> **詳情見**: [Docker 部署指南 (docker)](./docker/README.md)
-
----
-
-<details>
-<summary><b>🛠️ 常見問題排查 (Troubleshooting) - 點選展開</b></summary>
-
-#### macOS 提示“應用已損壞，無法開啟”？
-由於 macOS 的安全機制，非 App Store 下載的應用可能會觸發此提示。您可以按照以下步驟快速修復：
-
-1.  **命令列修復** (推薦):
-    開啟終端，執行以下命令：
-    ```bash
-    sudo xattr -rd com.apple.quarantine "/Applications/Antigravity Tools.app"
-    ```
-2.  **Homebrew 安裝優勢**:
-    現在透過 Homebrew (`brew install --cask antigravity-tools`) 安裝時，系統會在安裝末尾自動執行清理屬性的操作，**真正實現開箱即用**。
-
-#### Linux 視窗全黑 / 透明框？
-在 niri、Hyprland、Sway 等合成器上，舊版本會因為會話裡總有 `DISPLAY` 而強制走 X11，WebKit 主介面可能全黑。請更新到包含該修復的版本；或臨時：
-
-```bash
-env WEBKIT_DISABLE_DMABUF_RENDERER=1 ANTIGRAVITY_FORCE_WAYLAND=1 antigravity-tools
-```
-
-- `ANTIGRAVITY_FORCE_WAYLAND=1`: 保持原生 Wayland（不強制切 X11）
-- `ANTIGRAVITY_FORCE_X11=1`: 仍需走 X11 時強制啟用
-- `WEBKIT_DISABLE_DMABUF_RENDERER=1`: 禁用 WebKit DMA-BUF 渲染器
-
-</details>
 
 ## 🔌 快速接入示例
 
