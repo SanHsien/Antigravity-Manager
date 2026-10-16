@@ -601,8 +601,9 @@ impl AxumServer {
         // 构建路由 - 使用新架构的 handlers！
         use crate::proxy::handlers;
         use crate::proxy::middleware::{
-            admin_auth_middleware, auth_middleware, cors_layer, ip_filter_middleware,
-            monitor_middleware, service_status_middleware,
+            admin_auth_middleware, auth_middleware, cors_layer,
+            internal::internal_loopback_middleware, ip_filter_middleware, monitor_middleware,
+            service_status_middleware,
         };
 
         // 1. 构建主 AI 代理路由 (遵循 auth_mode 配置)
@@ -1028,6 +1029,7 @@ impl AxumServer {
                 service_status_middleware,
             ))
             .layer(cors_layer())
+            .layer(axum::middleware::from_fn(internal_loopback_middleware))
             .layer(DefaultBodyLimit::max(max_body_size)) // 放宽 body 大小限制
             .with_state(state.clone());
 

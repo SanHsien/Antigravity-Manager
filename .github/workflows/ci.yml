@@ -99,6 +99,11 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::mappers::common_utils::defense_tests
 
+      - name: Test internal warmup loopback guard
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::middleware::internal::tests
+
       - name: Test Gemini inert protocol padding defense (Windows loader diagnostics)
         if: runner.os == 'Windows'
         shell: pwsh
