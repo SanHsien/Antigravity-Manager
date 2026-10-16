@@ -94,6 +94,7 @@ jobs:
           cargo check
 
       - name: Test Gemini inert protocol padding defense
+        if: runner.os != 'Windows'
         run: |
           cd src-tauri
           cargo test --locked --lib proxy::mappers::common_utils::defense_tests
@@ -102,6 +103,64 @@ jobs:
         run: |
           cd src-tauri
           cargo test --locked --lib proxy::middleware::internal::tests
+
+      - name: Test Gemini inert protocol padding defense (Windows loader diagnostics)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Push-Location src-tauri
+          $artifactMessages = Join-Path $env:RUNNER_TEMP 'gemini-defense-test-artifacts.jsonl'
+          cargo test --locked --lib proxy::mappers::common_utils::defense_tests --no-run --message-format=json 1> $artifactMessages
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            Pop-Location
+            exit $buildExit
+          }
+
+          $testArtifacts = @(
+            Get-Content -LiteralPath $artifactMessages |
+              ForEach-Object { $_ | ConvertFrom-Json } |
+              Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable -and $_.target.name -eq 'antigravity_tools_lib' -and $_.target.kind -contains 'rlib' }
+          )
+          $testExecutable = $null
+          if ($testArtifacts.Count -eq 1) {
+            $testExecutable = $testArtifacts[0].executable
+          } else {
+            Write-Warning "PE audit unavailable: expected exactly one focused rlib-test executable, found $($testArtifacts.Count)."
+          }
+
+          cargo test --locked --lib proxy::mappers::common_utils::defense_tests
+          $testExit = $LASTEXITCODE
+          Pop-Location
+
+          if ($testExit -ne 0) {
+            $diagnosticDirectory = Join-Path $env:RUNNER_TEMP 'windows-loader-pe-audit'
+            try {
+              if ($testExecutable) {
+                & .\tools\diagnose_windows_loader.ps1 -TestExecutable $testExecutable -OutputDirectory $diagnosticDirectory
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Warning "Windows loader diagnostic unexpectedly returned exit code $LASTEXITCODE; preserving cargo test failure."
+                }
+              } else {
+                Write-Warning 'Windows loader PE audit skipped because no unambiguous test executable was produced; preserving cargo test failure.'
+              }
+            } catch {
+              Write-Warning "Windows loader diagnostic invocation failed: $($_.Exception.Message); preserving cargo test failure."
+            } finally {
+              Write-Host "Windows focused cargo test exit preserved: $testExit"
+            }
+          }
+
+          exit $testExit
+
+      - name: Upload Windows loader PE audit
+        if: ${{ failure() && runner.os == 'Windows' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-loader-pe-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/windows-loader-pe-audit/windows-loader-pe-audit.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Test Windows shortcut COM interfaces
         if: runner.os == 'Windows'
