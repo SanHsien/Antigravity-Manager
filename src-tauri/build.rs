@@ -1,4 +1,6 @@
-const COMMON_CONTROLS_V6_MANIFEST_DEPENDENCY: &str = r#"/MANIFESTDEPENDENCY:"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'""#;
+// `rustc-link-arg` passes this as one process argument. The outer process quoting
+// is Rust's responsibility; payload quotes here would reach link.exe literally.
+const COMMON_CONTROLS_V6_MANIFEST_DEPENDENCY: &str = r#"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"#;
 
 fn main() {
     tauri_build::build();
