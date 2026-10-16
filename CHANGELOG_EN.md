@@ -3,6 +3,15 @@
 > Complete version history for Antigravity Tools. Return to project home at [README_EN.md](README_EN.md).
 
 *   **Version History**:
+    *   **v4.8.2 (2026-10-16)**:
+        -   **[Windows Native Maintenance & Build Compatibility] Common Controls v6 Manifest Dependency & Test Binary Fixes**:
+            -   **MSVC Link Argument Normalization**: Introduced Cargo global `rustc-link-arg` in `src-tauri/build.rs` to pass `/MANIFESTDEPENDENCY` enabling Common Controls v6, fixing `0xc0000139` entry point loader failures during unit tests on Windows MSVC and eliminating `LNK1181` errors caused by double quoting.
+            -   **Windows Loader Diagnostic Pipeline**: Added `tools/diagnose_windows_loader.ps1` providing bounded PE dependencies, export symbols, and manifest resource audit capabilities.
+        -   **[Security & Protocol Robustness] Inert Gemini Padding & Defense Fixes (PR #37)**:
+            -   **Inert Protocol Padding**: Replaced fallback defense text with a minimal neutral dot `.` (`TRANSIT_DEFENSE_FALLBACK_TEXT = "."`), preventing instructive tokens like `continue` or `analysis` from influencing reasoning trajectories while strictly meeting Gemini turn requirements.
+        -   **[Governance & Upstream Watermark Tracking] Triaged Upstream Issues #3681, #3682 & #3683**:
+            -   **MCP Schema Compatibility**: Verified that `json_schema.rs` natively supports normalizing `const` keywords to `enum` arrays, maintaining seamless compatibility with MCP tools without code drift.
+
     *   **v4.8.1 (2026-09-25)**:
         -   **[Unified 4-Protocol Egress & 100% Prefix Caching Invariance] Reconstruct egress payloads across 4 protocols, preventing prefix collapse and thought signature mismatch**:
             -   **Deterministic Key Ordering & Topological Alignment**: Completely reconstructed egress payload serialization across OpenAI Chat, OpenAI Responses, Anthropic Claude, and Google Gemini using deterministic field sorting and canonical structure alignment. Payloads remain 100% byte-consistent when switching between protocols, ensuring universal, rock-solid Prefix Caching hits.
