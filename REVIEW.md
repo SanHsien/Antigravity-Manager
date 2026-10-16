@@ -497,3 +497,13 @@ PR 水位提升至 `#3680`；issue 水位仍為 `#3679`，release／commit 基�
 | [Issue #3682](https://github.com/lbjlaq/Antigravity-Manager/issues/3682) | defer／獨立 deep-schema safety 修補候選 | 原文提供超過深度 10 的巢狀 tool schema，最深層 itemless array 造成 upstream 400。fork `proxy/common/json_schema.rs:3` 同樣定義 `MAX_RECURSION_DEPTH = 10`；`clean_json_schema_recursive` 在 `:164-171` 超限即返回，而 itemless-array 的 Gemini fallback 在 `:296-308` 才插入，因此該路徑與回報相符。fork 既有 `test_nested_array_without_items_gets_gemini_fallback` 只覆蓋未跨深度上限的案例。不可直接提高上限或無界遞迴：需獨立修補以超過 10 層、無 ref 的 itemless-array fixture 證明 fallback 仍插入，同時以 ref cycle／大型 schema fixture 證明深度與堆疊界限保留，並以 Gemini 與共用 tool-schema 輸出 fixture 驗證不再形成無效 `items`／400 語意。未有 owner 核准的獨立產品批次前，不採用。 |
 
 issue 水位提升至 `#3682`；PR 水位仍為 `#3680`，release／commit 基線不變。水位只表示這兩項已讀取並有明確判定，**不表示 Google 帳號封鎖已重現或修復，亦不表示深層 tool schema fallback 已採用或通過 provider runtime 驗證。**
+
+### 24. Full gate 新增 upstream Issue #3683（2026-10-16）
+
+本輪只讀取 [Issue #3683](https://github.com/lbjlaq/Antigravity-Manager/issues/3683) 原文與留言（metadata `comments=0`）。建議在 OpenAI tools parameters 轉 Gemini parameters 時，遞迴將 `{"const": x}` 轉換替換為 `{"enum": [x]}` 以相容 MCP 生態工具。
+
+| 項目 | 判定 | 實際內容、fork 對照與後續 |
+| --- | --- | --- |
+| [Issue #3683](https://github.com/lbjlaq/Antigravity-Manager/issues/3683) | already-implemented／本 fork 已支援 | 經對照代碼庫，本 fork 於 `src-tauri/src/proxy/common/json_schema.rs:179-210` 早已完整實作 `const` 關鍵字規範化（`#3327`）：在 `clean_json_schema_recursive` 進入時即主動判斷 `map.remove("const")`，推導其型別（string/integer/number/boolean/array/object）並插入 `type`，同時將 `const` 值注入 `enum` 陣列（去重處理）。此功能已有完整單元測試覆蓋（`test_clean_json_schema_normalizes_const_to_enum`）。上游 issue 為社群建議提案，本 fork 無需重複變更產品代碼。 |
+
+issue 水位提升至 `#3683`；PR 水位仍為 `#3680`，release／commit 基線不變。水位只表示 #3683 已讀取並比對 fork 行為，**確認本 fork 已具備該遞迴 const 轉換能力。**
