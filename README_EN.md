@@ -338,3 +338,7 @@ This project has referenced or learned from the ideas or code of the following e
 <div align="center">
   <p>This project is forked from <a href="https://github.com/lbjlaq/Antigravity-Manager">lbjlaq/Antigravity-Manager</a>, licensed under CC BY-NC-SA 4.0.</p>
 </div>
+
+## Multi-agent pipeline
+
+This repo is part of the [agent-relay](https://github.com/SanHsien/agent-relay) multi-agent dispatch and verification pipeline (role: Antigravity account switching). Integration with agent-relay is planned (Phase 2). The protocol spec and the index of all related repos live in agent-relay.
