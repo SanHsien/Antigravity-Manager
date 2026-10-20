@@ -1,7 +1,45 @@
 use serde_json::{json, Value};
+use std::fmt;
 
 const MAX_RECURSION_DEPTH: usize = 10;
+const MAX_STRICT_RAW_DEPTH: usize = 64;
+const MAX_STRICT_WORK_NODES: usize = 65_536;
+const MAX_STRICT_TEXT_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_DESCRIPTION_LENGTH: usize = 2048;
+pub const TOOL_SCHEMA_CLIENT_ERROR_PREFIX: &str = "client tool schema rejected: ";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolSchemaError {
+    DepthLimit { max_depth: usize },
+    ResourceLimit { limit: &'static str },
+}
+
+impl fmt::Display for ToolSchemaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DepthLimit { max_depth } => write!(
+                f,
+                "tool schema exceeds the maximum supported nesting depth of {max_depth}"
+            ),
+            Self::ResourceLimit { limit } => {
+                write!(
+                    f,
+                    "tool schema exceeds the supported resource limit: {limit}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ToolSchemaError {}
+
+pub fn tool_schema_client_error(error: ToolSchemaError) -> String {
+    format!("{TOOL_SCHEMA_CLIENT_ERROR_PREFIX}{error}")
+}
+
+pub fn is_tool_schema_client_error(error: &str) -> bool {
+    error.starts_with(TOOL_SCHEMA_CLIENT_ERROR_PREFIX)
+}
 
 /// 规范化工具或参数的描述文本（借鉴 JeikCode & OpenCode）：
 /// 1. 折叠换行符、回车与连续空白字符为单空格；
@@ -37,7 +75,7 @@ pub fn clean_response_schema(value: &mut Value) {
     clean_json_schema(value);
 }
 
-pub fn clean_json_schema(value: &mut Value) {
+fn prepare_json_schema(value: &mut Value) {
     // 0. 预处理：展开 $ref (Schema Flattening)
     // [FIX #952] 递归收集所有层级的 $defs/definitions，而非仅从根层级提取
     let mut all_defs = serde_json::Map::new();
@@ -54,9 +92,332 @@ pub fn clean_json_schema(value: &mut Value) {
     if let Value::Object(map) = value {
         flatten_refs(map, &all_defs, 0);
     }
+}
 
-    // 递归清理
-    clean_json_schema_recursive(value, true, 0);
+pub fn clean_json_schema(value: &mut Value) {
+    prepare_json_schema(value);
+    let mut depth_limit_hit = false;
+    clean_json_schema_recursive(value, true, 0, &mut depth_limit_hit, false);
+}
+
+/// Strictly clean a client tool schema without modifying the source on rejection.
+pub fn clean_tool_schema(value: &mut Value) -> Result<(), ToolSchemaError> {
+    // Validate the caller-owned value before cloning or collecting `$defs` so a
+    // too-deep subtree cannot make the strict path allocate or walk unboundedly.
+    validate_tool_schema(value)?;
+    let mut candidate = value.clone();
+    let mut materialization_budget = StrictSchemaBudget::default();
+    prepare_tool_json_schema(&mut candidate, value, &mut materialization_budget)?;
+
+    let mut depth_limit_hit = false;
+    clean_json_schema_recursive(&mut candidate, true, 0, &mut depth_limit_hit, true);
+    if depth_limit_hit {
+        return Err(ToolSchemaError::DepthLimit {
+            max_depth: MAX_RECURSION_DEPTH,
+        });
+    }
+
+    *value = candidate;
+    Ok(())
+}
+
+/// Checks strict tool-schema bounds without cloning or rewriting the input.
+pub fn validate_tool_schema(value: &Value) -> Result<(), ToolSchemaError> {
+    let mut raw_budget = StrictSchemaBudget::default();
+    validate_raw_tool_schema(value, 0, &mut raw_budget)?;
+    validate_tool_schema_bounds(value, 0)?;
+    let mut ref_budget = StrictSchemaBudget::default();
+    let mut active_local_refs = std::collections::HashSet::new();
+    validate_tool_schema_refs_anywhere(value, value, 0, 0, &mut ref_budget, &mut active_local_refs)
+}
+
+#[derive(Default)]
+struct StrictSchemaBudget {
+    nodes: usize,
+    text_bytes: usize,
+}
+
+impl StrictSchemaBudget {
+    fn charge_node(&mut self) -> Result<(), ToolSchemaError> {
+        self.nodes = self.nodes.saturating_add(1);
+        if self.nodes > MAX_STRICT_WORK_NODES {
+            return Err(ToolSchemaError::ResourceLimit {
+                limit: "node budget",
+            });
+        }
+        Ok(())
+    }
+
+    fn charge_text(&mut self, byte_count: usize) -> Result<(), ToolSchemaError> {
+        self.text_bytes = self.text_bytes.saturating_add(byte_count);
+        if self.text_bytes > MAX_STRICT_TEXT_BYTES {
+            return Err(ToolSchemaError::ResourceLimit {
+                limit: "UTF-8 text budget",
+            });
+        }
+        Ok(())
+    }
+
+    fn charge_direct_value(&mut self, value: &Value) -> Result<(), ToolSchemaError> {
+        self.charge_node()?;
+        match value {
+            Value::String(text) => self.charge_text(text.len()),
+            Value::Number(number) => self.charge_text(number.to_string().len()),
+            Value::Bool(value) => self.charge_text(if *value { 4 } else { 5 }),
+            Value::Null => self.charge_text(4),
+            Value::Array(_) | Value::Object(_) => Ok(()),
+        }
+    }
+
+    fn charge_materialized_value(&mut self, value: &Value) -> Result<(), ToolSchemaError> {
+        self.charge_direct_value(value)?;
+        match value {
+            Value::Array(values) => {
+                for value in values {
+                    self.charge_materialized_value(value)?;
+                }
+            }
+            Value::Object(map) => {
+                for (key, value) in map {
+                    self.charge_text(key.len())?;
+                    self.charge_materialized_value(value)?;
+                }
+            }
+            Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {}
+        }
+        Ok(())
+    }
+}
+
+/// Applies raw structural limits before any whole-Value clone. Every JSON
+/// child counts here, including non-schema annotations such as default/const.
+fn validate_raw_tool_schema(
+    value: &Value,
+    raw_depth: usize,
+    budget: &mut StrictSchemaBudget,
+) -> Result<(), ToolSchemaError> {
+    if raw_depth > MAX_STRICT_RAW_DEPTH {
+        return Err(ToolSchemaError::ResourceLimit {
+            limit: "raw structural depth",
+        });
+    }
+    budget.charge_direct_value(value)?;
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                validate_raw_tool_schema(value, raw_depth + 1, budget)?;
+            }
+        }
+        Value::Object(map) => {
+            for (key, value) in map {
+                budget.charge_text(key.len())?;
+                validate_raw_tool_schema(value, raw_depth + 1, budget)?;
+            }
+        }
+        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {}
+    }
+    Ok(())
+}
+
+fn depth_limit_error() -> ToolSchemaError {
+    ToolSchemaError::DepthLimit {
+        max_depth: MAX_RECURSION_DEPTH,
+    }
+}
+
+fn validate_tool_schema_bounds(value: &Value, depth: usize) -> Result<(), ToolSchemaError> {
+    if depth > MAX_RECURSION_DEPTH {
+        return Err(depth_limit_error());
+    }
+    let map = match value {
+        Value::Object(map) => map,
+        Value::Array(schemas) => {
+            for schema in schemas {
+                validate_tool_schema_bounds(schema, depth)?;
+            }
+            return Ok(());
+        }
+        _ => return Ok(()),
+    };
+
+    for key in ["$defs", "definitions"] {
+        if let Some(Value::Object(definitions)) = map.get(key) {
+            for schema in definitions.values() {
+                validate_tool_schema_bounds(schema, depth + 1)?;
+            }
+        }
+    }
+    if let Some(Value::Object(properties)) = map.get("properties") {
+        for child in properties.values() {
+            validate_tool_schema_bounds(child, depth + 1)?;
+        }
+    }
+    validate_tool_schema_child_bounds(map, depth + 1)
+}
+
+fn validate_tool_schema_child_bounds(
+    map: &serde_json::Map<String, Value>,
+    depth: usize,
+) -> Result<(), ToolSchemaError> {
+    for key in [
+        "items",
+        "additionalProperties",
+        "contains",
+        "not",
+        "if",
+        "then",
+        "else",
+        "propertyNames",
+    ] {
+        if let Some(value) = map.get(key) {
+            validate_tool_schema_bounds(value, depth)?;
+        }
+    }
+    for key in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+        if let Some(Value::Array(schemas)) = map.get(key) {
+            for schema in schemas {
+                validate_tool_schema_bounds(schema, depth)?;
+            }
+        }
+    }
+    if let Some(Value::Object(schemas)) = map.get("dependentSchemas") {
+        for schema in schemas.values() {
+            validate_tool_schema_bounds(schema, depth)?;
+        }
+    }
+    Ok(())
+}
+
+/// Mirrors the legacy ref flattener's full JSON walk before any tool-schema
+/// clone. This intentionally includes annotations: legacy flattening reaches
+/// `default`, `const`, and extension objects too, so checking only JSON-schema
+/// keywords would let a later materialization exceed the strict budget.
+fn validate_tool_schema_refs_anywhere(
+    value: &Value,
+    root: &Value,
+    ref_depth: usize,
+    raw_depth: usize,
+    budget: &mut StrictSchemaBudget,
+    active_local_refs: &mut std::collections::HashSet<String>,
+) -> Result<(), ToolSchemaError> {
+    if raw_depth > MAX_STRICT_RAW_DEPTH {
+        return Err(ToolSchemaError::ResourceLimit {
+            limit: "raw structural depth",
+        });
+    }
+    if ref_depth > MAX_RECURSION_DEPTH {
+        return Err(depth_limit_error());
+    }
+    budget.charge_direct_value(value)?;
+    match value {
+        Value::Array(values) => {
+            for child in values {
+                validate_tool_schema_refs_anywhere(
+                    child,
+                    root,
+                    ref_depth,
+                    raw_depth + 1,
+                    budget,
+                    active_local_refs,
+                )?;
+            }
+        }
+        Value::Object(map) => {
+            for key in map.keys() {
+                budget.charge_text(key.len())?;
+            }
+            if let Some(Value::String(reference)) = map.get("$ref") {
+                if !active_local_refs.insert(reference.clone()) {
+                    return Err(ToolSchemaError::ResourceLimit {
+                        limit: "local $ref cycle",
+                    });
+                }
+                let result = resolve_tool_schema_ref(reference, root).and_then(|target| {
+                    validate_tool_schema_bounds(target, 0)?;
+                    validate_tool_schema_refs_anywhere(
+                        target,
+                        root,
+                        ref_depth + 1,
+                        raw_depth,
+                        budget,
+                        active_local_refs,
+                    )
+                });
+                active_local_refs.remove(reference);
+                result?;
+            }
+            for child in map.values() {
+                validate_tool_schema_refs_anywhere(
+                    child,
+                    root,
+                    ref_depth,
+                    raw_depth + 1,
+                    budget,
+                    active_local_refs,
+                )?;
+            }
+        }
+        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => {}
+    }
+    Ok(())
+}
+
+fn resolve_tool_schema_ref<'a>(
+    reference: &str,
+    root: &'a Value,
+) -> Result<&'a Value, ToolSchemaError> {
+    if let Some(pointer) = reference.strip_prefix('#') {
+        if pointer.is_empty() {
+            return Ok(root);
+        }
+        if !pointer.starts_with('/') {
+            return Err(ToolSchemaError::ResourceLimit {
+                limit: "unsupported local $ref",
+            });
+        }
+        let target = root
+            .pointer(pointer)
+            .ok_or(ToolSchemaError::ResourceLimit {
+                limit: "unresolved local $ref",
+            })?;
+        let points_into_definitions = pointer
+            .split('/')
+            .skip(1)
+            .any(|segment| segment == "$defs" || segment == "definitions");
+        if !points_into_definitions || !target.is_object() {
+            return Err(ToolSchemaError::ResourceLimit {
+                limit: "unsupported local $ref target",
+            });
+        }
+        return Ok(target);
+    }
+
+    for key in ["$defs", "definitions"] {
+        if let Some(target) = root
+            .get(key)
+            .and_then(Value::as_object)
+            .and_then(|definitions| definitions.get(reference))
+        {
+            return Ok(target);
+        }
+    }
+    Err(ToolSchemaError::ResourceLimit {
+        limit: "unresolved local $ref",
+    })
+}
+
+fn prepare_tool_json_schema(
+    value: &mut Value,
+    source: &Value,
+    budget: &mut StrictSchemaBudget,
+) -> Result<(), ToolSchemaError> {
+    let mut active_local_refs = std::collections::HashSet::new();
+    flatten_tool_ref_value(value, source, 0, 0, budget, &mut active_local_refs)?;
+    if let Value::Object(map) = value {
+        map.remove("$defs");
+        map.remove("definitions");
+    }
+    Ok(())
 }
 
 /// 清洗 JSON Schema 以符合 Gemini 接口要求
@@ -96,6 +457,80 @@ fn collect_all_defs(value: &Value, defs: &mut serde_json::Map<String, Value>) {
         for item in arr {
             collect_all_defs(item, defs);
         }
+    }
+}
+
+fn flatten_tool_refs(
+    map: &mut serde_json::Map<String, Value>,
+    source: &Value,
+    depth: usize,
+    ref_depth: usize,
+    budget: &mut StrictSchemaBudget,
+    active_local_refs: &mut std::collections::HashSet<String>,
+) -> Result<(), ToolSchemaError> {
+    if depth > MAX_STRICT_RAW_DEPTH {
+        return Err(ToolSchemaError::ResourceLimit {
+            limit: "raw structural depth",
+        });
+    }
+    if ref_depth > MAX_RECURSION_DEPTH {
+        return Err(depth_limit_error());
+    }
+    if let Some(Value::String(ref_path)) = map.remove("$ref") {
+        if !active_local_refs.insert(ref_path.clone()) {
+            return Err(ToolSchemaError::ResourceLimit {
+                limit: "local $ref cycle",
+            });
+        }
+        let result = resolve_tool_schema_ref(&ref_path, source).and_then(|target| {
+            let definition = target.as_object().ok_or(ToolSchemaError::ResourceLimit {
+                limit: "unsupported local $ref target",
+            })?;
+            for (key, value) in definition {
+                if !map.contains_key(key) {
+                    budget.charge_text(key.len())?;
+                    budget.charge_materialized_value(value)?;
+                    map.insert(key.clone(), value.clone());
+                }
+            }
+            flatten_tool_refs(map, source, depth, ref_depth + 1, budget, active_local_refs)
+        });
+        active_local_refs.remove(&ref_path);
+        return result;
+    }
+    for value in map.values_mut() {
+        flatten_tool_ref_value(value, source, depth + 1, 0, budget, active_local_refs)?;
+    }
+    Ok(())
+}
+
+fn flatten_tool_ref_value(
+    value: &mut Value,
+    source: &Value,
+    depth: usize,
+    ref_depth: usize,
+    budget: &mut StrictSchemaBudget,
+    active_local_refs: &mut std::collections::HashSet<String>,
+) -> Result<(), ToolSchemaError> {
+    budget.charge_direct_value(value)?;
+    match value {
+        Value::Object(map) => {
+            flatten_tool_refs(map, source, depth, ref_depth, budget, active_local_refs)
+        }
+        Value::Array(values) => {
+            for value in values {
+                flatten_tool_ref_value(
+                    value,
+                    source,
+                    depth + 1,
+                    ref_depth,
+                    budget,
+                    active_local_refs,
+                )?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -161,8 +596,18 @@ fn flatten_refs(
     }
 }
 
-fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: usize) -> bool {
+fn clean_json_schema_recursive(
+    value: &mut Value,
+    is_schema_node: bool,
+    depth: usize,
+    depth_limit_hit: &mut bool,
+    strict_depth_limit: bool,
+) -> bool {
     if depth > MAX_RECURSION_DEPTH {
+        if strict_depth_limit {
+            *depth_limit_hit = true;
+            return false;
+        }
         debug_assert!(
             false,
             "Max recursion depth reached in clean_json_schema_recursive"
@@ -250,7 +695,13 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
                 let mut nullable_keys = std::collections::HashSet::new();
                 for (k, v) in props.iter_mut() {
                     // properties 的每一个值都必须是一个独立的 Schema 节点
-                    if clean_json_schema_recursive(v, true, depth + 1) {
+                    if clean_json_schema_recursive(
+                        v,
+                        true,
+                        depth + 1,
+                        depth_limit_hit,
+                        strict_depth_limit,
+                    ) {
                         nullable_keys.insert(k.clone());
                     }
                 }
@@ -285,7 +736,13 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
             }
             if let Some(items) = map.get_mut("items") {
                 // items 的内容必须是一个独立的 Schema 节点
-                clean_json_schema_recursive(items, true, depth + 1);
+                clean_json_schema_recursive(
+                    items,
+                    true,
+                    depth + 1,
+                    depth_limit_hit,
+                    strict_depth_limit,
+                );
 
                 // [NEW] 隐式类型注入：如果有 items 但没 type，补全为 array
                 if !map.contains_key("type") {
@@ -312,7 +769,13 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
                 for (k, v) in map.iter_mut() {
                     // 排除掉关键字
                     if k != "anyOf" && k != "oneOf" && k != "allOf" && k != "enum" && k != "type" {
-                        clean_json_schema_recursive(v, false, depth + 1);
+                        clean_json_schema_recursive(
+                            v,
+                            false,
+                            depth + 1,
+                            depth_limit_hit,
+                            strict_depth_limit,
+                        );
                     }
                 }
             }
@@ -321,12 +784,24 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
             // 必须在合并逻辑之前执行，确保合并的分支已经被清洗
             if let Some(Value::Array(any_of)) = map.get_mut("anyOf") {
                 for branch in any_of.iter_mut() {
-                    clean_json_schema_recursive(branch, true, depth + 1);
+                    clean_json_schema_recursive(
+                        branch,
+                        true,
+                        depth + 1,
+                        depth_limit_hit,
+                        strict_depth_limit,
+                    );
                 }
             }
             if let Some(Value::Array(one_of)) = map.get_mut("oneOf") {
                 for branch in one_of.iter_mut() {
-                    clean_json_schema_recursive(branch, true, depth + 1);
+                    clean_json_schema_recursive(
+                        branch,
+                        true,
+                        depth + 1,
+                        depth_limit_hit,
+                        strict_depth_limit,
+                    );
                 }
             }
 
@@ -417,7 +892,13 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
                 // 递归清理刚刚移动进去的属性
                 if let Some(Value::Object(props_map)) = map.get_mut("properties") {
                     for v in props_map.values_mut() {
-                        clean_json_schema_recursive(v, true, depth + 1);
+                        clean_json_schema_recursive(
+                            v,
+                            true,
+                            depth + 1,
+                            depth_limit_hit,
+                            strict_depth_limit,
+                        );
                     }
                 }
             }
@@ -552,7 +1033,13 @@ fn clean_json_schema_recursive(value: &mut Value, is_schema_node: bool, depth: u
             // [FIX] 递归清理数组中的每个元素
             // 这确保了所有数组类型的值（包括但不限于 anyOf、oneOf、items、enum 等）都会被递归处理
             for item in arr.iter_mut() {
-                clean_json_schema_recursive(item, is_schema_node, depth + 1);
+                clean_json_schema_recursive(
+                    item,
+                    is_schema_node,
+                    depth + 1,
+                    depth_limit_hit,
+                    strict_depth_limit,
+                );
             }
         }
         _ => {}
@@ -1754,5 +2241,350 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["properties"], json!({}));
         assert_eq!(schema["description"], "Some description with newlines");
+    }
+
+    fn nested_object_schema(depth: usize, leaf: Value) -> Value {
+        let mut current = leaf;
+        for index in (0..depth).rev() {
+            current = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): current }
+            });
+        }
+        current
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_semantic_depth_16_without_mutating_input() {
+        // Above the semantic schema limit, but below the independent raw limit.
+        let mut schema = nested_object_schema(16, json!({ "type": "array" }));
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::DepthLimit {
+                max_depth: MAX_RECURSION_DEPTH
+            })
+        );
+        assert_eq!(
+            schema, original,
+            "strict rejection must preserve client input"
+        );
+    }
+
+    #[test]
+    fn strict_tool_schema_bounds_defs_before_clone_or_cleanup() {
+        let mut schema = json!({
+            "$defs": { "leaf": nested_object_schema(16, json!({ "type": "array" })) },
+            "$ref": "#/$defs/leaf"
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::DepthLimit {
+                max_depth: MAX_RECURSION_DEPTH
+            })
+        );
+        assert_eq!(schema, original, "strict rejection must not mutate input");
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_self_referential_defs_without_mutation() {
+        let mut schema = json!({
+            "$defs": {
+                "node": {
+                    "type": "object",
+                    "properties": { "child": { "$ref": "#/$defs/node" } }
+                }
+            },
+            "$ref": "#/$defs/node"
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "local $ref cycle"
+            })
+        );
+        assert_eq!(schema, original, "cyclic refs must reject without mutation");
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_root_self_ref_without_mutation() {
+        let mut schema = json!({ "$ref": "#" });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "local $ref cycle"
+            })
+        );
+        assert_eq!(
+            schema, original,
+            "root self-ref must not fall back to string"
+        );
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_schema_ancestor_pointer_cycle_without_mutation() {
+        let mut schema = json!({
+            "$defs": {
+                "ancestor": {
+                    "type": "object",
+                    "properties": { "loop": { "$ref": "#/$defs/ancestor" } }
+                }
+            },
+            "$ref": "#/$defs/ancestor"
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "local $ref cycle"
+            })
+        );
+        assert_eq!(
+            schema, original,
+            "ancestor pointer cycle must preserve input"
+        );
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_local_pointer_to_container_without_mutation() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "loop": { "$ref": "#/properties" }
+            }
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "unsupported local $ref target"
+            })
+        );
+        assert_eq!(
+            schema, original,
+            "container pointer rejection must preserve input"
+        );
+    }
+
+    #[test]
+    fn strict_tool_schema_keeps_normal_depth_and_existing_tuple_normalization() {
+        let mut schema = nested_object_schema(
+            3,
+            json!({
+                "type": "array",
+                "items": [{ "type": "string" }, { "type": "integer" }]
+            }),
+        );
+
+        clean_tool_schema(&mut schema).expect("normal-depth tool schema must be accepted");
+
+        let leaf =
+            &schema["properties"]["level_0"]["properties"]["level_1"]["properties"]["level_2"];
+        assert_eq!(leaf["items"], json!({ "type": "string" }));
+    }
+
+    #[test]
+    fn strict_tool_schema_keeps_large_width_at_normal_depth() {
+        let properties = (0..128)
+            .map(|index| (format!("field_{index}"), json!({ "type": "array" })))
+            .collect::<serde_json::Map<String, Value>>();
+        let mut schema = json!({ "type": "object", "properties": properties });
+
+        clean_tool_schema(&mut schema).expect("width alone is not a depth error");
+
+        assert_eq!(schema["properties"].as_object().map_or(0, |p| p.len()), 128);
+        assert_eq!(
+            schema["properties"]["field_127"]["items"],
+            json!({ "type": "string" })
+        );
+    }
+
+    fn deeply_nested_annotation(depth: usize) -> Value {
+        let mut value = json!("annotation");
+        for index in 0..depth {
+            value = json!({ format!("metadata_{index}"): value });
+        }
+        value
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_deep_default_const_and_unknown_children_before_clone() {
+        for key in ["default", "const", "x-client-annotation"] {
+            let mut schema = json!({ "type": "object" });
+            schema
+                .as_object_mut()
+                .expect("test schema is an object")
+                .insert(key.to_string(), deeply_nested_annotation(65));
+            let original = schema.clone();
+
+            assert_eq!(
+                clean_tool_schema(&mut schema),
+                Err(ToolSchemaError::ResourceLimit {
+                    limit: "raw structural depth"
+                })
+            );
+            assert_eq!(schema, original, "{key} rejection must preserve input");
+        }
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_annotation_text_over_budget_without_mutation() {
+        let mut schema = json!({
+            "type": "object",
+            "default": "x".repeat(MAX_STRICT_TEXT_BYTES + 1)
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "UTF-8 text budget"
+            })
+        );
+        assert_eq!(schema, original);
+    }
+
+    #[test]
+    fn strict_tool_schema_resolves_same_named_nested_defs_by_full_pointer() {
+        let mut schema = json!({
+            "$defs": { "same": { "type": "string" }, "a/b": { "type": "boolean" } },
+            "type": "object",
+            "properties": {
+                "root": { "$ref": "#/$defs/same" },
+                "escaped": { "$ref": "#/$defs/a~1b" },
+                "outer": {
+                    "type": "object",
+                    "$defs": { "same": { "type": "number" } },
+                    "properties": {
+                        "nested": { "$ref": "#/properties/outer/$defs/same" }
+                    }
+                }
+            }
+        });
+
+        clean_tool_schema(&mut schema).expect("tool schema pointers must retain nested meaning");
+
+        assert_eq!(schema["properties"]["root"]["type"], "string");
+        assert_eq!(schema["properties"]["escaped"]["type"], "boolean");
+        assert_eq!(
+            schema["properties"]["outer"]["properties"]["nested"]["type"],
+            "number"
+        );
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_annotation_hidden_ref_cycle_without_mutation() {
+        let mut schema = json!({
+            "type": "object",
+            "default": {
+                "$defs": { "loop": { "$ref": "#/default/$defs/loop" } },
+                "extension": { "$ref": "#/default/$defs/loop" }
+            }
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "local $ref cycle"
+            })
+        );
+        assert_eq!(schema, original);
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_annotation_hidden_high_branch_ref_dag_without_mutation() {
+        let mut defs = serde_json::Map::new();
+        for level in (0..8).rev() {
+            let node = if level == 7 {
+                json!({ "type": "string" })
+            } else {
+                let branches = (0..8)
+                    .map(|index| {
+                        (
+                            format!("branch_{index}"),
+                            json!({ "$ref": format!("#/default/$defs/node_{}", level + 1) }),
+                        )
+                    })
+                    .collect::<serde_json::Map<String, Value>>();
+                json!({ "type": "object", "properties": branches })
+            };
+            defs.insert(format!("node_{level}"), node);
+        }
+        let mut schema = json!({
+            "type": "object",
+            "default": {
+                "$defs": defs,
+                "extension": { "$ref": "#/default/$defs/node_0" }
+            }
+        });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "node budget"
+            })
+        );
+        assert_eq!(schema, original);
+    }
+
+    #[test]
+    fn strict_tool_schema_rejects_high_branch_shared_ref_dag_without_mutation() {
+        let mut defs = serde_json::Map::new();
+        for level in (0..8).rev() {
+            let schema = if level == 7 {
+                json!({ "type": "string" })
+            } else {
+                let properties = (0..8)
+                    .map(|index| {
+                        (
+                            format!("branch_{index}"),
+                            json!({ "$ref": format!("#/$defs/node_{}", level + 1) }),
+                        )
+                    })
+                    .collect::<serde_json::Map<String, Value>>();
+                json!({ "type": "object", "properties": properties })
+            };
+            defs.insert(format!("node_{level}"), schema);
+        }
+        let mut schema = json!({ "$defs": defs, "$ref": "#/$defs/node_0" });
+        let original = schema.clone();
+
+        assert_eq!(
+            clean_tool_schema(&mut schema),
+            Err(ToolSchemaError::ResourceLimit {
+                limit: "node budget"
+            })
+        );
+        assert_eq!(schema, original, "DAG rejection must preserve input");
+    }
+
+    #[test]
+    fn strict_tool_schema_accepts_normal_shared_ref_reuse() {
+        let properties = (0..128)
+            .map(|index| (format!("field_{index}"), json!({ "$ref": "#/$defs/leaf" })))
+            .collect::<serde_json::Map<String, Value>>();
+        let mut schema = json!({
+            "$defs": { "leaf": { "type": "array" } },
+            "type": "object",
+            "properties": properties
+        });
+
+        clean_tool_schema(&mut schema).expect("bounded shared ref reuse must be accepted");
+        assert_eq!(schema["properties"].as_object().map_or(0, |p| p.len()), 128);
+        assert_eq!(
+            schema["properties"]["field_127"]["items"],
+            json!({ "type": "string" })
+        );
     }
 }

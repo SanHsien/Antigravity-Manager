@@ -28,6 +28,18 @@ use crate::proxy::upstream::client::mask_email;
 use axum::http::HeaderMap;
 use std::sync::{atomic::Ordering, Arc}; // [NEW]
 
+fn claude_transform_error_details(error: &str) -> (StatusCode, &'static str) {
+    if crate::proxy::common::json_schema::is_tool_schema_client_error(error) {
+        (StatusCode::BAD_REQUEST, "invalid_request_error")
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, "api_error")
+    }
+}
+
+fn is_retryable_claude_upstream_error(error: &str) -> bool {
+    !crate::proxy::common::json_schema::is_tool_schema_client_error(error)
+}
+
 // ===== Task #6: OpenCode variants thinking config mapping =====
 // Helper structs for parsing thinking hints from raw JSON
 #[derive(Debug, Clone)]
@@ -264,6 +276,26 @@ use super::common::{
 mod variant_tests {
     use super::*;
 
+    #[test]
+    fn tool_schema_errors_are_local_4xx_and_not_retryable() {
+        let error = crate::proxy::common::json_schema::tool_schema_client_error(
+            crate::proxy::common::json_schema::ToolSchemaError::DepthLimit { max_depth: 10 },
+        );
+
+        assert_eq!(
+            claude_transform_error_details(&error),
+            (StatusCode::BAD_REQUEST, "invalid_request_error")
+        );
+        assert!(!is_retryable_claude_upstream_error(&error));
+        assert_eq!(
+            claude_transform_error_details("ordinary transform failure"),
+            (StatusCode::INTERNAL_SERVER_ERROR, "api_error")
+        );
+        assert!(is_retryable_claude_upstream_error(
+            "ordinary upstream failure"
+        ));
+    }
+
     fn request_with_effort(model: &str, effort: &str, budget_tokens: u32) -> ClaudeRequest {
         serde_json::from_value(json!({
             "model": model,
@@ -434,6 +466,22 @@ pub async fn handle_messages(
     >,
     Json(body): Json<Value>,
 ) -> Response {
+    // Validate borrowed raw tool schemas before any request-body clone, parsing,
+    // logging, account lookup, or adapter work. Keep the parsed mapper check
+    // below as defense in depth for typed callers.
+    if let Err(error) =
+        crate::proxy::mappers::claude::request::validate_raw_claude_tool_schemas(&body)
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "type": "error",
+                "error": { "type": "invalid_request_error", "message": error.to_string() }
+            })),
+        )
+            .into_response();
+    }
+
     // [FIX] 保存原始请求体的完整副本，用于日志记录
     // 这确保了即使结构体定义遗漏字段，日志也能完整记录所有参数
     let original_body = body.clone();
@@ -483,6 +531,21 @@ pub async fn handle_messages(
                     .into_response();
             }
         };
+
+    // Reject invalid schemas before token selection or forwarding. The
+    // validator only performs bounded, non-mutating validation here.
+    if let Err(error) =
+        crate::proxy::mappers::claude::request::validate_claude_tool_schemas(&request)
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "type": "error",
+                "error": { "type": "invalid_request_error", "message": error.to_string() }
+            })),
+        )
+            .into_response();
+    }
 
     // [Variant] Resolve canonical model + variant → real model + real params.
     let model_lower = request.model.to_lowercase();
@@ -1133,17 +1196,18 @@ pub async fn handle_messages(
                     (b, timing)
                 }
                 Err(e) => {
+                    let (status, error_type) = claude_transform_error_details(&e);
                     let headers = [
                         ("X-Mapped-Model", request_with_mapped.model.as_str()),
                         ("X-Account-Email", email.as_str()),
                     ];
                     return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                        status,
                         headers,
                         Json(json!({
                             "type": "error",
                             "error": {
-                                "type": "api_error",
+                                "type": error_type,
                                 "message": format!("Transform error: {}", e)
                             }
                         })),
@@ -1254,6 +1318,21 @@ pub async fn handle_messages(
         {
             Ok(r) => r,
             Err(e) => {
+                if !is_retryable_claude_upstream_error(&e) {
+                    let headers = [
+                        ("X-Mapped-Model", request_with_mapped.model.as_str()),
+                        ("X-Account-Email", email.as_str()),
+                    ];
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        headers,
+                        Json(json!({
+                            "type": "error",
+                            "error": { "type": "invalid_request_error", "message": e }
+                        })),
+                    )
+                        .into_response();
+                }
                 last_error = e.clone();
                 debug!(
                     "Request failed on attempt {}/{}: {}",

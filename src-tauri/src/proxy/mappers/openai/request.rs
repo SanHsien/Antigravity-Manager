@@ -5,6 +5,8 @@ use crate::proxy::token_manager::ProxyToken;
 
 use serde_json::{json, Value};
 
+const MAX_TOOL_NAMESPACE_DEPTH: usize = 10;
+
 pub(crate) fn is_tiered_flash_model(model: &str) -> bool {
     let model_id = model
         .rsplit('/')
@@ -153,6 +155,99 @@ pub fn extract_client_tool_names(tools: &Option<Vec<Value>>) -> std::collections
         }
     }
     names
+}
+
+/// Validates tool parameter schemas before the compatibility mapper copies or
+/// normalizes them. Response-format schemas intentionally remain outside this API.
+pub fn validate_openai_tool_schemas(
+    request: &OpenAIRequest,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    let Some(tools) = request.tools.as_deref() else {
+        return Ok(());
+    };
+
+    validate_openai_tool_values(tools, 0)
+}
+
+/// Validates the unparsed request body before redirects, debug copies, response
+/// normalization, or namespace flattening can duplicate a client tool schema.
+pub fn validate_raw_openai_tool_schemas(
+    body: &Value,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    for collection_key in ["tools", "functions"] {
+        if let Some(tools) = body.get(collection_key).and_then(Value::as_array) {
+            validate_openai_tool_values(tools, 0)?;
+        }
+    }
+    Ok(())
+}
+
+/// Materializes only already-validated tool parameters. Keeping this separate
+/// from the compatibility transform prevents the latter's best-effort response
+/// schema path from becoming a client-schema fallback.
+pub fn clean_openai_tool_schemas(
+    request: &mut OpenAIRequest,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    let Some(tools) = request.tools.as_mut() else {
+        return Ok(());
+    };
+    clean_openai_tool_values(tools)
+}
+
+fn clean_openai_tool_values(
+    tools: &mut [Value],
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    for tool in tools {
+        if tool.get("type").and_then(Value::as_str) == Some("namespace") {
+            if let Some(sub_tools) = tool.get_mut("tools").and_then(Value::as_array_mut) {
+                clean_openai_tool_values(sub_tools)?;
+            }
+            continue;
+        }
+        if let Some(definition) = tool.get_mut("function") {
+            if let Some(schema) = definition.get_mut("parameters") {
+                crate::proxy::common::json_schema::clean_tool_schema(schema)?;
+            }
+        }
+        if let Some(schema) = tool.get_mut("parameters") {
+            crate::proxy::common::json_schema::clean_tool_schema(schema)?;
+        }
+    }
+    Ok(())
+}
+
+/// Borrowed validation deliberately precedes `flatten_tools`: namespace flattening
+/// clones whole tool values, so strict schema bounds must reject before that copy.
+fn validate_openai_tool_values(
+    tools: &[Value],
+    namespace_depth: usize,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    if namespace_depth > MAX_TOOL_NAMESPACE_DEPTH {
+        return Err(
+            crate::proxy::common::json_schema::ToolSchemaError::DepthLimit {
+                max_depth: MAX_TOOL_NAMESPACE_DEPTH,
+            },
+        );
+    }
+
+    for tool in tools {
+        if tool.get("type").and_then(Value::as_str) == Some("namespace") {
+            if let Some(sub_tools) = tool.get("tools").and_then(Value::as_array) {
+                validate_openai_tool_values(sub_tools, namespace_depth + 1)?;
+            }
+            continue;
+        }
+        if let Some(schema) = tool
+            .get("function")
+            .and_then(|definition| definition.get("parameters"))
+        {
+            crate::proxy::common::json_schema::validate_tool_schema(schema)?;
+        }
+        if let Some(schema) = tool.get("parameters") {
+            crate::proxy::common::json_schema::validate_tool_schema(schema)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn transform_openai_request(
@@ -3496,5 +3591,190 @@ mod tests {
             fc_part["thoughtSignature"], valid_gemini_sig,
             "OpenAI adapter and pipeline must recover real tool signature from SignatureCache"
         );
+    }
+
+    #[test]
+    fn openai_tool_schema_validator_rejects_over_depth_without_rewriting_request() {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..32 {
+            schema =
+                json!({ "type": "object", "properties": { format!("level_{index}"): schema } });
+        }
+        let request = OpenAIRequest {
+            model: "gemini-test".to_string(),
+            tools: Some(vec![json!({
+                "type": "function",
+                "function": { "name": "deep", "parameters": schema }
+            })]),
+            ..Default::default()
+        };
+        assert!(validate_openai_tool_schemas(&request).is_err());
+        assert!(
+            request.tools.is_some(),
+            "validation must not rewrite the request"
+        );
+    }
+
+    fn namespaced_tool(depth: usize, leaf: Value) -> Value {
+        let mut value = leaf;
+        for index in 0..depth {
+            value = json!({
+                "type": "namespace",
+                "name": format!("ns_{index}"),
+                "tools": [value]
+            });
+        }
+        value
+    }
+
+    #[test]
+    fn openai_tool_schema_validator_rejects_deep_namespaced_schema_without_flattening() {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..16 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        let request = OpenAIRequest {
+            model: "gemini-test".to_string(),
+            tools: Some(vec![namespaced_tool(
+                1,
+                json!({
+                    "type": "function",
+                    "function": { "name": "deep", "parameters": schema }
+                }),
+            )]),
+            ..Default::default()
+        };
+        let original_tools = request.tools.clone();
+
+        assert!(validate_openai_tool_schemas(&request).is_err());
+        assert_eq!(
+            request.tools, original_tools,
+            "validation must not flatten or rewrite"
+        );
+    }
+
+    #[test]
+    fn openai_tool_schema_validator_bounds_namespace_nesting_and_accepts_normal_namespace() {
+        let deeply_namespaced = OpenAIRequest {
+            model: "gemini-test".to_string(),
+            tools: Some(vec![namespaced_tool(
+                MAX_TOOL_NAMESPACE_DEPTH + 1,
+                json!({ "type": "function", "function": { "name": "ok" } }),
+            )]),
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_openai_tool_schemas(&deeply_namespaced),
+            Err(
+                crate::proxy::common::json_schema::ToolSchemaError::DepthLimit {
+                    max_depth: MAX_TOOL_NAMESPACE_DEPTH
+                }
+            )
+        );
+
+        let normal = OpenAIRequest {
+            model: "gemini-test".to_string(),
+            tools: Some(vec![namespaced_tool(
+                1,
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": "normal",
+                        "parameters": { "type": "object", "properties": { "name": { "type": "string" } } }
+                    }
+                }),
+            )]),
+            ..Default::default()
+        };
+        assert!(validate_openai_tool_schemas(&normal).is_ok());
+    }
+
+    fn tool_schema_deep_openai_parameter() -> Value {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..16 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        schema
+    }
+
+    fn tool_schema_ref_parameter(name: &str) -> Value {
+        json!({
+            "$defs": {
+                (name): { "type": "object", "properties": { "value": { "type": "string" } } }
+            },
+            "$ref": format!("#/$defs/{name}")
+        })
+    }
+
+    #[test]
+    fn tool_schema_rejects_openai_nested_and_flat_aliases_in_namespaces() {
+        let request = OpenAIRequest {
+            model: "gemini-test".to_string(),
+            tools: Some(vec![namespaced_tool(
+                1,
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": "nested",
+                        "parameters": { "type": "object" }
+                    },
+                    "parameters": tool_schema_deep_openai_parameter()
+                }),
+            )]),
+            ..Default::default()
+        };
+        let original_tools = request.tools.clone();
+
+        assert!(validate_openai_tool_schemas(&request).is_err());
+        assert_eq!(
+            request.tools, original_tools,
+            "validation must not flatten aliases"
+        );
+    }
+
+    #[test]
+    fn tool_schema_cleans_openai_nested_and_flat_aliases() {
+        let mut request = OpenAIRequest {
+            model: "gemini-test".to_string(),
+            tools: Some(vec![json!({
+                "type": "function",
+                "function": {
+                    "name": "nested",
+                    "parameters": tool_schema_ref_parameter("Nested")
+                },
+                "parameters": tool_schema_ref_parameter("Flat")
+            })]),
+            ..Default::default()
+        };
+
+        clean_openai_tool_schemas(&mut request).expect("normal aliases remain compatible");
+        let tool = &request.tools.as_ref().expect("tools")[0];
+        assert!(tool["function"]["parameters"].get("$defs").is_none());
+        assert!(tool["parameters"].get("$defs").is_none());
+    }
+
+    #[test]
+    fn tool_schema_validates_legacy_openai_functions_before_debug_copy() {
+        let rejected = json!({
+            "functions": [{
+                "name": "legacy",
+                "parameters": tool_schema_deep_openai_parameter()
+            }]
+        });
+        assert!(validate_raw_openai_tool_schemas(&rejected).is_err());
+
+        let normal = json!({
+            "functions": [{
+                "name": "legacy",
+                "parameters": { "type": "object", "properties": { "name": { "type": "string" } } }
+            }]
+        });
+        assert!(validate_raw_openai_tool_schemas(&normal).is_ok());
     }
 }

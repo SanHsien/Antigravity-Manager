@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 use tracing::{debug, error, info}; // Import Engine trait for encode method
 
 use crate::proxy::mappers::openai::{
-    transform_openai_request, transform_openai_request_with_session, transform_openai_response,
+    clean_openai_tool_schemas, transform_openai_request, transform_openai_request_with_session,
+    transform_openai_response, validate_openai_tool_schemas, validate_raw_openai_tool_schemas,
     OpenAIContent, OpenAIContentBlock, OpenAIMessage, OpenAIRequest, OpenAIResponse,
 };
 // use crate::proxy::upstream::client::UpstreamClient; // 通过 state 获取
@@ -1785,6 +1786,8 @@ pub async fn handle_chat_completions(
     >,
     Json(mut body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    validate_raw_openai_tool_schemas(&body)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
     let clean_start = std::time::Instant::now();
     // [NEW] Check for Image Model Redirection
     let model_name = body
@@ -1872,6 +1875,11 @@ pub async fn handle_chat_completions(
     let normalized_interaction_ledger = body.get("_interaction_ledger").cloned();
     let mut openai_req: OpenAIRequest = serde_json::from_value(body)
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid request: {}", e)))?;
+
+    validate_openai_tool_schemas(&openai_req)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    clean_openai_tool_schemas(&mut openai_req)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     // Safety: Ensure messages is not empty
     if openai_req.messages.is_empty() {
@@ -2355,6 +2363,10 @@ pub async fn handle_chat_completions(
         {
             Ok(r) => r,
             Err(e) => {
+                if crate::proxy::common::json_schema::is_tool_schema_client_error(&e) {
+                    drop(image_permit.take());
+                    return Ok((StatusCode::BAD_REQUEST, e).into_response());
+                }
                 last_error = e.clone();
                 failure_statuses.record(StatusCode::BAD_GATEWAY);
                 drop(image_permit.take());
@@ -3071,6 +3083,9 @@ pub async fn handle_completions(
     >,
     Json(mut body): Json<Value>,
 ) -> Response {
+    if let Err(error) = validate_raw_openai_tool_schemas(&body) {
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
     let clean_start = std::time::Instant::now();
     debug!(
         "Received /v1/completions or /v1/responses payload: {} bytes",
@@ -3755,6 +3770,13 @@ pub async fn handle_completions(
         }
     };
 
+    if let Err(error) = validate_openai_tool_schemas(&openai_req) {
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
+    if let Err(error) = clean_openai_tool_schemas(&mut openai_req) {
+        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+    }
+
     // Safety: Inject empty message if needed
     if openai_req.messages.is_empty() {
         openai_req
@@ -4248,6 +4270,9 @@ pub async fn handle_completions(
         {
             Ok(r) => r,
             Err(e) => {
+                if crate::proxy::common::json_schema::is_tool_schema_client_error(&e) {
+                    return (StatusCode::BAD_REQUEST, e).into_response();
+                }
                 last_error = e.clone();
                 failure_statuses.record(StatusCode::BAD_GATEWAY);
                 debug!(
@@ -6196,6 +6221,28 @@ async fn handle_websocket_session(mut socket: WebSocket, headers: HeaderMap, sta
                 continue;
             }
         };
+
+        // This must precede debug logging, prewarm handling, normalization, and
+        // the history/session copies those paths perform. Every parsed event and
+        // its optional `response` envelope are checked before either can clone.
+        let should_prewarm = match with_validated_websocket_payload(
+            &payload,
+            &mut session_state,
+            |payload, state| should_handle_prewarm_locally(payload, state),
+        ) {
+            Ok(should_prewarm) => should_prewarm,
+            Err(error) => {
+                let error_ev = json!({
+                    "type": "error",
+                    "error": {
+                        "message": error.to_string(),
+                        "type": "invalid_request_error"
+                    }
+                });
+                let _ = socket.send(Message::Text(error_ev.to_string())).await;
+                continue;
+            }
+        };
         drop(text);
         let ws_trace_id = format!("ws_{}", chrono::Utc::now().timestamp_subsec_millis());
         let debug_cfg = state.debug_logging.read().await.clone();
@@ -6215,7 +6262,7 @@ async fn handle_websocket_session(mut socket: WebSocket, headers: HeaderMap, sta
             .await;
         }
 
-        if should_handle_prewarm_locally(&payload, &session_state) {
+        if should_prewarm {
             let (created, completed) = handle_prewarm_locally(&payload, &mut session_state);
             let _ = socket.send(Message::Text(created.to_string())).await;
             let _ = socket.send(Message::Text(completed.to_string())).await;
@@ -6404,6 +6451,30 @@ async fn handle_websocket_session(mut socket: WebSocket, headers: HeaderMap, sta
             .map(|(_, call_id, _, _)| call_id.clone())
             .collect();
     }
+}
+
+/// Applies the strict borrowed tool-schema gate to every raw Responses
+/// WebSocket event before any helper can clone or retain client-owned JSON.
+fn validate_websocket_tool_schemas(
+    payload: &Value,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    crate::proxy::mappers::openai::request::validate_raw_openai_tool_schemas(payload)?;
+    if let Some(response) = payload.get("response") {
+        crate::proxy::mappers::openai::request::validate_raw_openai_tool_schemas(response)?;
+    }
+    Ok(())
+}
+
+/// Runs the next WebSocket request step only after borrowed raw schema
+/// validation succeeds. The socket handler uses this before debug/prewarm
+/// paths; tests exercise the same lazy continuation with normalization.
+fn with_validated_websocket_payload<T>(
+    payload: &Value,
+    state: &mut WebsocketSessionState,
+    continuation: impl FnOnce(&Value, &mut WebsocketSessionState) -> T,
+) -> Result<T, crate::proxy::common::json_schema::ToolSchemaError> {
+    validate_websocket_tool_schemas(payload)?;
+    Ok(continuation(payload, state))
 }
 
 fn should_handle_prewarm_locally(payload: &Value, state: &WebsocketSessionState) -> bool {
@@ -6618,6 +6689,204 @@ fn normalize_response_subsequent_request(
     state.last_request = Some(history_without_inline_media(&payload));
     Ok(payload)
 }
+
+#[cfg(test)]
+mod websocket_tool_schema_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn deep_tool_schema() -> Value {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..16 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        schema
+    }
+
+    fn empty_websocket_state() -> WebsocketSessionState {
+        WebsocketSessionState {
+            last_request: None,
+            last_response_output: json!([]),
+            last_response_id: String::new(),
+            last_response_pending_tool_call_ids: Vec::new(),
+            tool_call_cache: std::collections::HashMap::new(),
+        }
+    }
+
+    fn sentinel_websocket_state() -> WebsocketSessionState {
+        WebsocketSessionState {
+            last_request: Some(json!({ "sentinel": "request" })),
+            last_response_output: json!([{ "sentinel": "output" }]),
+            last_response_id: "sentinel-response".to_string(),
+            last_response_pending_tool_call_ids: vec!["sentinel-call".to_string()],
+            tool_call_cache: [("sentinel-call".to_string(), json!({ "sentinel": true }))]
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    fn assert_websocket_state_unchanged(
+        state: &WebsocketSessionState,
+        original: &WebsocketSessionState,
+    ) {
+        assert_eq!(state.last_request, original.last_request);
+        assert_eq!(state.last_response_output, original.last_response_output);
+        assert_eq!(state.last_response_id, original.last_response_id);
+        assert_eq!(
+            state.last_response_pending_tool_call_ids,
+            original.last_response_pending_tool_call_ids
+        );
+        assert_eq!(state.tool_call_cache, original.tool_call_cache);
+    }
+
+    #[test]
+    fn tool_schema_websocket_response_create_rejects_before_session_normalization() {
+        let root_invalid = json!({
+            "type": "response.create",
+            "model": "gemini-test",
+            "tools": [{
+                "type": "function",
+                "function": { "name": "deep", "parameters": deep_tool_schema() }
+            }]
+        });
+        let nested_invalid = json!({
+            "type": "response.create",
+            "model": "gemini-test",
+            "response": {
+                "tools": [{
+                    "type": "function",
+                    "function": { "name": "deep", "parameters": deep_tool_schema() }
+                }]
+            }
+        });
+
+        for payload in [root_invalid, nested_invalid] {
+            let original_payload = payload.clone();
+            let mut state = sentinel_websocket_state();
+            let original_state = state.clone();
+            let normalizations = Cell::new(0);
+            let result = with_validated_websocket_payload(&payload, &mut state, |value, state| {
+                normalizations.set(normalizations.get() + 1);
+                normalize_responses_websocket_request(value.clone(), state)
+            });
+
+            assert!(result.is_err());
+            assert_eq!(
+                normalizations.get(),
+                0,
+                "invalid payload must not normalize"
+            );
+            assert_eq!(
+                payload, original_payload,
+                "borrowed gate must not mutate input"
+            );
+            assert_websocket_state_unchanged(&state, &original_state);
+        }
+    }
+
+    #[test]
+    fn tool_schema_websocket_response_create_keeps_normal_compatibility() {
+        let valid = json!({
+            "type": "response.create",
+            "model": "gemini-test",
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "normal",
+                    "parameters": { "type": "object", "properties": { "name": { "type": "string" } } }
+                }
+            }]
+        });
+        let mut state = empty_websocket_state();
+        let normalizations = Cell::new(0);
+
+        let result = with_validated_websocket_payload(&valid, &mut state, |value, state| {
+            normalizations.set(normalizations.get() + 1);
+            normalize_responses_websocket_request(value.clone(), state)
+        });
+        assert_eq!(normalizations.get(), 1);
+        assert!(result.expect("valid schema").is_ok());
+        assert!(
+            state.last_request.is_some(),
+            "normal response.create remains compatible"
+        );
+    }
+
+    #[test]
+    fn tool_schema_websocket_response_append_rejects_before_session_normalization() {
+        let root_invalid = json!({
+            "type": "response.append",
+            "tools": [{
+                "type": "function",
+                "function": { "name": "deep", "parameters": deep_tool_schema() }
+            }]
+        });
+        let nested_invalid = json!({
+            "type": "response.append",
+            "response": {
+                "tools": [{
+                    "type": "function",
+                    "function": { "name": "deep", "parameters": deep_tool_schema() }
+                }]
+            }
+        });
+
+        for payload in [root_invalid, nested_invalid] {
+            let original_payload = payload.clone();
+            let mut state = sentinel_websocket_state();
+            let original_state = state.clone();
+            let normalizations = Cell::new(0);
+            let result = with_validated_websocket_payload(&payload, &mut state, |value, state| {
+                normalizations.set(normalizations.get() + 1);
+                normalize_responses_websocket_request(value.clone(), state)
+            });
+
+            assert!(result.is_err());
+            assert_eq!(
+                normalizations.get(),
+                0,
+                "invalid append payload must not normalize"
+            );
+            assert_eq!(
+                payload, original_payload,
+                "borrowed gate must not mutate input"
+            );
+            assert_websocket_state_unchanged(&state, &original_state);
+        }
+    }
+
+    #[test]
+    fn tool_schema_websocket_response_append_keeps_normal_compatibility() {
+        let valid = json!({
+            "type": "response.append",
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "normal",
+                    "parameters": { "type": "object", "properties": { "name": { "type": "string" } } }
+                }
+            }]
+        });
+        let mut state = empty_websocket_state();
+        state.last_request = Some(json!({ "model": "gemini-test", "input": [] }));
+        let normalizations = Cell::new(0);
+
+        let result = with_validated_websocket_payload(&valid, &mut state, |value, state| {
+            normalizations.set(normalizations.get() + 1);
+            normalize_responses_websocket_request(value.clone(), state)
+        });
+        assert_eq!(normalizations.get(), 1);
+        assert!(result.expect("valid schema").is_ok());
+        assert!(
+            state.last_request.is_some(),
+            "normal response.append remains compatible"
+        );
+    }
+}
+
 #[allow(dead_code)]
 fn should_replace_websocket_transcript(payload: &Value) -> bool {
     let previous_response_id = payload
@@ -7434,6 +7703,7 @@ async fn call_openai_gemini_sync(
     token_manager: &std::sync::Arc<crate::proxy::TokenManager>,
     trace_id: &str,
 ) -> Result<String, String> {
+    validate_openai_tool_schemas(request).map_err(|error| error.to_string())?;
     let (access_token, project_id, _, account_id, _wait_ms) = token_manager
         .get_token("gemini", false, None, model)
         .await
