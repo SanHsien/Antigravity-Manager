@@ -164,6 +164,11 @@ jobs:
           cd src-tauri
           cargo test --test custom_db_import_path
 
+      - name: Test managed account path boundaries
+        run: |
+          cd src-tauri
+          cargo test --locked --lib path_boundary -- --test-threads=1
+
   # Tauri 构建测试（不打包）
   build-tauri:
     name: Build Tauri App

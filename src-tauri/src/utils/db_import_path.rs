@@ -6,25 +6,41 @@ pub fn resolve_custom_db_import_path(
     if filename.is_empty()
         || filename.contains('/')
         || filename.contains('\\')
+        || requested.is_absolute()
         || requested.file_name() != Some(std::ffi::OsStr::new(filename))
     {
         return Err("Custom database import accepts a filename only".to_string());
     }
 
-    // Return the directory entry's path, never a path constructed from request data.
-    // file_type excludes symlinks, so an entry cannot redirect outside this directory.
+    let canonical_import_dir = std::fs::canonicalize(import_dir)
+        .map_err(|_| "Custom database import directory is unavailable".to_string())?;
+
+    // Return an existing ordinary directory entry, never a path constructed from request data.
+    // Rechecking the canonical parent also rejects a symlink or Windows reparse-point escape.
     for entry in std::fs::read_dir(import_dir)
         .map_err(|_| "Custom database import directory is unavailable".to_string())?
     {
         let entry =
             entry.map_err(|_| "Cannot read custom database import directory".to_string())?;
-        if entry.file_name() == requested.as_os_str()
-            && entry
+        if entry.file_name() == requested.as_os_str() {
+            let kind = entry
                 .file_type()
-                .map(|kind| kind.is_file())
-                .unwrap_or(false)
-        {
-            return Ok(entry.path());
+                .map_err(|_| "Cannot read custom database import directory".to_string())?;
+            if !kind.is_file() || kind.is_symlink() {
+                return Err(
+                    "Custom database file must be an ordinary file in the import directory"
+                        .to_string(),
+                );
+            }
+            let candidate = std::fs::canonicalize(entry.path()).map_err(|_| {
+                "Custom database file is not available in the import directory".to_string()
+            })?;
+            if candidate.parent() != Some(canonical_import_dir.as_path()) {
+                return Err(
+                    "Custom database file must stay in the configured directory".to_string()
+                );
+            }
+            return Ok(candidate);
         }
     }
     Err("Custom database file is not available in the import directory".to_string())
@@ -36,7 +52,15 @@ pub fn resolve_account_file_path(
     accounts_dir: &std::path::Path,
     account_id: &str,
 ) -> Result<std::path::PathBuf, String> {
-    if account_id.is_empty() || account_id == "." || account_id == ".." {
+    let requested = std::path::Path::new(account_id);
+    if account_id.is_empty()
+        || account_id == "."
+        || account_id == ".."
+        || account_id.contains('/')
+        || account_id.contains('\\')
+        || requested.is_absolute()
+        || requested.file_name() != Some(std::ffi::OsStr::new(account_id))
+    {
         return Err("Invalid account ID".to_string());
     }
     resolve_custom_db_import_path(accounts_dir, &format!("{account_id}.json"))
@@ -54,11 +78,13 @@ mod custom_db_import_path_tests {
         std::fs::create_dir(&accounts).unwrap();
         let selected = accounts.join("acc1.json");
         std::fs::write(&selected, b"{}").unwrap();
+        let expected = std::fs::canonicalize(&selected).unwrap();
+        std::fs::write(accounts.join("acc10.json"), b"{}").unwrap();
         std::fs::write(root.path().join("outside.json"), b"{}").unwrap();
         std::fs::create_dir(accounts.join("directory.json")).unwrap();
         assert_eq!(
             resolve_account_file_path(&accounts, "acc1").unwrap(),
-            selected
+            expected
         );
         for invalid in [
             "",
@@ -68,6 +94,8 @@ mod custom_db_import_path_tests {
             "..\\outside",
             "/outside",
             "C:\\outside",
+            "\\\\server\\share",
+            "acc1.json",
             "missing",
             "directory",
         ] {
@@ -78,6 +106,10 @@ mod custom_db_import_path_tests {
             root.path().join("outside").to_str().unwrap()
         )
         .is_err());
+
+        let selected = resolve_account_file_path(&accounts, "acc1").unwrap();
+        std::fs::write(&selected, b"updated").unwrap();
+        assert_eq!(std::fs::read(&selected).unwrap(), b"updated");
     }
 
     #[cfg(unix)]
@@ -94,10 +126,11 @@ mod custom_db_import_path_tests {
         let root = tempfile::tempdir().unwrap();
         let selected = root.path().join("state.vscdb");
         std::fs::write(&selected, b"fixture").unwrap();
+        let expected = std::fs::canonicalize(&selected).unwrap();
         std::fs::create_dir(root.path().join("directory.vscdb")).unwrap();
         assert_eq!(
             resolve_custom_db_import_path(root.path(), "state.vscdb").unwrap(),
-            selected
+            expected
         );
         for invalid in [
             "",
@@ -113,6 +146,10 @@ mod custom_db_import_path_tests {
             assert!(resolve_custom_db_import_path(root.path(), invalid).is_err());
         }
         assert!(resolve_custom_db_import_path(root.path(), selected.to_str().unwrap()).is_err());
+
+        let selected = resolve_custom_db_import_path(root.path(), "state.vscdb").unwrap();
+        std::fs::write(&selected, b"updated").unwrap();
+        assert_eq!(std::fs::read(&selected).unwrap(), b"updated");
     }
 
     #[cfg(unix)]
