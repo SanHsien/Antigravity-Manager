@@ -336,3 +336,7 @@ response = client.chat.completions.create(
 <div align="center">
   <p>本專案 fork 自 <a href="https://github.com/lbjlaq/Antigravity-Manager">lbjlaq/Antigravity-Manager</a>，依 CC BY-NC-SA 4.0 授權。</p>
 </div>
+
+## 多 Agent 流水線
+
+本 repo 是 [agent-relay](https://github.com/SanHsien/agent-relay) 多 Agent 派工與驗收流水線的一環（角色：Antigravity 帳號切換）。與 agent-relay 的整合規劃中（Phase 2）。協定規格與所有相關 repo 的總目錄見 agent-relay。

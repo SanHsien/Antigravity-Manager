@@ -1,5 +1,342 @@
 # 證據式覆核報告 (Review)
 
+## 0. 2026-10-21 `v4.9.8` release 逐批覆核
+
+- **範圍與界線**：仍只覆核 `b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b` 的 release commit；首個歷史批次閱讀 12 個實際 patch（merge 一律以第一父差異計），其後批次已完成全部 162 筆覆核；沒有移植任何產品碼。完整 SHA、檔案清單、第一父基底與可重現 patch blob SHA-1 保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
+- **coverage 校正**：舊 ledger 的 15 個 exact 映射有兩筆誤算：`443a162…` 是含 rate-limit ceil／token manager／P2C spillover 的 combined merge，不是 PR #3662 head；`1ef91e8…` 是 beta.7 release metadata，不是 PR #3687。兩者改為本批實讀。PR #3687 正確映射為 `4f3e1f90168f57179c30a9e9dd0e272ecd093161`（saved patch-id `9fbba6d4e52dd8869a3f23e6b27549e4cdf9b2d5`），判定仍為延後，僅表示已審閱，不表示採用。
+- **目前 coverage（本輪候選）**：148 筆實讀、14 筆既有 exact-patch 映射，合計 **162/162**；`v4.9.8` 的每一筆 release commit 均已有實讀判讀或精準同 patch 映射。下方逐批舊計數是歷史停點，保留其可重現證據，不能取代此總結。
+- **目前 tickets（本輪候選）**：PR #3708／#3714 與 Issue #3709／#3710／#3711／#3713／#3715–#3720 共 12 項均已逐項判讀。此處的「reviewed」只代表治理覆核，**不表示產品採用、合併或已修復**；未實作候選、延後與既有缺口仍明列於各表。
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `443a1627623b6c5138e1162f02c2f2e09c7d7757` | 延後 | 第一父 patch 跨 Claude/Gemini/OpenAI handler、rate limit、token manager 與設定；加入毫秒 ceil、P2C spillover。fork 沒有對等多帳號排程契約。需 fake-clock、in-flight spillover、帳號隔離／不重試 fixture。 |
+| `1ef91e8240963e05ccec1ea03ece8452ecfd50c0` | 拒絕 | beta.7 release/version、lockfile、Tauri 設定與 UI metadata；非 fork release packet。僅在 owner 獨立 release packet 重開。 |
+| `60311656b99bfdfcaf0ecd155a40090907eed888` | 延後 | Claude compaction 的 signature clear 與 thinking sentinel；fork 的 session/thinking lifecycle 自訂。需 Claude/Gemini compaction continuation、cache-clear、signature-isolation fixture。 |
+| `0936a9b1979079f57c7d91a6bfce26d614a79b06` | 延後 | 實驗性 global compaction/signature strip、server/config/UI 串接；不能以靜態相似採用。需多協定 compaction、false-positive fold marker、signature race 與設定持久化驗收。 |
+| `06f280c73b1c38255ed63fd6221c6ccd4c84085e` | 延後 | #3615 merge 第一父 patch 涵蓋 Cowork estimator、DB、session/signature lifecycle 及 compaction；需完整 client-visible lifecycle state-machine acceptance。 |
+| `4a8b5589025f5a58cd9fccb4d5c4ce3c4df9555e` | 拒絕 | beta.1 release/version metadata；只由獨立 owner release packet 評估。 |
+| `86faa82a68c4adf8484c75aa6bd6587cde75e580` | 延後 | fork 實際支援 en、zh-TW 與同一批非 zh locale；但上游 `AgentSettings` 路徑不存在，且 fork 必須維持所有 `zh-* → zh-TW`。需先映射 AgentSettings/Dashboard keys，排除簡中又不產生 fallback regression，並跑 locale build／渲染 warning 驗收。 |
+| `d5f5dc47d3d28e436c38103ee80a36ac834e1161` | 延後 | #3618 merge 第一父差異即前列 `86faa…` 的具體 AgentSettings/Dashboard localization patch；fork 的非 zh locale 本來就存在，不能以「多語不適用」拒絕。條件同前列 key/path、zh-TW migration 與渲染驗收。 |
+| `635f7b37798e215e2d897d8a6f3be8f9aae97812` | 拒絕 | beta.2 release/version metadata；只由獨立 owner release packet 評估。 |
+| `5dd6958ac06d1fd53fe97ef8047f2140d05dc4d6` | 延後 | i18n rapid-toggle 的 persistence queue／rollback，與 fork config store 的多語意義耦合。需 rapid toggle、failure/retry、waiter-order UI fixture。 |
+| `12e74b95e871c614ea5f17728d1a7313b3e7bcfa` | 延後 | queue waiter／BCP47 normalization follow-up；依賴未採用的 rapid-toggle 改動。條件同前列 fixture。 |
+| `6621a9490f2a6f9365d56f1504c6903bb8ceb1bd` | 監看 | #3620 merge 第一父差異即前列 rapid-switch patch；無獨立可採用內容。條件同前列 fixture。 |
+
+### 0.1 第三批：stream lifecycle／model catalog 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `2312b9119c60d437e16111199622772692c144ab` | 拒絕 | beta.3 release/version metadata；只由獨立 owner release packet 評估。 |
+| `9645ef9119a6aeb3be6227ff7d3061311ebdc284` | 延後 | Claude SSE 改為 3s heartbeat／45s idle，並改 error/retry/frame 收尾；fork 仍有 20s／100s 契約。需 no-content、thinking-only、content-emitted interruption fixture。 |
+| `885c68b2cffe53d96221cf3c3574f376cb39b19a` | 延後 | Claude/OpenAI first-chunk peek、請求預算與輪替變更；fork 有不同 120/300s 路徑。需 fake heartbeat、timeout、rotation、cross-protocol retry-budget fixture。 |
+| `0ba72459e1248826429b10479c1e52e418713a19` | 延後 | 以新 shared stream lifecycle 重寫兩個 streaming adapter；fork 無此 state machine。需 SSE frame ordering、尾端 buffer、first error、thinking interruption 與 session isolation acceptance。 |
+| `2427cd13ecbb94e442609ac053c57452cdcad0c2` | 延後 | trailing-signature block/index 修補依賴未採 lifecycle；需 signature-only、signature→tool/text、normal-stop frame-order fixture。 |
+| `58e145ef61ea2ff06a223a3741403cbc9f19072d` | 延後 | 180/180/45 三階段 timeout state machine 依賴未採 lifecycle，與 fork timeout 不同。需 fake-clock TTFT／thinking-transition／steady-stream／heartbeat fixture。 |
+| `134cb0d3d5fc833ca65d587d923e1349658d6668` | 延後 | OpenAI transition timeout/probe 依賴同一 state machine。需 thinking→tool/content transition 的 idle 與 terminal-frame fixture。 |
+| `9bdcb06abc817d90aa8da2d54462b9bdf6f95db6` | 延後 | timeout config/UI 暴露未採 lifecycle，且 patch 含簡中；fork 必須維持 `zh-* → zh-TW`。需 config migration/default/env/UI persistence 與 fake-clock acceptance。 |
+| `f0248cd06cce4c9b083a7fa9f78b69e170a14656` | 延後 | 是未採 timeout settings 的九語文案 follow-up；fork 支援這些 locale，但需先決定 source keys。採用 `9bd…` 後才以 locale-key completeness build 重開。 |
+| `c278086a88ae881d1501b2bc7c7f7272a8653f35` | 監看 | #3622 merge 第一父差異彙整本批已分別覆核的 lifecycle patches；merge 標題不當採用證明。 |
+| `0412bbf91be29a93f3e1289e7a01180e4459b5c8` | 延後 | 動態 model catalog／alias 移除跨 model specs、CLI/OpenCode sync；靜態名稱不能證明 429 根因。需 offline discovery、alias canonicalization、stale-model suppression 與相容性 fixture。 |
+| `35e127539c5f9b41c54c86f373fc7edb8213bd33` | 拒絕 | beta.4 release/version metadata；只由獨立 owner release packet 評估。 |
+
+### 0.2 第四批：stream 透明錯誤／token stats／403 重新探測 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `9901c3979f418540cae6a6505161edeff46661ef` | 延後 | 改為透明傳遞中途 stream error、取消假收尾；fork error/frame 契約不同且依賴未採 lifecycle。需 Claude/OpenAI no-content、thinking-only、content interruption 的 SDK retry/frame fixture。 |
+| `a6135ddcf1da81406b10c55d8deaaedb05c607d8` | 延後 | 將 steady-stream timeout 改 120s，假設上游 lifecycle phase；需 fake-clock large-output、heartbeat、cancel 驗收。 |
+| `eeb64f01d6f508eaeec71c74fb824c6c99b73594` | 延後 | 將未採 lifecycle timeout 暴露至 OpenAI/UI/locale，且含簡中。需先有 lifecycle、config migration/env/UI persistence 與 zh-TW mapping acceptance。 |
+| `8d2c4ae58bf3325fbbb1571b9c4d3156f859dba3` | 監看 | #3625 merge 第一父差異匯集已分別覆核的 lifecycle/config patches；merge 非採用證明。 |
+| `d99198be01fec82264ce8add1f3a12010969c1d8` | 延後 | 改帳號輪替、outer timeout、error mapping 與 test dependency；fork selection safety 自訂。需 multi-account fake-clock、sticky escape、504/overloaded、無重複 request fixture。 |
+| `7baff3d198e817efd452ab9d96e30ed9551b4d70` | 監看 | #3628 merge 第一父差異即前列 `d991…`；無獨立採用。 |
+| `d8b6e3f90ee8cbd4700c75c876c6998b9f8537f8` | 拒絕 | 上游移除 model-turn inert user padding；fork 已保留並驗證 `.` 防禦。除非真 provider 契約證明無效且有替代 security regression，否則不移除。 |
+| `1e4c8adfa899a4eebb08e0ff505b45a8fc9d75fa` | 拒絕 | beta.5 release/version metadata；只由獨立 owner release packet 評估。 |
+| `eeb477542cbe7d4711b8bf983746911fbd3f717e` | 延後 | token stats 新增 all-time aggregation、91-day heatmap、pricing storage/UI；fork 有既有統計頁但無此 DB／隱私／價格契約。需 bounded SQLite、pricing persistence、responsive UI acceptance。 |
+| `a7fbdb6c107194ec8089a38638f900e13e7e6b5d` | 延後 | token stats review follow-up，仍依賴未採 dashboard，並帶簡中。先有 source dashboard contract 才重開。 |
+| `2d706ad412952976c5e76fe891929766f9786d69` | 監看 | #3616 merge 第一父差異匯集上述 token stats patch；無獨立採用。 |
+| `d6974bc3b9a37477c9d1d4aa9906c24cefffc288` | 採用候選 | fork 有相同 `validation_blocked` 到期與 `is_forbidden` 路徑，可能讓過期 403 永久自鎖。另立帳號狀態批次，以 fake clock 證明到期只重探一次／清除 forbidden，且手動／proxy disable 不被放行。 |
+
+### 0.3 第五批：validation URL／UI motion／stream retry 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `6e562cdb6b8b32c9978d8588cd33a18bc439dff3` | 採用候選 | fork 已持久化 `validation_url`，但 proxy `AccountResponse` 三個構造點未輸出，前端只能解析 reason fallback。需獨立 local-API/UI 批次，驗證 active URL、expiry 清除與無 stale URL。 |
+| `35bbbe0744a94f05cb7e9c79ba5bf19d931e3455` | 拒絕 | beta.6 release/version metadata；只由獨立 owner release packet 評估。 |
+| `9a4dbacea31db92ad91f7b17aed9d071e44f7cee` | 延後 | Dashboard/account card 加 motion hover/tap；需 reduced-motion、keyboard、touch 與 desktop render acceptance。 |
+| `593adec49c1a64d3f2453d9770d5c3ca0f5dc04a` | 延後 | 七個 stateful pages 加入場動效；需 reduced-motion、focus navigation、route transition、低階桌面效能驗收。 |
+| `1a2a5cb8281c5856c1cbd3ccc03f0be207af5759` | 延後 | Dashboard GPU/container follow-up 依賴未採 animation design；條件同前列 route/performance acceptance。 |
+| `890fa062592be6bf02b92776029a58417532f6e4` | 監看 | #3636 merge 第一父差異彙集已分別覆核 UI patches；merge 非採用證明。 |
+| `73f5512bd05879b9d870ceaae59fee36597871ec` | 拒絕 | 上游 stream 診斷文檔假設未採 lifecycle，且不符合 fork 證據治理格式；僅在 fork 委託同類調查時重開。 |
+| `ca9a523d3e677698df1321cc7da07450cb51a818` | 延後 | stream propagation/error-code 改寫經 absent lifecycle；需各協定中途錯誤、retry、無 synthetic terminal frame fixture。 |
+| `5dff7b5f459ecc6605b873a8189fc55c42882df7` | 延後 | adaptive peek/retry/header 與 function-response reminder folding 改帳號選擇、Gemini tool-turn；需 fake transport／tool-sequence fixture。 |
+| `31495efa88fcfd228a4f791bac75482116fd97d5` | 監看 | #3634 merge 第一父差異彙集本批 stream/docs patches；待獨立協定設計採用後才重開。 |
+| `0eb3337c41d60685f31f833d22a5ad903d2699f0` | 延後 | token-stats persistence/ranges/cost UI 依賴未採 dashboard，且含簡中；需 bounded storage/aggregation 與 zh-TW UI acceptance。 |
+| `224040fa23f9f9101510477bfe91d7b027dcb29c` | 延後（第十四批完成 component 覆核） | 除 beta.7 metadata 外，`integration.rs` 將熱切換從 `is_ide && running` 反轉為 `!is_ide && running`：IDE 改為完整關閉→寫 SQLite→重啟，Standalone 改為先寫 Keyring→殺 language_server→best-effort 補寫。fork 仍以 IDE 熱切換、Classic 完整重啟；未驗證其 target resolution、Keyring/SQLite source、supervisor 與 credential-write/restart order 契約，故不採碼。 |
+
+### 0.4 第六批：model quota／retry／compaction／padding 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `61fc48558816c740cb1662690b5683040c27ea4d` | 延後 | `token_manager.rs` 將 reset lock 綁定至指定模型且僅接受該模型 0% quota；fork 仍採帳號級 `get_quota_reset_time`。需 fake-clock 證明多模型 429 不會誤鎖、真 0% 會精確鎖定，且無跨帳號污染。 |
+| `29e65fd36a68df165a4f3dd8e056dd0c2f59013a` | 延後 | `handlers/common.rs` 在多帳號第一輪以 <=2.5s GraceRetry 取代 50ms 輪替，`token_manager.rs` 為 image scheduler 加冷卻等待重選；fork 已有不同 GraceRetry／image selection 路徑。需 fake-clock、deadline、池耗盡與一次 grace 消耗 fixture。 |
+| `5c7998c8bde25924d74511f023c09530748aea61` | 延後 | 以 per-model quota 改 P2C、preferred/sticky/60 秒 session fallback；fork已有 capability filter／session binding，但 selection 順序與相容契約不同。需 sticky escape、preferred override、0% metadata 缺失與無重複 request acceptance。 |
+| `1fea3bd799f20d212b5a67225b2c418b6ff59868` | 拒絕目前 patch | 上游 Claude Cowork deep-compact 延長 lease／掃描五訊息／擴充命令；fork使用不同的 Layer-3 XML summary compression，沒有對等 lease/continuation state。僅在 owner 要求統一 compaction lifecycle 並有 continuation／cache／signature fixture 時重開。 |
+| `9d652296a3dd9881676c92b6eb8b991c76c3ea8b` | 延後 | 將 `weekly_reset_time` 與 EDF 加入 token selection；patch 寫入 `bucket_id`／`reset_time`，測試 payload 卻為 `bucketId`／`resetTime`，provider 資料契約未證實。需真實遮罩 quota fixture、fake clock、週/5h bucket 區分與 fairness acceptance。 |
+| `8cddf33eaf5d14b161f7701ad718cd9825938a06` | 已存在 | 上游把 fallback `ok go on` 改為 `.`；fork `mappers/common_utils.rs:1619` 已是惰性 `.`，並有 `test_transit_defense_fallback_text_is_inert_protocol_padding`。保留既有 security regression，不重複移植。 |
+| `f7f784e30ff7e642117ec98faa75ad39875c0492` | 監看 | #3640 merge 的第一父差異與 `61fc…` 相同；不因 merge 再次採用，條件同模型級 reset fake-clock fixture。 |
+| `21a1cca7b2ed598bbde98149e47a394952bdcf90` | 監看 | #3641 merge 納入 micro-gap GraceRetry/image cooldown；fork retry policy 不同，條件同 `29e65…` 的 deadline／pool fixture。 |
+| `336d31163d4a19a88e55b493b65db3d4579f7c9c` | 監看 | #3642 merge 納入 per-model quota session switch；條件同 `5c799…` 的 session/selection acceptance。 |
+| `0973ad98762ad6655727e2f2d0f2b975b28d16c1` | 拒絕目前 patch | 僅修正未採 #3639 測試將 model quota key 正規化；不在未採產品行為上移植測試。採用父功能時一併重開。 |
+| `befe6225800823d8b28e45338213597fbb47db50` | 監看 | #3644 merge 納入未採 Cowork compact patch；無獨立可採用內容，條件同 `1fea…` 的 lifecycle 重新設計。 |
+| `55f774e84d249893b55f8e3fb3eec675e8f190ff` | 監看 | #3645 merge 納入 weekly EDF；無獨立可採用內容，條件同 `9d652…` 的 provider quota schema 與 fairness fixture。 |
+
+### 0.5 第七批：quota compatibility／model route／HTTP API／transport 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `b0fd10c15848bf19726cb560f21c7e22971c4ca8` | 拒絕目前 patch | 只修未採 weekly EDF／Cowork compact 的 camelCase quota 欄位與測試編譯；不在未採 scheduler/compaction 行為上移植相容修補。若採用父設計，連同 provider-shaped quota fixture 一併重開。 |
+| `aa84203026fa5e7b059c3ed9a3e9a438653c4b3d` | 已存在 | #3649 merge 第一父 patch SHA-1 `65312707…` 與第六批 `8cddf…` 精確相同；fork 已有 inert `.` padding 與 focused regression，引用既有證據，不重複採用。 |
+| `f719d242779d73d817c70ac8426e123614381741` | 延後 | 讓 route-with-effort 將 public tier alias 再映射為 physical upstream ID（如 `gemini-pro-agent`）；fork model mapping 路由不同，需 custom mapping 優先、effort alias、實際 upstream 400/capability fixture。 |
+| `31cc4f4306351571f8efc49ff794506b84b5495f` | 延後 | Claude Code 偵測後關閉 usage scaling，改 client 95% auto-compact 的可見 token 壓力；fork仍有自身 scaling/Layer-3 壓縮路徑。需 Code/Cowork/一般 chat classifier 與 compaction-threshold acceptance。 |
+| `169f144a0d3b11d2cfb4fa5ce111d1e32afcf1b0` | 拒絕目前 patch | 將未採 Cowork immunity lease 60 秒延長至 90 秒，並推薦固定 Claude Code 版本；fork無同一 lease state machine，且版本建議不能取代 transport 驗證。 |
+| `658cfa825b4d8424d4c8cd60449008b414d2deff` | 拒絕 | 新 Windows build/release workflow 要求 `contents: write`、動態改 Tauri config、以浮動 Action ref／`npm install` 發布 prerelease；不符合 fork 的 immutable pin/release 治理。 |
+| `23b571cf6f8df979b4683575332cffbf6199bf17` | 延後 | 混合 HTTP AccountResponse validation URL、storage auto-create、CLI sync、靜默啟動與 admin hot-sync 七模組；fork確實缺 API validation fields，但必須拆出最小 local API/UI／expiry／storage migration 批次，不能整包採用。 |
+| `15f4bc938ecfa0286097ec6246a3d1583bc683a7` | 延後（第十五批完成 component 覆核） | 39 檔 beta.8 已逐類覆核：release metadata 拒絕；commands/device/http/token-manager 僅格式跟隨；其餘 reasoning-token 資料鏈、`thinkingBudget=0`、dashboard/pricing 與 1,452 locale key 均因 fork 契約不符而延後。詳見第十五批；不採產品碼。 |
+| `cb6366d8f717ace2f52b069eaef6b9f5150f7047` | 拒絕 | beta.9 release/version metadata；僅由獨立 owner release packet 評估。 |
+| `cfea6e8d974635a93b78b07e63b196566dbba11d` | 延後 | AccountCard/Table 於 weekly view 同時堆疊 5H 與週 quota pills；fork UI/layout、可及性與小螢幕契約需獨立 visual/responsive acceptance。 |
+| `b08b17276b63aeb54ef3de19b13882ec3445861b` | 拒絕目前 patch | changelog 僅敘述未採 weekly stacked UI；待來源 UI 設計採用後才更新 fork release notes。 |
+| `7de745127c6e3bddff2bac3356a1d3dd1868998c` | 延後 | endpoint health cooldown、5 秒 connect timeout 與 fallback reorder 改變 internal endpoint retry 行為；fork仍有其 endpoint chain。需 fake transport 驗證 4xx/429/5xx、cooldown expiry、全端點失敗與無跨帳號污染。 |
+
+### 0.6 第八批：physical model／internal warmup／endpoint health／model catalog 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `f97fae822439623ab8af8bfd760e3d4538fdd217` | 拒絕目前 patch | changelog 僅敘述未採用的 endpoint-health tracker；待來源實作有獨立 acceptance 才更新 release notes。 |
+| `8db23c3ef110359678820cbd8c83ac911a1c1ea4` | 延後 | 跨三協定／warmup 增加 `X-Upstream-Model`、SSE/JSON `modelVersion` 擷取、`request_logs` migration 與 Monitor UI。fork缺同一資料保存／header 信任／隱私契約；需 migration/rollback、stream/non-stream/header 衝突、redaction 與 DB failure fixture。 |
+| `1600640a5d746ec8c293a8be128db647afaa4c66` | 拒絕目前 patch | changelog 僅記錄前列 physical-model visibility；來源未採用前不帶入 fork release notes。 |
+| `278d4273173e49c21ed1abcc29f026c48bb5865d` | 已存在（較強替代） | 上游僅以 TCP loopback 保護 internal warmup；fork現有 capability middleware 另要求 process-local secret、拒絕 duplicate/missing header，且在 CORS／authOff／stopped 前執行。保留 fork 較強的 tunnel-safe 契約。 |
+| `1b1a96ebae589870b1e4d475f5e437a1aec3a61b` | 已存在（較強替代） | 只格式化前列 loopback guard；fork已不採其 TCP-only 設計，維持 credentialed loopback guard 的既有 regression。 |
+| `f83c1f06ff17517b1976da5b2c2b4b4b2828c762` | 已存在（較強替代） | 上游在 authOff 前拒絕非 loopback，但仍把 loopback 當身分；fork已覆蓋外部／forged header／OPTIONS／stopped，並加不可猜 process-local credential。 |
+| `95b7300a52a094bc7d45efaa2dbd61eaa20d4975` | 延後 | 將所有 host 的 endpoint-health 全域共享，並把 quota/project resolve 壓至 3/5 秒；會改變 fork 的 quota、project 與 retry timeout/冷卻選擇。需 fake transport 覆核 host normalization、4xx/429/5xx、跨帳號隔離、timeout 與 recovery。 |
+| `1ecfa28d36c53aa90e335e75ae60a232c962e47c` | 延後（第十六批完成 component 覆核） | beta.10 的 39 檔已分為 metadata、response-header log/export、quota authority/account surfaces、dashboard/a11y 與 locale；無任一類可隨 release 採用。詳見第十六批；不採產品碼。 |
+| `f57d48c0528a872d48820d96b535c7c9c9c02ee1` | 拒絕 | 實際僅 10 個 version/changelog/lock/Tauri/UI metadata 檔；只由獨立 owner release packet 評估。 |
+| `c44d96b02bb794ce012dfde97d21100a564609fe` | 延後 | 動態 deprecated-model rules、Gemini 4 Argon、token selection 與 UI catalog 同時移除／重映舊模型。需遮罩 provider catalog snapshot、custom alias precedence、capability/400、cold-start 與 stale-model suppression fixture。 |
+| `1b419043a3d67784e5e4adb046cab3c212a575bb` | 延後 | 三協定、endpoint client 與 Monitor UI 增加多端點 TTFT/fallback timeline，會暴露 endpoint URL／重定義 timing。需 fake transport 的 fallback ordering、timeout/error redaction、stream/non-stream timeline 與 responsive/a11y fixture。 |
+| `e57e5fae2cc07704dbeb1582ac868c0f05c9b8d1` | 拒絕 | 實際僅 10 個 version/changelog/lock/Tauri/UI metadata 檔；只由獨立 owner release packet 評估。 |
+
+### 0.7 第九批：release isolation／monitor UI／quota scheduler／fallback telemetry 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `3e186e91e74aebf787a1d037ba4c95928526bb74` | 拒絕 | build workflow 改 tag trigger/release-action 條件，但 fork 的 owner release 以 immutable pin、獨立 workflow 與已驗證簽章治理為準；不能移植浮動 `@v1` release-action 的競態修補。 |
+| `3a9919da370c39e57a9571c83a8f1259871e8291` | 延後 | Dashboard 卡片 theme、Monitor endpoint timeline 與 locale 同時變動；需 dark/light、endpoint timeline、keyboard/reduced-motion 與小螢幕 visual acceptance。 |
+| `5a373b1b80bdf27fd4cec274bf453113d1da0c45` | 延後 | 重寫 ProxyMonitor 欄位拖曳／寬度 state；fork UI layout 契約不同。需 mouse/touch drag、keyboard resize、long-text truncation 與 persistence fixture。 |
+| `21863d5a3c3c5200d4491195130ce41e349d1046` | 拒絕 | 實際僅 10 個 beta.1 version/changelog/lock/Tauri/UI metadata 檔；只由 owner release packet 評估。 |
+| `b00898720e88ed1f21810e15bbc99509ddf8f739` | 拒絕 | release workflow 僅手動發布並複製空格檔名為點號；仍依 upstream 浮動 release action／asset 命名假設，不符合 fork immutable release 治理。 |
+| `1ead6ff609790d3e31843a7406b2b9582f09afe0` | 延後（既有 #3666 來源） | 第一父 patch 為已審 PR #3666 scheduler/account atomicity 與 stream terminal triad；沿用既有 deferred 結論，需低 quota EDF/P2C、account/index atomicity、content/tool-after-error 與 idle-timeout fixtures。 |
+| `3565de5be8c9fbdc220925deda3790279c0c5ac6` | 延後 | beta.2 除 metadata 外，改 `available_models`、tier stripping、dynamic forwarding、model specs 與 token selection；需遮罩 provider model catalog、cold-start、alias/tier mapping、quota capability 與 no-false-429 acceptance。 |
+| `411f1a75183f5cb636103fdd8a0b1ead02c8b723` | 延後 | 三協定 non-stream TTFT、upstream error body 與 Monitor timeline 同步改動；需 fake transport 覆核 header/body timing、fallback、error redaction、stream/non-stream UI semantics。 |
+| `5509f006c557a947ea05fafc474625d14998a054` | 拒絕 | 實際僅 10 個 beta.3 version/changelog/lock/Tauri/UI metadata 檔；只由 owner release packet 評估。 |
+| `80676eafa286c19c5801591f01ecf9fa6565df8b` | 拒絕目前 patch | 修補的是未採 fallback-attempt telemetry 路徑的 Rust ownership/placeholder；fork現有 client/handler 與 error redaction 契約不同，不單獨移植。 |
+| `e4924573f1f7338aafbb0a813f2271ff85d91e52` | 延後 | realtime monitor summary 開始保留完整 response headers；須先決定 response-header storage/redaction，並以 SSE live update、敏感 header 不外洩、TTFT 同步 fixture 驗收。 |
+| `51b63fb4c920d7315c1f16e5b0ce47b88d658030` | 拒絕 | 實際僅 10 個 beta.4 version/changelog/lock/Tauri/UI metadata 檔；只由 owner release packet 評估。 |
+
+### 0.8 第十批：Responses 相容、endpoint/retry、warmup 與 token stats 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `b81f08d6cc175a70b3a8032e3847a03b74f7a5f9` | 採用候選（限縮） | 修正 Responses `input` array 角色與 string input；fork 完整 converter 可保留結構化 array，但 chat-completions Responses 相容路徑仍手動將 array 壓成單一 user string，converter 又丟棄 string。另立最小 patch 使相容路徑重用完整 converter 並補 string 支援；raw schema gate 必須在轉換前，其他 `Value` 不放行。需 multi-turn role、instructions-only、string、tool output 與 Gemini role mapping fixture。 |
+| `2f7641a68e90a2a45e5507903d127bac2d698d53` | 監看（相同 patch） | #3672 merge 的第一父 patch blob 與前列 `b81f08d…` 同為 `3d02ee…`；不重複採用，沿用「相容路徑重用完整 converter 加 string 支援、schema gate 前置且不放行其他 Value」的限縮候選與 multi-turn/instructions/string/tool-output/Gemini fixture。 |
+| `c7293de1d1c348bc7e877d6ce2e08626731c07e4` | 延後 | beta.5 除版本檔外，改 Hub UA、Argon model catalog 與 `thinkingBudget` floor；fork 的 endpoint identity 與 inbound thinking policy 已不同，沒有可公開的 provider capability／400 契約可證明偽裝 UA 或 1024 clamp 正確。需遮罩 catalog、UA request、0/32/1024 budget 與 400 fallback fixture。 |
+| `8459833238869d58d5f0ecc1ff9de6beabd354d1` | 延後 | 將 quota/project endpoints 改 Daily→Prod→Sandbox、request-level 429 擴為全池輪替，並改 index/entity state；fork維持 Sandbox-first、二輪 grace retry 與 on-disk disabled safety checks。需 fake transport 的地域 400、429 pool exhaustion、cooldown、index/entity drift 與跨帳號隔離 fixture。 |
+| `56f14ba0f0ec30de4dab3a76699fbcf83f5bbfa8` | 延後 | 再把同一 endpoint 順序與 client retry 改為 Prod-first；與 fork Sandbox-first 健康／fallback 契約相衝，不能以標題或上游測試取代實際 provider timing 證據。需同前列 endpoint ordering、timeout、region 與 recovery fixture。 |
+| `f397b2cedeab1dd650666f2e5dd53b6c9b4f4070` | 延後 | 移除 Claude 模型 `[1m]` suffix、重寫 Fable alias，並合併 client `anthropic-beta` headers；fork mapper/Claude header policy 含自訂 alias 與 provider identity。需 alias matrix、malformed bracket、allowlisted beta header、1M context request fixture，才可拆件採用。 |
+| `d66bb273db9e101a4dfc68e1a5a9a1c4117e7f20` | 延後（需設計） | patch 不只同步 UI index，還移除 `summary.disabled/proxy_disabled` 的強制停用、以 entity 覆寫 index，並吞掉 `save_index` 錯誤；fork不能照抄，否則 entity/index 矛盾或寫入失敗可能放行手動停用帳號。需先定義 fail-closed entity/index 權威與原子寫入契約，再以 disabled/proxy-disabled、reload、並行 manual disable、讀寫失敗 fixture 驗收。 |
+| `00eb21f462731901be4c066d320ad42f2da9fb41` | 延後 | 將 endpoints 改回 Daily→Sandbox→Prod，並在首輪全池 429 後 fail-fast；fork目前保留 second-round grace retry，這是不同 client latency／公平性取捨。需 pool-size 1/N、explicit Retry-After、request-level 429、取消與 user-visible error fixture。 |
+| `1a4cb5ddfae382052690707bfc21d5473b70fcd2` | 監看（合併彙整） | #3680 merge 的第一父 patch 彙整本批 endpoint、429、account-state 與 Claude changes；上述每個實際來源均已逐筆判讀，merge 不產生獨立採用結論。 |
+| `386fa87e54323a9ff6b33b79ce3b9b0df4494b3c` | 拒絕 | 實際僅 10 個 beta.6 version/changelog/lock/Tauri/UI metadata 檔；只由獨立 owner release packet 評估。 |
+| `ad3b25c23f6e51ccf618a57839b611e9e5d17851` | 延後（安全邊界） | 新增 Tauri command 以 loopback POST 將 access token 送入 `/internal/warmup`，並把結果／帳號資訊寫入 Monitor/UI。fork的既定 internal warmup 方向要求 capability credential、header stripping 與 CORS/authOff/stopped 拒絕；不能引入只信任 `127.0.0.1` 的直接 token path。需 credentialed local client、wrong/missing secret、redirect/header non-leak、retired-model 與 log-redaction fixture。 |
+| `51b4069fb9b18e86ab38cf1c6c53731385928d0c` | 延後 | 新增 user-token usage SQL aggregation、IP exposure、ranking command 與 dashboard/modal；fork沒有相同 token analytics 的資料保留、授權與 migration 契約。需 scoped authorization、retention/redaction、SQLite migration/rollback、time-range/empty data 與 a11y UI fixture。 |
+
+### 0.9 第十一批：Hub、schema、tool 名稱、模型、配額、sanitizer、monitor、CLI 與帳號 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `250559d94e97af51840da5d92ffd3a40be24a625` | 拒絕目前 patch | 將 Hub 指紋版本／client label 改為可由設定或遠端 YAML 動態覆寫；fork 既有 UA floor，但沒有簽章來源、allowlist 或隱私 egress 契約。不得以任意 custom version／CL 偽裝 provider fingerprint。僅在固定 trust origin、簽章／版本與 label 綁定、opt-in、失敗不出網與快取 fixture 的獨立設計重開。 |
+| `a01fc35f51c39aa4edaf1cbe7fc19c20f1d5fcf3` | 拒絕目前 patch | 將 schema recursion 10 提至 64，並在超限時改成 string／以無界 heap walk 補裸 array；這會靜默改工具語意，且與 fork strict schema 候選的 typed depth/cycle/resource error 相衝。需 fail-closed、depth-32/ref-cycle/source-unchanged fixture 才可另案。 |
+| `96edbf5ab6af228b7504b06ffca23ec4685de7cc` | 拒絕目前 patch | 跨三協定將 unknown tool 名稱以單一宣告工具或十輪歷史「自癒」，並把 orphan response 降成文字；fork tool turn／signature store 以 name/id 關聯，不能合成 invocation 或掩蓋 receipt 錯誤。僅有可驗證 call-id mapping 的 typed local error 設計，及 unknown/duplicate/collision/truncated-history fixture 才重開。 |
+| `ec5f7cb843bbbfd9993285dadd9fc99d4488ef21` | 延後 | `/v1/models` 擴出 quota、tier 派生裸模型與 custom mapping metadata；會改 API 相容、路由與帳號能力曝露。fork已有 model specs／server route，但沒有 merge precedence 或 metadata privacy 契約。需 catalog snapshot、alias/tier conflict、multi-account、legacy `/v1/models` fixture。 |
+| `95d84869b036ae2f63d9bfac5bd8157f0f16e346` | 延後 | 將 Gemini 4 Argon 獨立 quota、selection/warmup 熔斷與多處 UI/locales 一起變更；fork沒有已證實的 Argon capability／quota group 契約。需遮罩 catalog、Argon/normal 混合 quota、400/429 不誤鎖、帳號隔離與 UI/locales acceptance。 |
+| `d223bc46f329cdf2ad0ed9abb210b88285d38045` | 拒絕目前 patch | prompt sanitizer 將 known/custom identity 直接改成官方 Antigravity 並重寫第三方工具敘述；fork既有 sanitizer 不能證明 provider 要求 impersonation，這會改 user/system/tool semantic context。僅以最小、經核准的 redaction（不替換 identity）及 user/system/tool-preservation fixture 重開。 |
+| `3a48a6ffd6a8712b13ec3854188a89b82adad1be` | 拒絕目前 patch | monitor 重構新增 request/upstream headers/body、response body、endpoint URL 的雙 HAR 匯出；fork沒有敏感資料保存、export consent、redaction/retention 契約。需 secret/header/query/body redaction、權限與加密／保留期、large/stream payload fixture 才可另案。 |
+| `81d1d2f7f11f25ebeca9627eb59ce26ee3cc0400` | 延後 | CLI sync 擴大 agy discovery/config 同步、telemetry 設定與動態模型選擇；fork已有 CLI sync，但 native config 寫入與跨平台掃描契約不同。需 allowlisted filesystem/no-shell-exec、TOML/JSON migration backup、telemetry opt-in 與 model config fixture。 |
+| `eccedfcb357ad453c2d73b536c88f9cc11905024` | 拒絕 | 實際僅 beta.8 version/changelog/lock/Tauri/UI metadata 10 檔；只由獨立 owner release packet 評估。 |
+| `ceb2555698775b7e1fba1bb69ff71b7f7c3fcf32` | 延後（整併既有候選） | beta.9 除 metadata 外，加入 validation URL／403 分類、10 分鐘 block 與 quota 成功時 auto-enable proxy；與既有 `6e562…` validation-URL、`d697…` expiry/403 候選重疊，但不能直接採用會覆寫手動停用的整包行為。需 fake-clock load/reload/refresh/selection、malformed URL、403/validation 差異與 manual-disable invariant。 |
+| `8037d80fd8a754c6237bd2ea5cc0895c0e6d3105` | 拒絕目前 patch | 重寫 Classic/IDE/CLI 本機 credential scanner 並移除 V1 backup/import；fork有既有 account/migration 路徑，不能以 release 標題刪除備份或改 credential precedence。僅在 owner migration 批次具 source precedence、fake filesystem/keyring、備份保留與失敗 rollback fixture 時重開。 |
+| `0ffd1f942e5807ee7461f915ebfca032c9ea1ee3` | 延後 | 多 client active-account tracking 讀 IDE DB/keyring/CLI credentials、對 refresh token 匹配並改 UI/index；fork帳號 state/selection 契約不同且涉及 credential privacy。需 missing/corrupt keyring/DB、client collision、refresh-token collision、無 secret UI/log fixture。 |
+
+> 本批沒有採用上游產品 patch；`b81f`／`2f764` 的 Responses 限縮候選也仍未實作。release 基線保持 `v4.9.6`／`b601f5e…`。
+
+### 0.10 第十二批：auto-switch 翻譯與 endpoint/watchdog 註解 4 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `76c55d75471dd4b6aebe9e304c1f229d43aa49e5` | 拒絕目前 patch | 僅在韓文加入 Classic-only badge 與 IDE/CLI 不支援說明，依賴尚未採用的 classic auto-switch 功能；fork無對應設定／行為，不能先加入會誤導使用者的 UI copy。父功能有 owner 設計與跨 client acceptance 後才一併重開。 |
+| `007e65babfb7b4523f4f35db7ed431347c4777a7` | 拒絕目前 patch | 與前列相同的日文 Classic-only 說明，沒有獨立產品行為或 locale key 對應；條件同 `76c55…`。 |
+| `5c239f536d87a30dcb8675e6abb686a1dfaf3062` | 拒絕目前 patch | 與前列相同的俄文 Classic-only 說明，沒有獨立產品行為或 locale key 對應；條件同 `76c55…`。 |
+| `685778fa4964af440d30550a5a45dd637bcead39` | 拒絕目前 patch | 表面為註解，但實際斷言 Prod endpoint「全流量必報 429」且把 stream watchdog 改寫為 120 秒契約；fork仍保留 `Daily → Sandbox → Prod` fallback。沒有受控 endpoint/TTFT 證據，不能將未驗證 provider 行為寫成維護依據。需 fake transport 覆蓋 Daily/Sandbox/Prod、400/429/5xx、first-byte timeout 與 cancellation 後才可採用任何行為或文件變更。 |
+
+> 本批四筆都不構成獨立產品採用；沒有改動 release 水位。
+
+### 0.11 第十三批：帳號來源、dashboard、Responses、endpoint、auto-switch 與 release 12 commits
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `959402fd5d6c9b5772f832fc4c2e88b44e9ee975` | 延後 | protobuf 改為掃描多個 Topic/Row、優先 oauth sentinel，並加入 5 秒 active-client polling；fork帳號/credential 來源與 UI polling 契約不同。需 malformed/多 entry protobuf、舊格式 migration、focus/unmount polling、無 secret UI/log fixture。 |
+| `8c8354c62f27a2e3620714bfc39231ffb0772018` | 延後 | 改 Classic DB 與 CLI keyring 的偵測先後；實際會改 OS credential source precedence。需 Classic/IDE/CLI 同時存在、keyring 缺失/錯誤、refresh-token collision 與 source-isolation fixture。 |
+| `e74b8769a2167e4e765d4f852946c5173ea0f34c` | 延後 | 依 Classic version 選 keyring 或 SQLite，並以 target/index 選 CLI credential；fork沒有已驗證 version/path/keyring precedence 契約。需 v1/v2、CLI target、缺失/損毀來源、交錯帳號與無 secret log fixture。 |
+| `f8fe887dd19902c9ca80d3f1a183835e5ab78d10` | 延後 | Dashboard 加 Classic/IDE/agy target tabs 並可切換最佳帳號；依 active-client/account index，會改帳號切換與 UI 可及性行為。需 no-active-client、各 target disabled/proxy-disabled、切換原子性、keyboard/responsive fixture。 |
+| `6d45a5057c381f063ac16acd1a0698aebb8d88cb` | 延後 | 為前列 target tabs 補 12 語系 key 與 title；fork尚未採 target-switch UI，不能獨立導入 locale。前列 dashboard 行為與 zh-TW mapping/locale key-parity 驗收後才重開。 |
+| `6a4806ecf0b368b908eb7a7b51cf75186f23890f` | 延後 | 實際移除 Prod fallback 並把 stream first-byte watchdog 拉至 120 秒；fork保留 Daily→Sandbox→Prod，且無受控 provider timing 證據。需 Daily/Sandbox/Prod 的 400/429/5xx、TTFT、timeout/cancellation fake transport fixture。 |
+| `aa9f103df9d6ec5914375627dd475fcc8fab35ee` | 拒絕目前 patch | chat compatibility 改用完整 Responses converter 並補 string input，但 converter 仍將任意其他 `Value` 包成 user content，且最早 raw schema gate 要求尚未保證。沿用 `b81f/2f764` 的限縮候選：僅 array/string、轉換前 raw schema gate、multi-turn/instructions/tool-output/Gemini fixture。 |
+| `4d1e1d1e4166bd146731f9bc1bba71343268e12e` | 監看（合併彙整） | #3691 merge 的第一父 patch 彙整移除 Prod fallback 與 120 秒 watchdog；無獨立可採結論，條件同 `6a4806…`。 |
+| `50686b58baf74836fa62c41784b881294a24c713` | 延後 | 25 檔新增 Classic quota auto-switch：選帳號、終止 language server、寫 keyring、重啟、120 秒冷卻、設定/UI/locales。fork無對等 process/keyring safety 契約；需 fake process/keyring、quota threshold/tier/LRU、manual-disable、write/restart failure、跨 client/帳號 isolation fixture。 |
+| `06e8eda775cb1f333927afadae2e986cb56dff4f` | 拒絕（拆分） | 十個 version/changelog/lock/Tauri/UI release metadata 檔僅可由獨立 owner release packet 重開；`ar/es/my/pt/tr/vi` 六個 locale 則新增 Classic-only badge／宣稱 IDE、CLI 不支援的 auto-switch 文案，依賴未採用的 `50686b…` auto-switch，須先有其 client/process/keyring 安全設計及 locale key-parity acceptance，不能以 release metadata 視之。 |
+| `23956b00bf245837907c385eb303c9f20e4e48da` | 監看（beta merge aggregate） | 第一父對第二父 beta aggregate 為 161 檔、52961/+26541；實際涵蓋 schema、endpoint、Responses、帳號、auto-switch、HAR、CLI、quota、UI 等已在本 ledger 逐筆拆開。merge 對第二父另有 `AGENTS.md` toolchain-skip 指引與 `README.md`／`README_ZH.md` v4.9.4→v4.9.6 release claims（3 檔 +11/-7），同樣不建立產品採用。所有 constituent decision 完成前僅保留 aggregate／resolution 追溯。 |
+| `9f8e4f24d61b33fa80b8078d104c942752a5fa0b` | 拒絕 | v4.9.8 final release 實際為 version/changelog/README/lock/Tauri/UI metadata；release notes 含尚未採用的 auto-switch、schema、endpoint、monitor 等宣稱。只由 owner release packet 評估。 |
+
+> 第十三批不採用產品 patch；第十四至第十六批完成三筆 component 判讀，162 筆 release commits 都已有實際決定；release 基線仍為 `v4.9.6`／`b601f5e…`。
+
+### 0.12 第十四批：beta.7 integration component 補覆核
+
+| SHA | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `224040fa23f9f9101510477bfe91d7b027dcb29c` | 延後 | `integration.rs` 將僅 IDE 的熱切換倒轉為僅 Standalone：上游熱切寫 Keyring→終止 language_server→補寫，IDE 一律 full restart；fork 為 IDE 寫 SQLite→終止子程序→補寫，Classic/full restart 為 close→write→start。採用前需 fake process/keyring/SQLite matrix：IDE／Standalone 各 running／not-running、language_server absent／kill failure、pre-write failure（不得中斷既有 process）、post-kill reassert failure、target 衝突與 active args snapshot；另驗證 full-restart close→write→launch 順序、supervisor respawn 與無 secret log。此 commit 的 metadata 不構成 release 採用。 |
+
+> 第十四批只完成 `224040fa` 的 component 判讀；未採產品 patch，也未變更 release 水位。
+
+### 0.13 第十五批：beta.8 reasoning／thinking／TokenStats components
+
+| SHA／元件 | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `15f4bc938ecfa0286097ec6246a3d1583bc683a7` release metadata（10 檔） | 拒絕 | changelog、Cask、npm/Cargo/Tauri version 與 MiniView／Settings 僅將 beta.7 升 beta.8，且 release notes 宣稱未採用的 quota、compaction、HTTP API、reasoning 與 UI 工作；僅能由獨立 owner release packet 重開。 |
+| `15f4bc…` commands/device/http/token-manager（4 檔） | 監看 | 本 commit 對這四檔只有 rustfmt／換行層級重寫；token-manager 的 quota/EDF 邏輯來自已另行判讀而未採用的來源，不能由格式 hunk 建立採用結論。若未來採用來源 patch，重用其既有 quota、deadline、account-isolation acceptance。 |
+| `15f4bc…` reasoning 資料鏈：`proxy_db`、`token_stats`、monitor middleware／warmup（5 檔） | 延後 | 新增 `reasoning_tokens` migration、位置式 row mapping、raw/hourly aggregation 與 SSE／non-SSE usage 擷取；fork 現有 TokenStats API 沒有該欄位。需舊 DB 升級與既有 row backfill/NULL、insert/query ordinal、流式 cumulative-vs-delta、缺 usage、計數失敗不影響 request、帳號/模型隔離及無敏感 log fixture。 |
+| `15f4bc…` `thinkingBudget=0`：model specs／inbound／alignment test／設定提示（4 檔） | 延後 | `>0` 改為 `>=0`，並在 generation config 注入 `includeThoughts:false`；改變 0 從 fallback/default 為 hard disable。fork 沒有已驗證的 provider thinking 契約，須以實際協定 fixture 確認 0、-1、default、low/medium/high、stream/non-stream 的輸出與 thought 欄位行為後才可採。 |
+| `15f4bc…` AppleBento／CyberCockpit／PricingModal／TokenStats（4 檔） | 延後 | upstream 新增兩個 1,900+ 行 dashboard 元件、localStorage mode/pricing persistence、硬編碼模型價表與模型名稱 fallback；fork沒有三個對等元件，既有 TokenStats API 亦未帶 reasoning 欄位。需價格來源/更新責任、model match、儲存失敗/upgrade、a11y/鍵盤、小螢幕、空/大量資料與帳號資料隔離 acceptance。 |
+| `15f4bc…` 12 locale（1,452 僅新增 key） | 延後 | `en/zh` 各 86、其餘十語各 128 新 key，集中於 TokenStats dashboard/pricing 與 thinking soft-budget copy；不是「非繁中」即拒絕，而是依賴未採的 UI／provider 契約。待上述元件設計確定後，做全 locale key-parity、zh-TW 文案與 fallback fixture。 |
+
+> 第十五批只完成 `15f4bc` 的逐元件判讀；沒有採用產品 patch，也未變更 release 水位。
+
+### 0.14 第十六批：beta.10 quota／monitor／account-dashboard components
+
+| SHA／元件 | 判定 | 實際 patch／fork 差異與重新開案條件 |
+|---|---|---|
+| `1ecfa28d36c53aa90e335e75ae60a232c962e47c` release metadata（9 檔） | 拒絕 | changelog、Cask、npm/Cargo/Tauri 與 MiniView 僅從 beta.9 升 beta.10，release notes 又宣稱未採用的帳號、quota、monitor 與 dashboard 行為；只能由獨立 owner release packet 重開。 |
+| `1ecfa…` `proxy_db`＋`ProxyMonitor`（2 檔） | 延後 | summary/filter query 由 `NULL as response_headers` 改為回傳原始 response headers，並用 `x-timing-ttft*` 顯示首字延遲、保留欄寬至 localStorage，export 亦帶出 headers。fork 需先定義 header redaction/retention、UI/匯出權限、malformed header 與 TTFT 缺失/偽造值、跨帳號/使用者資料隔離 acceptance，才可採。 |
+| `1ecfa…` quota authority／帳號 surfaces（10 檔） | 延後 | `quotaDisplay` 以 bucket-id/window regex 和 models fallback 導出 5H／weekly、把 exhausted weekly 壓過 5H，並讓 AccountCard/Table、CurrentAccount、Details、Accounts、Settings 同時移除 5H/weekly toggle、show-all 與 pinned-model 控制。fork 尚無可驗證的 quota_groups 權威、fallback precedence、manual/proxy disable 與重置時間契約；需遮罩實際 quota payload、missing/dual/衝突 bucket、timezone/reset、disabled/protected account、鍵盤/螢幕閱讀器/小螢幕與 control-state persistence fixture。 |
+| `1ecfa…` dashboard／樣式（6 檔） | 延後 | 新增 Donut/MultiRing，重構 Dashboard/CurrentAccount/BestAccounts，並改 App/Tailwind；其可用帳號、proxy-pool、abnormal 與 weekly average 聚合會直接受上述 authority 影響。先決條件是同一原始 quota snapshot 的加總一致、空/大量資料、非同步 refresh、顏色對比/焦點順序與 responsive acceptance。 |
+| `1ecfa…` 12 locale（新增 39/46 key、各 1 個變更） | 延後 | keys 具體覆蓋 accounts quota、dashboard 健康/資產和 monitor TTFT，不是因非繁中拒絕；待各 UI／privacy 契約採用後，驗證所有 locale 的 key parity、zh-TW 文字、fallback 與 placeholder interpolation。 |
+
+> 第十六批只完成 `1ecfa` 的逐元件判讀；沒有採用產品 patch，也未變更 release 水位。
+
+### 0.15 2026-10-21 新增 tickets：PR #3708／#3714、Issue #3709–#3718（固定 10 項）
+
+- **來源與身份**：上游只讀。PR #3708：base `6b75dcb…`、head `c8c800831ef062ce7974eca88c51517fb0651d70`、完整 diff blob `b6cb44616e315d0a18630407712862e3d3243105`；PR #3714：同一 base、head `8a496c6c8531c1d3ca9e57e3d4fc628f6b21c7c4`、完整 diff blob `92724d3d02b227c6cfae8f77c3e7d953fecf37b2`。Issue 本文與必要留言均於本輪實讀；#3713 的 maintainer 留言只稱 Google 故障，不能建立本地產品根因。
+- **不變水位**：這些是「已審、未採用」的候選記錄；`reviewed_pr_through`、`reviewed_issue_through`、release 與 commit baseline 均不在此批上調，待治理完整 diff review 後才另行決定。
+- **精準建議（未寫入 baseline）**：若 root 驗收此固定清單且 strict checker 沒有未審插入項，再獨立批准 `reviewed_pr_through` 至 `3714`、`reviewed_issue_through` 至 `3718`；本節本身不構成水位更新。
+
+| 項目 | 判定 | 實際差異、fork 對照與可驗證後續條件 |
+|---|---|---|
+| PR #3708 | 採用候選（限縮，未實作） | 3 檔新增 `/props`、`/v1/props`、`/version`、`/v1/version` 與 OpenAI model context/max-token 欄位；fork `server.rs`／`openai.rs` 尚無這些 probe handlers。上游以未知 model 預設 1M/64K，且僅把路徑列為 log health-check，不足以證明每個欄位或 auth/log 契約。另立只讀 probe batch，需 known/unknown/alias model、URL query、無帳號選擇／無上游 HTTP、auth/log privacy、`/v1/models` 與 retrieve parity fixture。 |
+| PR #3714 | 延後 | 5 檔把任意 handler error 都標為 30 秒 transient account cooldown／解除 sticky session，將 stream response-header watchdog 收斂至 30/45 秒、全鏈路 55–70 秒，並以 20 秒成功延遲降級 endpoint。fork endpoint fallback、帳號 lockout 與 session 語意不同；#3713 沒有可驗證因果，PR 留言也無完成證據。需 fake transport 區分 header/首字/完整 stream、Daily/Sandbox/Prod 400/429/503/timeout、body-size budget、slow-success recovery、不可因本地/4xx 錯誤誤冷卻、sticky migration/account isolation fixture。 |
+| Issue #3709 | 拒絕 | 本文僅為貢獻者致意，無行為、程式路徑或可驗證故障；不建立產品工作。 |
+| Issue #3710 | 採用候選（限縮，未實作） | 實讀 `/v1/responses` handler 只以 `instructions`／`input` 轉換，mapper 僅處理既有 `response_format`；issue 指出的 `text.format` 沒有現成映射。既有 strict tool-schema 候選不等同 Responses Structured Outputs 修復。另立 protocol batch：`text.format=json_schema` mapping、tools 共存的上游契約、裸 JSON／錯誤回傳及 `reasoning.effort` 尊重需各自以安全 payload fixture 證明；不得用提示詞注入或不加條件地剝除 code fence 假裝相容。 |
+| Issue #3711 | 延後 | 本文為空，只要求新增 AI Studio channel；沒有 upstream protocol、帳號/credential 來源、授權條件或錯誤樣本。需先有 provider onboarding、credential storage/redaction、rate-limit／fallback、Windows/headless parity 與 ToS/使用者同意設計，才可建立採用批次。 |
+| Issue #3713 | 監看 | 僅報 beta 後 503 截圖；唯一 maintainer 留言稱 Google 故障，沒有 request ID、sanitized response、endpoint 或時間線，不能套用 PR #3714 的 watchdog/冷卻。待有去敏 transport trace 能分出上游 503、網路 timeout 與本地 retry 後才重開。 |
+| Issue #3715 | 延後 | 回報 `gemini-3.8-flash-high` 404，但留言同時出現 bare/tiered/high 不同 model；fork已有 `variant_mapping.rs` 的 high 解析測試、`model_mapping.rs` 的 bare→tiered 路由，且 `constants.rs` 記錄舊 UA 對 segmented model 的 404 gate。需去敏 model、實際 URL/404 body、UA/version、warmup 與正常 request 的矩陣，才能判斷 catalog/UA/route 修正，不能依 screenshot 改 mapping。 |
+| Issue #3716 | 延後 | 回報 Gemini stream 缺 `finish_reason` 後 client 續步導致 400；fork `openai/streaming.rs` 已在無 `finishReason` 時輸出 `upstream_interrupted`，而非偽造 `stop`。須保存最小 SSE sequence，驗證 text/tool/empty 結尾在 Chat 與 Responses 的 terminal event、client continuation 與不重複上游 request；不得因 issue 直接把未知結尾標為成功。 |
+| Issue #3717 | 監看 | 多帳號、官方 desktop 與不同模型的觀察指向上游容量或帳號路由，但沒有可安全取得的 provider 契約；不把「換帳號」或「切出口」寫成產品修復。若採 #3714 類 timeout 工作，仍須先通過獨立 fake-transport 與帳號隔離 acceptance。 |
+| Issue #3718 | 監看（既有較強防護） | Claude 第二輪的 `thinking` signature 400 未附完整去敏 payload；fork已在 Claude handler 前置 `filter_invalid_thinking_blocks_with_family`，並針對 signature error 清除／重試，另有 retry-strategy fixture。需針對目標 provider family 的去敏雙輪 thinking/tool transcript，驗證保留有效 signature、移除 foreign/corrupt signature、無跨 session leakage 與 bounded retry，才判斷是否仍有缺口。 |
+
+> 本節沒有採用產品 patch；#3708／#3710 僅是明確限縮的未實作候選。清單外新項目（目前 PR #3708/#3714 與 Issue #3709/#3710/#3711/#3713/#3715/#3716/#3717/#3718 以外）留給下一個授權批次，不在此追逐。
+
+### 0.16 2026-10-21 新增 Issue #3719／#3720（本輪候選）
+
+- **來源與界線**：上游僅讀。#3719 本文請求 system tray 顯示剩餘 quota percentage，無留言；#3720 為 rate-limiting investigation，主張直接 provider 測量、短暫 cooldown、prompt identity 字樣與 client backoff，無留言。這些觀察不是已驗證的 provider 契約，未作 live provider 測試，亦未採用任何產品 patch。
+- **fork 對照**：`src-tauri/src/modules/tray.rs` 已以 active account 的既有 quota 資料顯示 `Gemini High`、`Gemini Image`、`Claude 4.5` 三個具名百分比；尚無「所有 quota」的單一權威定義。`prompt_sanitizer.rs` 只以泛用 identity marker 正規化、保護 code block；`token_manager.rs` 已有 account/model rate-limit circuit breaker、retry reason 與 zero-quota 同步，沒有可證實採用上游 1M–1.5M／2–3 分鐘門檻的 provider 契約。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3719 | 已存在（限縮）／監看 | 現有 tray 已顯示三個具名模型的 active-account 百分比，故本文沒有證明新的通用功能缺口；也不能把不同模型／5h／weekly bucket 假定為同一「remaining quota」。若回報者指定目標 bucket、active-account 權威、Windows tray refresh／文字可及性與 reset 顯示，並補 stale／missing／forbidden quota fixture 與不洩漏帳號資料的驗收，再獨立評估 UI batch。 |
+| Issue #3720 | 延後（拆分） | report 的 endpoint、TTFT、identity 分數與 cooldown 是未驗證的外部觀察，不足以設定自動輪替或 provider backoff。沒有證據就不建立 identity 重寫工作；若未來有獨立需求，僅能評估不冒充 provider、也不繞限速的 redaction／語意保持設計，且須保留 user／system／tool 內容與 code block。token sliding window、auto-rotation 與 backoff 則需 fake-clock、429/503/timeout、manual/proxy-disabled、cross-account/session isolation、quota reset、persisted retry 與 no-secret-log fixture；不得以報告中的門檻或「換帳號」直接改行為。 |
+
+> 這兩項完成後，候選水位僅表示上述 release 與 12 tickets 已審；它**不採用** #3708／#3710／#3720 的產品工作，也不消除 #3703／#3706、403 expiry、validation URL、Responses 雙入口或其他已列未實作缺口。
+
+### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
+
+- **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
+- **誠實水位**：只建立 release coverage；`reviewed_release` 仍為 `v4.9.6`、`reviewed_through` 仍為 `b601f5e7375343343922ccab5e50653bc3450c3b`。本節不表示 `v4.9.8` 已完整覆核，更不表示產品採用。
+- **覆蓋計數**：12 筆本批實讀、15 筆由既存保存完整 PR diff 精確映射、135 筆待覆核（合計 162）。三個 merge commit 亦列入 coverage；不以 merge 標題取代實際父 patch 審查。
+
+| SHA | 判定 | 實際 diff／fork 差異與重啟條件 |
+|---|---|---|
+| `5ec12dbc70fab00347a7dc4d0d715d23994644bd` | 延後 | Claude SSE 斷流統一為 `overloaded_error`；fork 有輸出型別但無 malformed-SSE／自動重試 parity。需該 transport fixture。 |
+| `7838fc07a1c802fe412bb792411b1b2394ae1398` | 監看 | #3613 merge metadata；實際內容由前一 SHA 覆核，不能以 merge 標題當採用證明。 |
+| `29694adc1f96f227b072aa24171e775aa587b758` | 延後 | Linux 透明視窗／DMABUF 調整；fork 仍保留 Linux override 與 transparent 設定。需 Linux/Wayland 圖形驗收。 |
+| `4638fe20df9fc95bc5346857a9af1abe92a2e2e4` | 拒絕 | 上游 beta release/version metadata，不適用 fork release channel；僅另行 release packet 才評估。 |
+| `f73c290b1f5869d70063cb585b2bd3109a1f6ec2` | 延後 | Cowork estimator／180 秒 first-byte 與 compaction；需遮罩 50-turn、tool schema、thought signature、timeout/rotation fixture。 |
+| `365be17fb660c8162b2678af6c55ac026a36dfb2` | 延後 | Cowork/Code header、system blocks、model tier；需 desktop host＋multi-block routing fixture。 |
+| `e779db902c70eb885dbfb4a7817c5d8f074be1c0` | 延後 | Cowork/Code 與 continuation state 分離；需 compaction continuation state-machine fixture。 |
+| `c8dc07cdd0523acba6929db1dd88c9a476c672b1` | 延後 | generic CLI header classifier；需 sanitized desktop/wrapper header fixture。 |
+| `d1fb5839fb3c53420ef9a91ad09796a9b775afe8` | 拒絕 | 僅為未採 Cowork patch 的 format follow-up；若父功能採用才重開。 |
+| `9206be9e53b05ed71d87aa4b7fc58304ac3b65f2` | 延後 | quota-400 bisection trimming 耦合 compaction；需可重現 upstream 400＋trim/rotation fixture。 |
+| `7da339e6acf7343dbf2576fbfba4dadebaf70d42` | 延後 | signature/cache invalidation；fork 的 session/cache 隔離尚未驗證。需 tenant/session deletion、continuation、400 fixture。 |
+| `e6c09fc54f3f5496b6e71b1201dc6bed1ad34aba` | 延後 | Claude Desktop 3p header 調整；需 sanitized 3p header classification／bypass-regression fixture。 |
+
+> 本批沒有採用上游產品 patch。既有 exact-patch 映射僅證明先前已讀相同上游 diff；它不等於 fork 已採用。特別是未發布 schema 候選與 #3703/#3706 proxy 風險均仍未修復。
+
+## 0. 2026-10-18 上游增量覆核：PR #3685–#3706／Issue #3684–#3707
+
+- **範圍與證據**：逐筆閱讀 `lbjlaq/Antigravity-Manager` 的保存 metadata、完整 PR diff、issue 本文與當時留言：`checkpoint-tailwind4-braces/upstream-3684-3707/{pr-*.json,pr-*.diff,issue-*.json,issue-*-comments.jsonl}`；並對照本 fork `140d663a` 的實際程式路徑。此節的「採用候選」僅表示應另立有限批次評估，**不是已採用或已修復**。
+- **不變基線**：release `v4.9.6`、commit `b601f5e7375343343922ccab5e50653bc3450c3b` 不變；本輪只在完成每筆覆核後更新 PR／issue review watermark。
+
+### 0.1 Pull requests
+
+| 項目 | 判定 | 實際差異、fork 對照與可驗證後續條件 |
+|---|---|---|
+| PR #3685 | 延後：獨立 retry/backoff 候選 | diff 改 `modules/quota.rs`、`handlers/common.rs`、`token_manager.rs`、`upstream/client.rs` 等的零秒 reset／冷卻策略；fork 仍有 `proxy/rate_limit.rs` 的 optimistic reset 與 `token_manager.rs` 呼叫。Issue #3684 後續留言已撤回「新二進位直接造成 429」的因果判定，不能以此直接移植。需先有 fake-clock、多帳號、429 分類與 endpoint health fixture。 |
+| PR #3687 | 延後：小型相容候選 | diff 只改 `handlers/common.rs`，使 `extract_retry_after_seconds` 接受小寫 `wait`；fork 現有同函式及測試僅覆蓋 `Wait`。需有實際小寫訊息 fixture 與輸出 `Retry-After` header regression，才可採用。 |
+| PR #3689 | 延後 | diff 跨 Claude request/handler/stream、collector 與 `prompt_sanitizer.rs`，含 Claude Code 2.1.301 協定及 WAF 推論；fork 已有 `mappers/claude/request.rs`／`prompt_sanitizer.rs` 的 `CLAUDE_CODE_CLI_IDENTITY`。未保存可公開、無敏感資訊的 2.1.301 wire fixture 前，不移植多點協定與識別變更。 |
+| PR #3691 | 拒絕目前 patch；持續觀察 | diff 移除 Prod endpoint 並調整 120 秒 stream watchdog；fork `upstream/client.rs` 仍有 `Prod` 與 `Sandbox → Daily → Prod` fallback。未重現 endpoint 問題，且 #3684 的 429 因果已被更正；須以 endpoint 400/429/5xx 與 first-byte 60/120 秒 fake transport fixture 證明。 |
+| PR #3694 | 部分已有獨立候選，其餘延後 | diff 混合 schema、rate/retry、prompt、token 多項變更。`security/tool-schema-main-port` 有未合併的 strict schema 候選，採 typed depth/resource error；刻意**不**採 upstream `active_refs` 循環降級為 terminal object 的語意變更。該候選仍待獨立 review/owner CI；其餘 rate/retry/prompt 需逐項另立驗證。 |
+| PR #3696 | 延後 | open diff 跨 auto-switch、DB、pipeline、stream lifecycle、token manager，涉及角色輪替與工具順序。需協定順序／失敗回復 fixture，不能由靜態 diff 直接採用。 |
+| PR #3698 | 延後 | open diff 變更多長 context、quota/retry、signature 與多個 handler/collector。需提供 provider timing、quota 與 stream signature 的可重現 fixture，才評估。 |
+| PR #3699 | 延後 | `handlers/openai.rs` 的 in-flight accounting／response path diff；PR 明示只是 static audit，沒有 production observation。需測試 stream/non-stream 並發與實際 route canonicalization。 |
+| PR #3700 | 延後 | `session_manager.rs` 大幅變更 session fingerprint／multimodal；無可公開的穩定 fingerprint fixture，且不得以原始敏感 payload 作測試輸入。 |
+| PR #3701 | 延後 | `mappers/claude/request.rs` 與 `upstream/client.rs` 處理 orphan tool result／最後 endpoint watchdog；需 malformed tool-result 與最終 endpoint hang 的 fake transport fixture。 |
+| PR #3702 | 延後 | `model_specs`、`pipeline/inbound.rs`、`upstream/client.rs` 增加 countTokens／thinking config；公開 Gemini 文件不等於 fork 的 internal provider contract。需經核准的內部 request-shape/capability fixture。 |
+| PR #3705 | 延後 | `pipeline/estimator.rs` 改 Cowork token estimator；需精確 Cowork compression/token-threshold fixture，現無契約證據。 |
+| PR #3706 | 採用候選：高優先安全後續 | `proxy_pool.rs` diff 處理 authenticated proxy health、credentials 與 direct fallback；fork `proxy_pool.rs:133,195` 明確記錄路由至 `Direct`。須另立安全批次，以 fake authenticated HTTP/SOCKS proxy 驗證 health failure 不外洩至 direct、credentials 不可讀／不記錄、專用帳號不跨路由；未完成前不宣稱已修。 |
+
+### 0.2 Issues
+
+| 項目 | 判定 | 實際內容、fork 對照與可驗證後續條件 |
+|---|---|---|
+| Issue #3684 | 拒絕原因果主張；監看 | 本文稱 harness／identity 觸發 429，但後續留言確認舊 process 在 PR #3685 編譯／重啟前已成功 11 分鐘，不能把 binary/harness 當因果。fork identity sanitizer 僅證明轉換存在，不證明 provider enforcement；若重現，需遮罩 response 的受控比較，不能 spoof/bypass。 |
+| Issue #3686 | 拒絕 | 是外部 agy shell wrapper 內硬編碼 `GEMINI_API_KEY="sk-"`／localhost 的提議，非 app 整合。除非 owner 要求該 CLI 功能且先定義安全 credential storage、Windows 路徑與 parity，否則不納入。 |
+| Issue #3688 | 延後／監看 | thinking_budget RFC 與「已支援 custom budget」留言；fork `pipeline/inbound.rs` 有 client-direct 設定，但公開文件不足以證明 internal provider contract。需 capability/request fixture。 |
+| Issue #3690 | 採用候選：獨立 schema 批次待驗收 | Docker OOM 報告的重複 schema flatten 是 strict schema 候選的風險來源；候選仍未合併，採 typed error 而非 silent fallback。需 fresh review、owner CI 與 in-memory depth/cycle/resource tests 成功後才可稱修復。 |
+| Issue #3692 | 延後 | Gemini 4 Argon 的 reverse-engineered root-cause／beta 建議，缺 model discovery 與 request/response 契約；不得以猜測改 production。 |
+| Issue #3693 | 拒絕作為整包修復依據 | 38 項 static audit 應逐項拆分；本輪只對已具體的 #3690 等個案建候選，不接受 blanket patch。 |
+| Issue #3695 | 延後 | 六項 audit 對應 PR #3696；以該 PR 的協定與失敗回復 fixture 為採用門檻。 |
+| Issue #3697 | 延後 | 十二項 audit 對應 PR #3698–#3705；各項須分別有可驗證契約，不能整包接受。 |
+| Issue #3703 | 採用候選：高優先安全後續 | authenticated proxy health／direct fallback 風險與 fork `proxy_pool.rs:133,195` 的 `Direct` 路徑相符。需 isolation fixture 證明 proxy 失敗不改走 direct、credentials 不寫 log；未實作。 |
+| Issue #3704 | 拒絕／不適用 | 地理定位錯誤已在留言中標示修正，屬多 NIC／soft-router 情境，沒有本 fork 可採用程式差異；僅在有目前 provider response 細節時再查。 |
+| Issue #3707 | 拒絕：規格不足 | 本文僅「request adapt dsh」，沒有問題、契約、重現步驟或可驗收範圍；需完整 specification 後才重新開案。 |
+
+**watermark 結論**：以上 24 項均已逐筆實讀，僅將 `reviewed_pr_through` 推進至 `3706`、`reviewed_issue_through` 推進至 `3707`；這些水位表示已覆核，絕不表示產品已採用。未實作的候選（特別是 #3690／#3694 schema 與 #3703／#3706 proxy）保留為獨立、可測試的後續工作。
+
 - **覆核時間**：2026-09-26（第二輪，接續同日第一輪的獨立覆核）
 - **覆核對象**：`SanHsien/Antigravity-Manager`（fork from `lbjlaq/Antigravity-Manager` @ `v4.8.1` / `27ee35b7`）
 - **執行環境**：Windows 11 原生（PowerShell / Node.js v26.7.0 / npm 11.19.0 / Python 3.14 / Git 2.55）
