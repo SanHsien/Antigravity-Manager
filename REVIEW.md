@@ -273,6 +273,18 @@
 
 > 這兩項完成後，候選水位僅表示上述 release 與 12 tickets 已審；它**不採用** #3708／#3710／#3720 的產品工作，也不消除 #3703／#3706、403 expiry、validation URL、Responses 雙入口或其他已列未實作缺口。
 
+### 0.17 2026-10-21 新增 Issue #3721／#3722（本輪候選）
+
+- **來源與界線**：上游僅讀。已保存兩份 issue 本文與各一則留言於 `checkpoint-tailwind4-braces/upstream-3722-review/issue-{3721,3722}.json`、`issue-{3721,3722}-comments.json`。本輪沒有採用上游 beta 程式碼、執行 provider 請求或變更產品。
+- **fork 對照**：#3721 是三個互不等價的主張，不能以同一個「已修」結論覆蓋：fork `modules/process.rs` 只以 `current_exe().canonicalize()` 排除完全相同路徑，AppImage mount path／Linux `comm` 截斷沒有對等驗收；fork 有 `--headless` 啟動路徑，但 Desktop GUI 與 proxy 仍同一 process；`pipeline/inbound.rs` 會保留 `toolConfig.functionCallingConfig.mode=ANY`，現無 Claude forced-tool 與 `thinkingConfig` 的明確相容性證據。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3721 | 分拆延後：Linux process identity、Wayland lifecycle、Claude tool-choice/thinking 各自獨立 | **自身誤識別**：AppImage 報告的 `/tmp/.mount_*` 與使用者安裝路徑可使 fork 現行 canonical-path 排除失效；上游 beta `cae8fb9b` 的集中 name blacklist／Linux 15-byte `comm` 規則有關聯，但不能未驗證地套到 Windows／macOS process discovery。需可注入的 Linux process snapshot，覆蓋 manager 名稱、多版本 AppImage path、截斷 `comm`、真正 IDE 與 restart path，並證明不 kill/spawn 自身。**Wayland**：fork 既有 `--headless` 可作明確替代啟動模式；上游以 GDK log hook 攔截 `_exit`／`pthread_exit` 讓 GUI 主執行緒退出，涉及 Linux signal/thread lifecycle，不能聲稱保住既有 stream 或直接移植。若 owner 要求 Linux desktop resilience，應先評估可監督的 proxy/GUI process isolation、display-loss／SIGTERM／stream-drain fixture，而非攔截 process termination。**forced tool + thinking**：fork 正規化 `ANY` 但目前沒有剝除 `thinkingConfig`；此為有限採用候選，僅在有 Claude 目標模型、OpenAI required/specific tool-choice→Google `ANY`、thinking on/off、一般 tool mode、上游 400 分類與 bounded no-duplicate-retry fixture 時，於獨立 pipeline batch 評估。 |
+| Issue #3722 | 監看／拒絕自動化恢復 | 本文明確是單一使用者觀察、未確認因果；留言更稱節點／IP 無關並猜測 Google 機房。沒有帳號、provider、rate-limit 或 identity 契約可支持反覆短 prompt、換身份、切出口、自動 warmup／rotation 或繞限速。fork 既有 account/model circuit breaker、manual/proxy-disabled 與 quota 保護不得因個例放寬。只有取得授權且去敏的 transport timeline（DNS/connect/TTFT/response/429/503）、帳號狀態與 fake-clock no-extra-request／fail-closed fixture 後，才可評估診斷，不建立 recovery 自動化產品工作。 |
+
+> 兩項均為已讀治理結論，**不表示上游 beta 修復已採用或 fork 已修復**。在 strict 重跑未顯示額外未審項目後，候選 issue watermark 才由 `#3720` 推進至 `#3722`；release／commit／PR 水位不變。
+
 ### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
 
 - **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
