@@ -2,10 +2,10 @@
   "repo": "https://github.com/lbjlaq/Antigravity-Manager.git",
   "branch": "main",
   "track": "release",
-  "reviewed_release": "v4.9.6",
-  "reviewed_through": "b601f5e7375343343922ccab5e50653bc3450c3b",
-  "reviewed_date": "2026-10-16",
-  "reviewed_pr_through": 3680,
-  "reviewed_issue_through": 3683,
+  "reviewed_release": "v4.9.8",
+  "reviewed_through": "9f8e4f24d61b33fa80b8078d104c942752a5fa0b",
+  "reviewed_date": "2026-10-21",
+  "reviewed_pr_through": 3714,
+  "reviewed_issue_through": 3720,
   "decision_log": "REVIEW.md"
 }
