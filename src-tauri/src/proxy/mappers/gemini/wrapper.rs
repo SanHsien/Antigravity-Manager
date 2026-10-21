@@ -2,6 +2,13 @@
 use serde_json::{json, Value};
 use tracing::{debug, info};
 
+/// Validates native Gemini tool declarations without mutating the input body.
+pub fn validate_gemini_tool_schemas(
+    body: &Value,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    crate::proxy::pipeline::InboundThinkingPipeline::validate_google_request_tool_schemas(body)
+}
+
 /// 包装请求体为 v1internal 格式
 pub fn wrap_request_v2(
     body: &Value,
@@ -1503,6 +1510,19 @@ mod tests {
         assert_eq!(result["project"], "test-project");
         assert_eq!(result["model"], "gemini-2.5-flash");
         assert!(result["requestId"].as_str().unwrap().starts_with("agent/"));
+    }
+
+    #[test]
+    fn gemini_tool_schema_validator_rejects_over_depth_without_wrapping() {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..32 {
+            schema =
+                json!({ "type": "object", "properties": { format!("level_{index}"): schema } });
+        }
+        let request = json!({
+            "tools": [{ "functionDeclarations": [{ "parameters": schema }] }]
+        });
+        assert!(validate_gemini_tool_schemas(&request).is_err());
     }
 
     #[test]

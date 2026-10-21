@@ -15,13 +15,21 @@ use crate::proxy::handlers::common::{
     apply_retry_strategy, build_token_error_headers, next_rotation_attempt, should_rotate_account,
     FailureStatusTracker, RequestRetryState, RetryStrategy,
 };
-use crate::proxy::mappers::gemini::{unwrap_response, wrap_request, wrap_request_v2};
+use crate::proxy::mappers::gemini::{
+    unwrap_response, validate_gemini_tool_schemas, wrap_request, wrap_request_v2,
+};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
 use crate::proxy::upstream::client::mask_email;
 use axum::http::HeaderMap;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
+
+fn validate_count_tokens_tool_schema(
+    body: &Value,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    validate_gemini_tool_schemas(body)
+}
 
 fn response_has_inline_image_data(value: &Value) -> bool {
     let response = value.get("response").unwrap_or(value);
@@ -101,6 +109,19 @@ pub async fn handle_generate(
         debug!("[{}] Client Adapter detected", trace_id);
     }
 
+    // Validate the unmodified body before the countTokens dispatch and before
+    // inline-data sanitization. This prevents malformed tool schemas from
+    // reaching account selection through either public Gemini entry point.
+    validate_count_tokens_tool_schema(&body)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    crate::proxy::pipeline::InboundThinkingPipeline::clean_google_request_tool_schemas(&mut body)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+
+    // [NEW] :countTokens 冒号语法，直接代理到上游 v1internal:countTokens
+    if method == "countTokens" {
+        return Ok(execute_count_tokens(|| state, model_name, body).await);
+    }
+
     // [DEFENSE] 净化 Gemini 原生请求体中的所有 inlineData (过滤或降级空数据/损坏图片)
     crate::proxy::mappers::common_utils::sanitize_gemini_payload_inline_data(&mut body);
 
@@ -112,11 +133,6 @@ pub async fn handle_generate(
     let mut ttft_ms: f64 = 0.0;
 
     // 1. 验证方法
-    // [NEW] :countTokens 冒号语法，直接代理到上游 v1internal:countTokens
-    if method == "countTokens" {
-        return Ok(execute_count_tokens(state, model_name, body).await);
-    }
-
     if method != "generateContent" && method != "streamGenerateContent" {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -389,6 +405,9 @@ pub async fn handle_generate(
         {
             Ok(r) => r,
             Err(e) => {
+                if crate::proxy::common::json_schema::is_tool_schema_client_error(&e) {
+                    return Ok((StatusCode::BAD_REQUEST, e).into_response());
+                }
                 last_error = e.clone();
                 failure_statuses.record(StatusCode::BAD_GATEWAY);
                 drop(image_permit.take());
@@ -1124,18 +1143,47 @@ pub async fn handle_count_tokens(
     Path(model_name): Path<String>,
     Json(body): Json<Value>,
 ) -> Response {
-    execute_count_tokens(state, model_name, body).await
+    execute_count_tokens(|| state, model_name, body).await
 }
 
 /// 核心 countTokens 实现：透明代理到上游 v1internal:countTokens
 ///
 /// 获取有效 OAuth Token，将标准 Gemini 请求体包装为 v1internal 格式后转发，
 /// 返回真实的 token 计数，而不是硬编码的 0
-pub async fn execute_count_tokens(
-    state: AppState,
+pub async fn execute_count_tokens<F>(
+    state_factory: F,
     model_name: String,
     mut body: Value,
-) -> Response {
+) -> Response
+where
+    F: FnOnce() -> AppState,
+{
+    // Keep this defensive final gate before every mutation and before model or
+    // token selection; direct `/countTokens` callers bypass `handle_generate`.
+    if let Err(error) = validate_count_tokens_tool_schema(&body) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response();
+    }
+    if let Err(error) =
+        crate::proxy::pipeline::InboundThinkingPipeline::clean_google_request_tool_schemas(
+            &mut body,
+        )
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response();
+    }
+
+    // Construct or move the state only after the strict rejection gate. This
+    // keeps direct callers from selecting an account or obtaining an upstream
+    // client for a locally-invalid tool schema.
+    let state = state_factory();
+
     // [DEFENSE] 净化 Gemini 原生请求体中的所有 inlineData (过滤或降级空数据/损坏图片)
     crate::proxy::mappers::common_utils::sanitize_gemini_payload_inline_data(&mut body);
 
@@ -1207,6 +1255,9 @@ pub async fn execute_count_tokens(
     {
         Ok(r) => r,
         Err(e) => {
+            if crate::proxy::common::json_schema::is_tool_schema_client_error(&e) {
+                return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response();
+            }
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": format!("Upstream call error: {}", e) })),
@@ -1256,4 +1307,44 @@ pub async fn execute_count_tokens(
         Json(json!({ "totalTokens": total_tokens })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod schema_gate_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn deep_gemini_tool_body() -> Value {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..16 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        json!({
+            "tools": [{
+                "functionDeclarations": [{ "name": "deep", "parameters": schema }]
+            }]
+        })
+    }
+
+    #[tokio::test]
+    async fn tool_schema_count_tokens_returns_400_before_state_or_upstream_access() {
+        let body = deep_gemini_tool_body();
+        let state_factory_calls = AtomicUsize::new(0);
+
+        let response = execute_count_tokens(
+            || {
+                state_factory_calls.fetch_add(1, Ordering::SeqCst);
+                panic!("invalid tool schema must not construct state for account selection or HTTP")
+            },
+            "gemini-test".to_string(),
+            body,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(state_factory_calls.load(Ordering::SeqCst), 0);
+    }
 }

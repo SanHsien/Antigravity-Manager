@@ -82,6 +82,8 @@ pub struct UpstreamClient {
     proxy_pool: Option<Arc<crate::proxy::proxy_pool::ProxyPoolManager>>,
     client_cache: DashMap<String, Client>, // proxy_id -> Client
     user_agent_override: RwLock<Option<String>>,
+    #[cfg(test)]
+    test_v1_internal_base_urls: Option<Vec<String>>,
 }
 
 impl UpstreamClient {
@@ -114,7 +116,15 @@ impl UpstreamClient {
             proxy_pool,
             client_cache: DashMap::new(),
             user_agent_override: RwLock::new(None),
+            #[cfg(test)]
+            test_v1_internal_base_urls: None,
         }
+    }
+
+    #[cfg(test)]
+    fn with_test_v1_internal_base_urls(mut self, base_urls: Vec<String>) -> Self {
+        self.test_v1_internal_base_urls = Some(base_urls);
+        self
     }
 
     /// [HOT-RELOAD] Rebuild the default HTTP client using the supplied upstream
@@ -359,6 +369,14 @@ impl UpstreamClient {
     ) -> Result<UpstreamCallResult, String> {
         // [DEFENSE] 全局终极防御拦截：净化所有发往上游报文中的损坏/空 inlineData 以及触发 Google WAF 拦截的违规计费元数据，并最终统一对齐前缀拓扑
         if let Some(inner) = body.get_mut("request") {
+            crate::proxy::pipeline::InboundThinkingPipeline::validate_google_request_tool_schemas(
+                inner,
+            )
+            .map_err(crate::proxy::common::json_schema::tool_schema_client_error)?;
+            crate::proxy::pipeline::InboundThinkingPipeline::clean_google_request_tool_schemas(
+                inner,
+            )
+            .map_err(crate::proxy::common::json_schema::tool_schema_client_error)?;
             crate::proxy::mappers::common_utils::sanitize_gemini_payload_inline_data(inner);
             crate::proxy::mappers::prompt_sanitizer::PromptSanitizer::sanitize_gemini_payload(
                 inner,
@@ -368,6 +386,14 @@ impl UpstreamClient {
                 inner,
             );
         } else {
+            crate::proxy::pipeline::InboundThinkingPipeline::validate_google_request_tool_schemas(
+                &body,
+            )
+            .map_err(crate::proxy::common::json_schema::tool_schema_client_error)?;
+            crate::proxy::pipeline::InboundThinkingPipeline::clean_google_request_tool_schemas(
+                &mut body,
+            )
+            .map_err(crate::proxy::common::json_schema::tool_schema_client_error)?;
             crate::proxy::mappers::common_utils::sanitize_gemini_payload_inline_data(&mut body);
             crate::proxy::mappers::prompt_sanitizer::PromptSanitizer::sanitize_gemini_payload(
                 &mut body,
@@ -482,10 +508,22 @@ impl UpstreamClient {
             let mut fallback_attempts: Vec<FallbackAttemptLog> = Vec::new();
             let mut should_retry_without_header = false;
 
+            // Tests inject one local endpoint so a strict rejection can prove
+            // this real client made zero HTTP attempts. Production preserves
+            // the established fallback list.
+            #[cfg(test)]
+            let base_urls: Vec<&str> = self
+                .test_v1_internal_base_urls
+                .as_deref()
+                .map(|urls| urls.iter().map(String::as_str).collect())
+                .unwrap_or_else(|| V1_INTERNAL_BASE_URL_FALLBACKS.to_vec());
+            #[cfg(not(test))]
+            let base_urls = V1_INTERNAL_BASE_URL_FALLBACKS.to_vec();
+
             // 遍历所有端点，失败时自动切换
-            for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
+            for (idx, base_url) in base_urls.iter().enumerate() {
                 let url = Self::build_url(base_url, method, query_string);
-                let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+                let has_next = idx + 1 < base_urls.len();
 
                 let body_bytes = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
 
@@ -514,7 +552,7 @@ impl UpstreamClient {
                                     "✓ Upstream fallback succeeded | Endpoint: {} | Status: {} | Next endpoints available: {}",
                                     base_url,
                                     status,
-                                    V1_INTERNAL_BASE_URL_FALLBACKS.len() - idx - 1
+                                    base_urls.len() - idx - 1
                                 );
                             } else {
                                 tracing::debug!(
@@ -697,6 +735,21 @@ fn derive_session_uuid(seed: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    fn nested_tool_schema(depth: usize) -> Value {
+        let mut schema = serde_json::json!({ "type": "array" });
+        for index in (0..depth).rev() {
+            schema = serde_json::json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        schema
+    }
 
     #[test]
     fn test_build_url() {
@@ -746,5 +799,60 @@ mod tests {
         );
         assert!(resp.headers().get(header::CONTENT_ENCODING).is_none());
         assert_eq!(resp.text().await.unwrap(), r#"{"error":"bad"}"#);
+    }
+
+    #[tokio::test]
+    async fn strict_tool_schema_rejection_makes_no_upstream_http_request() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("local fake endpoint must bind");
+        let address = listener.local_addr().expect("listener address must exist");
+        let app = axum::Router::new().fallback(axum::routing::any({
+            let counter = counter.clone();
+            move || {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::NO_CONTENT
+                }
+            }
+        }));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("local fake endpoint must serve");
+        });
+
+        let body = serde_json::json!({
+            "request": {
+                "tools": [{
+                    "functionDeclarations": [{
+                        "name": "deep",
+                        "parameters": nested_tool_schema(32)
+                    }]
+                }]
+            }
+        });
+        let client = UpstreamClient::new(None, None)
+            .with_test_v1_internal_base_urls(vec![format!("http://{address}")]);
+        let result = client
+            .call_v1_internal_with_headers(
+                "generateContent",
+                "test-token",
+                body,
+                None,
+                std::collections::HashMap::new(),
+                None,
+            )
+            .await;
+
+        server.abort();
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("over-depth tool schema must fail before HTTP"),
+        };
+        assert!(crate::proxy::common::json_schema::is_tool_schema_client_error(&error));
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
     }
 }

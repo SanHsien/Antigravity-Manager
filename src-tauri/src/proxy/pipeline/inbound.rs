@@ -610,6 +610,66 @@ impl InboundThinkingPipeline {
     /// 6. sessionId: 会话标识
     /// 7. contents: 动态上下文历史
     /// 8. 严格前缀顺序重组: systemInstruction -> tools -> toolConfig -> tool_config -> generationConfig -> safetySettings -> sessionId -> contents
+    /// Reject an over-depth tool parameter schema before a mapper or the
+    /// upstream final gate mutates or forwards it. Response schemas retain
+    /// their existing compatibility policy.
+    pub fn validate_google_request_tool_schemas(
+        inner_request: &Value,
+    ) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+        let Some(tools) = inner_request.get("tools").and_then(Value::as_array) else {
+            return Ok(());
+        };
+        for tool in tools {
+            for declarations_key in ["functionDeclarations", "function_declarations"] {
+                let Some(declarations) = tool.get(declarations_key).and_then(Value::as_array)
+                else {
+                    continue;
+                };
+                for declaration in declarations {
+                    for schema_key in ["parametersJsonSchema", "parameters"] {
+                        let Some(schema) = declaration.get(schema_key) else {
+                            continue;
+                        };
+                        crate::proxy::common::json_schema::validate_tool_schema(schema)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies strict tool-only materialization after borrowed validation. The
+    /// response-schema compatibility cleaner remains intentionally untouched.
+    pub fn clean_google_request_tool_schemas(
+        inner_request: &mut Value,
+    ) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+        Self::validate_google_request_tool_schemas(inner_request)?;
+        let Some(mut tools) = inner_request.get("tools").cloned() else {
+            return Ok(());
+        };
+        let Some(tools_arr) = tools.as_array_mut() else {
+            return Ok(());
+        };
+        for tool in tools_arr {
+            for declarations_key in ["functionDeclarations", "function_declarations"] {
+                let Some(declarations) =
+                    tool.get_mut(declarations_key).and_then(Value::as_array_mut)
+                else {
+                    continue;
+                };
+                for declaration in declarations {
+                    for schema_key in ["parametersJsonSchema", "parameters"] {
+                        if let Some(schema) = declaration.get_mut(schema_key) {
+                            crate::proxy::common::json_schema::clean_tool_schema(schema)?;
+                        }
+                    }
+                }
+            }
+        }
+        inner_request["tools"] = tools;
+        Ok(())
+    }
+
     pub fn align_google_request_prefix_topology(inner_request: &mut Value) {
         if !inner_request.is_object() {
             return;
@@ -1352,5 +1412,82 @@ mod tests {
         // 2. 正文部件已干净剔除 <think>...</think> 标签与换行，仅保留真实回答
         assert_eq!(parts[1]["text"], visible_answer);
         assert!(parts[1].get("thought").is_none());
+    }
+
+    #[test]
+    fn tool_schema_final_gate_rejects_depth_before_any_upstream_mutation() {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..32 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        let request = json!({
+            "tools": [{ "functionDeclarations": [{ "parameters": schema }] }]
+        });
+        assert!(InboundThinkingPipeline::validate_google_request_tool_schemas(&request).is_err());
+    }
+
+    fn tool_schema_deep_google_parameter() -> Value {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..16 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        schema
+    }
+
+    #[test]
+    fn tool_schema_rejects_dual_gemini_declaration_aliases_before_clone() {
+        let request = json!({
+            "tools": [{
+                "functionDeclarations": [{
+                    "name": "preferred",
+                    "parameters": { "type": "object" }
+                }],
+                "function_declarations": [{
+                    "name": "non_preferred",
+                    "parameters": tool_schema_deep_google_parameter()
+                }]
+            }]
+        });
+        let original = request.clone();
+        let mut candidate = request;
+
+        assert!(InboundThinkingPipeline::validate_google_request_tool_schemas(&candidate).is_err());
+        assert!(
+            InboundThinkingPipeline::clean_google_request_tool_schemas(&mut candidate).is_err()
+        );
+        assert_eq!(
+            candidate, original,
+            "rejected aliases must remain unmodified"
+        );
+    }
+
+    #[test]
+    fn tool_schema_rejects_dual_gemini_parameter_aliases_before_clone() {
+        let request = json!({
+            "tools": [{
+                "functionDeclarations": [{
+                    "name": "dual_parameters",
+                    "parametersJsonSchema": { "type": "object" },
+                    "parameters": tool_schema_deep_google_parameter()
+                }]
+            }]
+        });
+        let original = request.clone();
+        let mut candidate = request;
+
+        assert!(InboundThinkingPipeline::validate_google_request_tool_schemas(&candidate).is_err());
+        assert!(
+            InboundThinkingPipeline::clean_google_request_tool_schemas(&mut candidate).is_err()
+        );
+        assert_eq!(
+            candidate, original,
+            "rejected aliases must remain unmodified"
+        );
     }
 }

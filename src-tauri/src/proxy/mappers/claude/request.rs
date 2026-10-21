@@ -766,6 +766,10 @@ pub fn transform_claude_request_in_timed(
     );
 
     // [CACHE] 统一委托进站流水线进行前缀拓扑规范化与对齐（Pipeline First 核心归一）
+    crate::proxy::pipeline::InboundThinkingPipeline::validate_google_request_tool_schemas(
+        &inner_request,
+    )
+    .map_err(crate::proxy::common::json_schema::tool_schema_client_error)?;
     crate::proxy::pipeline::InboundThinkingPipeline::align_google_request_prefix_topology(
         &mut inner_request,
     );
@@ -1849,7 +1853,8 @@ fn build_tools(
                 "type": "object",
                 "properties": {}
             }));
-            crate::proxy::common::json_schema::clean_json_schema(&mut input_schema);
+            crate::proxy::common::json_schema::clean_tool_schema(&mut input_schema)
+                .map_err(crate::proxy::common::json_schema::tool_schema_client_error)?;
             crate::proxy::mappers::openai::request::enforce_uppercase_types(&mut input_schema);
 
             function_declarations.push(json!({
@@ -1909,6 +1914,38 @@ fn build_tools(
     }
 
     Ok(None)
+}
+
+/// Validate raw Claude tool parameters before account selection or forwarding.
+pub fn validate_raw_claude_tool_schemas(
+    body: &Value,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    let Some(tools) = body.get("tools").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    for tool in tools {
+        let Some(input_schema) = tool.get("input_schema") else {
+            continue;
+        };
+        crate::proxy::common::json_schema::validate_tool_schema(input_schema)?;
+    }
+    Ok(())
+}
+
+/// Validate parsed Claude tool parameters before account selection or forwarding.
+pub fn validate_claude_tool_schemas(
+    request: &ClaudeRequest,
+) -> Result<(), crate::proxy::common::json_schema::ToolSchemaError> {
+    let Some(tools) = request.tools.as_ref() else {
+        return Ok(());
+    };
+    for tool in tools {
+        let Some(input_schema) = tool.input_schema.as_ref() else {
+            continue;
+        };
+        crate::proxy::common::json_schema::validate_tool_schema(input_schema)?;
+    }
+    Ok(())
 }
 
 /// 构建 Generation Config
@@ -3867,5 +3904,48 @@ mod tests {
             .unwrap();
         assert!(!res_str.contains(fake_b64));
         assert!(res_str.contains("[Image: forwarded to visual input (image/png)]"));
+    }
+
+    #[test]
+    fn claude_tool_schema_validator_rejects_over_depth_without_rewriting_request() {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..32 {
+            schema =
+                json!({ "type": "object", "properties": { format!("level_{index}"): schema } });
+        }
+        let request: ClaudeRequest = serde_json::from_value(json!({
+            "model": "gemini-test",
+            "messages": [{ "role": "user", "content": "hello" }],
+            "tools": [{ "name": "deep", "input_schema": schema }]
+        }))
+        .expect("ClaudeRequest must deserialize");
+        assert!(validate_claude_tool_schemas(&request).is_err());
+        assert!(
+            request.tools.is_some(),
+            "validation must not rewrite the request"
+        );
+    }
+
+    #[test]
+    fn raw_claude_tool_schema_validator_rejects_before_request_clone_or_parse() {
+        let mut schema = json!({ "type": "array" });
+        for index in 0..16 {
+            schema = json!({
+                "type": "object",
+                "properties": { format!("level_{index}"): schema }
+            });
+        }
+        let body = json!({
+            "model": "gemini-test",
+            "messages": [{ "role": "user", "content": "hello" }],
+            "tools": [{ "name": "deep", "input_schema": schema }]
+        });
+        let original = body.clone();
+
+        assert!(validate_raw_claude_tool_schemas(&body).is_err());
+        assert_eq!(
+            body, original,
+            "borrowed raw validation must not mutate input"
+        );
     }
 }

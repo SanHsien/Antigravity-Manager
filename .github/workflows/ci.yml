@@ -82,6 +82,11 @@ jobs:
           cd src-tauri
           cargo check
 
+      - name: Test strict tool-schema depth rejection
+        run: |
+          cd src-tauri
+          cargo test --locked --lib tool_schema
+
       - name: Test internal warmup loopback guard
         run: |
           cd src-tauri
