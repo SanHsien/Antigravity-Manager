@@ -285,6 +285,27 @@
 
 > 兩項均為已讀治理結論，**不表示上游 beta 修復已採用或 fork 已修復**。在 strict 重跑未顯示額外未審項目後，候選 issue watermark 才由 `#3720` 推進至 `#3722`；release／commit／PR 水位不變。
 
+### 0.18 2026-10-23 新增 PR #3723／#3725 與 Issue #3724、#3726–#3733（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3723：base `2560efcd7a1bdf8a132bfd6c8a7b7def4dc4b561`、head `4599e67fe6e03cbf0c93b2e59a7104f2617205ad`、3 檔完整 diff `+263/-9`（SHA-256 `1528149483EBDDAB6986DE948CE9615D3CDE7F09BB96E14F7B20EC81B735E2BC`）。PR #3725：同一 base、head `b917ff01261a517ac1edceedd1b138c7a988feb7`、29 檔完整 diff `+1387/-13`（SHA-256 `C224C1BD511FAB0CC483EA0DF6ADF5B228757D1CE65226DDBC4018377A19F76E`）。九份 issue 原文與必要留言已實讀；來源 URL、metadata 與 fork 對照／命令記錄見 `checkpoint-tailwind4-braces/upstream-3733-20261023/evidence.json`。
+- **水位語意**：以下的「採用候選」只排入獨立、可驗證產品批次，**不是**產品已採用、合併或已修復；release／commit 基線仍為 `v4.9.8`／`9f8e4f24…`。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3723 | 延後／整併既有 #3710 Responses 候選 | 3 檔新增 `text.format`→`response_format`、Gemini `responseSchema` 時直接移除 tools，並對任何可解析 JSON 的 Markdown fence 改寫輸出。fork `mappers/openai/models.rs` 尚無 `text`，`request.rs:1198` 只處理既有 `response_format`；但無條件刪 tools 與改寫文字都會改客戶端語意，不能直接採。需獨立驗證 `text.format` json_schema/json_object、tools 共存時的實際 provider 契約、raw schema gate、stream/non-stream 與僅在確定 Structured Output 合約下的 fence 行為。 |
+| PR #3725 | 延後／不採本 patch | 29 檔加入 QoSGuardian、TTFT 同儕基線、2–30 分鐘階梯、synthetic「你好」探針、session 強制解綁、排程過濾及 UI／12 locale；其中探針會真實出站，且選擇／sticky／cooldown 契約均與 fork 不同。#3720 的調查沒有可驗證 provider 因果，不能以慢回應自動換帳號、重試或繞過限速。若 owner 要求 QoS 診斷，先以 fake clock／transport 證明 TTFT、全域慢、thinking、429/5xx、手動停用、session isolation、無額外 provider 請求與明確 opt-in。 |
+| Issue #3724 | 監看／拒絕自動化規避 | 僅多位使用者的封號／申訴經驗，沒有去敏 provider response、帳號狀態或可重現因果。不得因而加換身份、切出口、重試、暖機或申訴流程；僅在有遮罩 403 契約與 fail-closed fixture 時評估帳號狀態分類。 |
+| Issue #3726 | 採用候選（限縮效能批次，未實作） | fork `modules/account.rs:2429-2492` 仍以 semaphore 包住但 `join_all(tasks)` 全量建 future，`BackgroundTaskRunner.tsx:21-31` 仍在 auto-refresh 啟用時立即刷新；這支持檢查受控並發／寫入放大，但不證明回報的 7.2GB。需獨立以假 storage／IPC 量測有界 in-flight、index coalescing、取消／失敗與既有帳號讀寫，禁止藉此增加 provider 重試或改身份。 |
+| Issue #3727 | 拒絕（產品範圍外） | RFC 是跨 Claude/Pi/Codex 的前置意圖重寫／動態 skills router；上游 maintainer 也明示不在本 gateway 實作。fork 維持協定代理界線，不注入或重寫使用者意圖／權限。 |
+| Issue #3728 | 延後／需 Linux 重現 | Ubuntu 22 回報 GUI 被置前／自行啟動及 App/CLI 帳號互相影響，沒有 target、process tree、Wayland/X11 或 config。fork `integration.rs:257-392` 對 Windows Classic/IDE 有明確 target、hot-switch fallback 與 restart 順序；不可用 Linux 個案改其 process lifecycle。需 Linux process/display trace 與 Classic/IDE/CLI target matrix 後才獨立評估。 |
+| Issue #3729 | 採用候選（安全限縮，未實作） | fork `middleware/auth.rs:120-137` 僅讀 Authorization／x-api-key／x-goog-api-key，故 Gemini `?key=` 相容性缺口存在。query secret 會擴大 URI、monitor、redirect 與 duplicate-key 風險；需 header 優先序、嚴格 percent decoding／重複 key 拒絕、全路徑 redaction、auth-off UserToken 不誤記錄與 Gemini 成功／錯誤 fixture，才可加入最小 extractor。 |
+| Issue #3730 | 採用候選（最小熱更新，未實作） | `server.rs:1779-1860` 的 `admin_save_config` 更新多個 state 卻未寫 `only_raw_quota_models`；同檔 `AxumServer::update_only_raw_quota_models` 已存在（:427-432）。獨立小批需驗證 Web save false→true→false 立即影響所有 model-list 路徑、失敗不留下 disk/memory 分歧，且不重啟或改動帳號選擇。 |
+| Issue #3731 | 監看 | 只有未證實模型／帳號可用性與圖片，沒有 model ID、API response 或 provider capability。不得硬編 catalog、UA 或路由；有授權的遮罩 discovery payload、tier／quota／404 矩陣後才重開。 |
+| Issue #3732 | 拒絕／已澄清 | 需求在留言中已澄清為 Gemini 本來支援多帳號、不同 Client ID 要另設 refresh token，issue 已關閉。沒有可採的 fork 行為差異；不把跨 client credentials 合併或自動同步。 |
+| Issue #3733 | 監看／fork 已有 Claude 隔離 | 回報主張 Claude parallel tool call 被注入 Gemini sentinel；fork `pipeline/inbound.rs:240-304` 僅對 Gemini 填／替換 functionCall signature，Claude 分支反而移除它，`thinking_store.rs:886-931` 也明定 Claude tool call 不帶 sentinel。沒有去敏雙工具 transcript 證明繞過該路徑；需最小 Claude parallel function-call/retry transcript，驗證首簽名、無 sentinel、session isolation 與 bounded retry 後才考慮修補。 |
+
+> 本輪 11 項均已逐項讀取；在 strict 重跑僅顯示這些固定項目後，候選 PR／issue watermark 才分別由 `#3714`／`#3722` 推進至 `#3725`／`#3733`。此水位只表示覆核完成，絕不表示上述採用候選或上游 beta patch 已進入 fork。
+
 ### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
 
 - **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
