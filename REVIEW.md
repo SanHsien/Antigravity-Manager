@@ -317,6 +317,38 @@
 
 > 兩項均為已讀治理結論，**不表示模型淘汰、Gemini 4 Argon 支援或 thinking 修復已進入 fork**。strict 重跑只確認這兩項且未出現額外未審項目後，候選 issue watermark 才由 `#3733` 推進至 `#3735`；release／commit／PR 水位不變。
 
+### 0.20 2026-10-23 新增 Issue #3736（本輪候選）
+
+- **來源與界線**：上游僅讀；完整 issue API 原文與空留言陣列保存於 `checkpoint-tailwind4-braces/upstream-3736-20261023/issue-3736.json`、`issue-3736-comments.json`。本文只有截圖與「Only Ultra will appear」，沒有版本、平台、入口、帳號／quota payload、預期清單或復現步驟；本輪未猜測圖片中的頁面或修改 model／tier 邏輯。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3736 | 監看／資料不足 | fork 至少有兩個不等價的相關層：`pages/Accounts.tsx:36,258-263,888-906` 是帳號 tier（all/pro/ultra/free）篩選；`components/accounts/AccountCard.tsx:102-131` 則依 `showAllQuotas`、pinned selection、預設模型與過期模型 filter 決定卡片 quota 顯示。單張截圖無法辨識是 tier filter、quota refresh、`only_raw_quota_models`、pinned selector、帳號狀態或前端 stale state，直接調整其中任一路徑可能使正常 Pro/Free／模型顯示倒退。需提供 fork/upstream 版本、OS、具體頁面／filter、至少兩個不同 tier 的遮罩 account quota payload、refresh 前後 state、預期與實際 model/tier list；之後以該最小 fixture 驗證 all/pro/ultra/free、pinned／raw quota toggles 與 reload，才可拆出產品批次。 |
+
+> 本項為已讀治理結論，**不表示「Only Ultra」已重現、已定位或已修復**。strict 重跑只確認 #3736 且未出現額外未審項目後，候選 issue watermark 才由 `#3735` 推進至 `#3736`；release／commit／PR 水位不變。
+
+### 0.21 2026-10-23 新增 PR #3738／#3740 與 Issue #3737／#3739（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3738：base `08fc86e71c28fbac0acb8b8f1a2a7b73973ee5ff`、head `304f445b1f09dac359e29d2d4156da3263c8ff56`、32 檔完整 diff `+1904/-563`；PR #3740：base `fe2ace7dc1d02332785a3d612cec2aa020be7136`、head `447490f930841f27b0b04cffa98a07ac99064aa3`、1 檔 `+51/-10`。兩份 PR metadata／固定-head diff、兩份 issue 與全部留言 API 快照已保存於 `checkpoint-tailwind4-braces/upstream-3736-20261023/`；本輪不執行 provider、Tauri UI 或 Rust runtime。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3738 | 逐元件延後／不採 bundle | **Mini/macOS/tray**：`Cargo.toml` 開啟 `macos-private-api`，另改 `tauri.conf`、capability、`lib.rs`、tray、commands、MiniView、stores 與跨窗 theme/language event；其中 `exit_app` 會停止 cloudflared/admin/proxy 後 `process::exit(0)`，tray focus/blur/pin 又改所有平台點擊行為，不能以 UI 功能名採用。需 macOS/Windows tray click、focus/blur、pin、main/mini restore、child shutdown/credential-write ordering、theme/language persisted sync 與 permission acceptance。**Claude pipeline**：上游清 sentinel、丟無簽名 thought、clamp budget；fork `thinking_store.rs:891-895,984-986,1569-1688` 已按 Claude signature 隔離，不能以新 clamp 覆寫既有模型／provider budget 契約。需跨 Gemini→Claude、valid/invalid signature、512/1024/disabled thinking、400 與無重複 retry fixture。**Quota/UI/locales**：GroupQuotaCard 細線、847 行 MiniView 與 12 locale 是完整 UI 設計變更；fork僅保留 `zh-TW`，上游同時改 `zh.json` 不可直接併入。各元件均待獨立 visual/a11y/localization acceptance，未採任何產品碼。 |
+| Issue #3737 | 採用候選（限縮 quota fallback，未實作） | fork `modules/quota.rs:387-413` 只有 `quotaInfo` 存在時才加入 `quota.models`，後續 `443-511` 的 group bucket 融合只迭代既有模型，故「模型存在但缺模型級 quotaInfo」確有被丟棄的路徑。可獨立修為：保留公開可用模型、僅在缺模型級資料時依已驗證 group bucket 產生未知／受限 quota；**明確 0 的模型額度必須優先**，兩種資料都缺時不得虛構正額度或繞過 disabled/forbidden。需遮罩 `fetchAvailableModels` fixture 覆蓋 Gemini/3P、5h/weekly 最嚴格 bucket、模型不存在、explicit zero、group 缺失、落盤/reload、selection 503→真 upstream 429 與 UI raw-model list。 |
+| Issue #3739／PR #3740 | 延後／stream lifecycle 獨立批次 | #3740 唯一改動把 `stream_lifecycle.rs` 的一次 Transition 寬限從「Thinking 且無 content」擴成任何 Thinking/Streaming 靜默；可避免 preamble 後巨型 tool JSON 被 120s 截斷，但也讓所有已輸出正文的協定多等一個 transition window，可能延後真斷線、取消或錯誤回報。不可只以 synthetic 文字 chunk 採用。需 fake-clock/transport 覆蓋 Claude/OpenAI/Gemini 的 thinking、preamble+巨型 function call、普通正文 idle、upstream 4xx/5xx、client cancel、heartbeat、單次 finalize、無 synthetic `end_turn` 與 bounded overall deadline。 |
+
+> 四項均為已讀治理結論，**不表示 quota fallback、mini 視窗、Claude budget/sentinel 或 streaming 寬限已採用或已修復**。strict 重跑僅在固定項目無新增時，候選 PR／issue watermark 才分別由 `#3725`／`#3736` 推進至 `#3740`／`#3739`；release／commit 水位不變。
+
+### 0.22 2026-10-24 新增 PR #3741（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3741：base `fe2ace7dc1d02332785a3d612cec2aa020be7136`（`beta`）、head `b0fa557c0c1a2e4a0876eabc852dc599b68721d8`，1 檔 `src/App.tsx`、`+22/-2`；PR API 原文、空 comments API 與固定-head diff 已保存於 `checkpoint-tailwind4-braces/upstream-3736-20261023/pr-3741-api.json`、`pr-3741-comments.json`、`pr-3741.diff`。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3741 | 延後／依賴未採用的 Mini 視窗架構 | 上游在 `App.tsx` 為 `index.html?mini=1` 與 `__TAURI_INTERNALS__` 加入首幀 Mini 判定，並將 router error、`index.html` 和所有 `*` path redirect 至 `/`。fork 的 `src/App.tsx:25-169` 僅有主 application router，搜尋不到 `isMini`、`MiniView`、`__TAURI_INTERNALS__` 或 `getCurrentWindow`；`src-tauri/tauri.conf.json` 也沒有對應 Mini 視窗入口。因此不能只搬 redirect：它會把既有未知路徑與 route error 隱藏為 Dashboard，且沒有修復不存在的 multi-window 載入鏈。若日後獨立採 Mini 視窗，先定義 `index.html?mini=1`／window label 的 Tauri contract，再以初次載入、重載、主／Mini 視窗切換、未知 path、真 route error 與非 Tauri browser fallback 測試決定是否採用同步判定或 error boundary；本輪不採產品碼。 |
+
+> 本項為已讀治理結論，**不表示 Mini 404 已在 fork 重現、已採用或已修復**。strict 重跑只在固定 PR 且無新增項目時，候選 PR watermark 才由 `#3740` 推進至 `#3741`；issue／release／commit 水位不變。
+
 ### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
 
 - **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
