@@ -349,6 +349,16 @@
 
 > 本項為已讀治理結論，**不表示 Mini 404 已在 fork 重現、已採用或已修復**。strict 重跑只在固定 PR 且無新增項目時，候選 PR watermark 才由 `#3740` 推進至 `#3741`；issue／release／commit 水位不變。
 
+### 0.23 2026-10-24 新增 PR #3742（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3742：base `95ba737d097f1ef0080c86aa17ba38584f0b8546`（`beta`）、head `91c342c68f147968182fd7e80a2b6af0bd015b1c`，1 檔 `src-tauri/src/proxy/model_specs.rs`、`+1/-10`；完整 PR API、空 comments API 與固定-head diff 已保存於 `checkpoint-tailwind4-braces/upstream-3742-20261024/pr-3742.json`、`pr-3742-comments.json`、`pr-3742.diff`。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3742 | 延後／不採用 beta `-1` 語意 | 上游把 Claude low/medium/high 與未分級模型的**負數**設定由 `Some(-1)` 改為 `None`，讓其 beta pipeline 從官方 model struct 取預設（宣稱如 1024）；0 本來已回 `None`，不由此 hunk 改寫。fork 的 `model_specs.rs:421-470` 已有不同的 `claude_mode`、effort／suffix 分級與未分級 `claude_budget`／`claude_high` precedence；`config.rs:557-564,611-621` 的本地預設又是 budget 16384、low 1024、medium 4096、high 16384，與上游聲稱的單一 fallback 不同。fork 的 `pipeline/inbound.rs:543-583` 只有 resolver 回 `None` 時才依 tiered 規則不注入數值，因此整合負數 fallback 前仍須連同未分級 Claude 與 client/gateway authority 驗證 request body；0 與正數則是 config migration 的不回歸邊界，不是本 patch 的直接改動。#3735 也仍缺 Gemini 4 Argon／provider 400 capability contract，不能以 beta 單測把未公開的官方模型預設當跨協定事實。需遮罩 model-spec snapshot 與 config migration fixture 覆蓋 low/medium/high/未分級、`-1`/0/正數、client/gateway、三協定、maxOutputTokens guard、unsupported model 400/no-retry；確認本 fork 應否保留 16384 等既有值後，才以獨立產品批次評估。 |
+
+> 本項為已讀治理結論，**不表示 Claude／Argon default budget 已在 fork 採用、回退、重現或修復**。strict 重跑只在固定 PR 且無新增項目時，候選 PR watermark 才由 `#3741` 推進至 `#3742`；issue／release／commit 水位不變。
+
 ### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
 
 - **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
