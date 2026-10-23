@@ -273,6 +273,92 @@
 
 > 這兩項完成後，候選水位僅表示上述 release 與 12 tickets 已審；它**不採用** #3708／#3710／#3720 的產品工作，也不消除 #3703／#3706、403 expiry、validation URL、Responses 雙入口或其他已列未實作缺口。
 
+### 0.17 2026-10-21 新增 Issue #3721／#3722（本輪候選）
+
+- **來源與界線**：上游僅讀。已保存兩份 issue 本文與各一則留言於 `checkpoint-tailwind4-braces/upstream-3722-review/issue-{3721,3722}.json`、`issue-{3721,3722}-comments.json`。本輪沒有採用上游 beta 程式碼、執行 provider 請求或變更產品。
+- **fork 對照**：#3721 是三個互不等價的主張，不能以同一個「已修」結論覆蓋：fork `modules/process.rs` 只以 `current_exe().canonicalize()` 排除完全相同路徑，AppImage mount path／Linux `comm` 截斷沒有對等驗收；fork 有 `--headless` 啟動路徑，但 Desktop GUI 與 proxy 仍同一 process；`pipeline/inbound.rs` 會保留 `toolConfig.functionCallingConfig.mode=ANY`，現無 Claude forced-tool 與 `thinkingConfig` 的明確相容性證據。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3721 | 分拆延後：Linux process identity、Wayland lifecycle、Claude tool-choice/thinking 各自獨立 | **自身誤識別**：AppImage 報告的 `/tmp/.mount_*` 與使用者安裝路徑可使 fork 現行 canonical-path 排除失效；上游 beta `cae8fb9b` 的集中 name blacklist／Linux 15-byte `comm` 規則有關聯，但不能未驗證地套到 Windows／macOS process discovery。需可注入的 Linux process snapshot，覆蓋 manager 名稱、多版本 AppImage path、截斷 `comm`、真正 IDE 與 restart path，並證明不 kill/spawn 自身。**Wayland**：fork 既有 `--headless` 可作明確替代啟動模式；上游以 GDK log hook 攔截 `_exit`／`pthread_exit` 讓 GUI 主執行緒退出，涉及 Linux signal/thread lifecycle，不能聲稱保住既有 stream 或直接移植。若 owner 要求 Linux desktop resilience，應先評估可監督的 proxy/GUI process isolation、display-loss／SIGTERM／stream-drain fixture，而非攔截 process termination。**forced tool + thinking**：fork 正規化 `ANY` 但目前沒有剝除 `thinkingConfig`；此為有限採用候選，僅在有 Claude 目標模型、OpenAI required/specific tool-choice→Google `ANY`、thinking on/off、一般 tool mode、上游 400 分類與 bounded no-duplicate-retry fixture 時，於獨立 pipeline batch 評估。 |
+| Issue #3722 | 監看／拒絕自動化恢復 | 本文明確是單一使用者觀察、未確認因果；留言更稱節點／IP 無關並猜測 Google 機房。沒有帳號、provider、rate-limit 或 identity 契約可支持反覆短 prompt、換身份、切出口、自動 warmup／rotation 或繞限速。fork 既有 account/model circuit breaker、manual/proxy-disabled 與 quota 保護不得因個例放寬。只有取得授權且去敏的 transport timeline（DNS/connect/TTFT/response/429/503）、帳號狀態與 fake-clock no-extra-request／fail-closed fixture 後，才可評估診斷，不建立 recovery 自動化產品工作。 |
+
+> 兩項均為已讀治理結論，**不表示上游 beta 修復已採用或 fork 已修復**。在 strict 重跑未顯示額外未審項目後，候選 issue watermark 才由 `#3720` 推進至 `#3722`；release／commit／PR 水位不變。
+
+### 0.18 2026-10-23 新增 PR #3723／#3725 與 Issue #3724、#3726–#3733（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3723：base `2560efcd7a1bdf8a132bfd6c8a7b7def4dc4b561`、head `4599e67fe6e03cbf0c93b2e59a7104f2617205ad`、3 檔完整 diff `+263/-9`（SHA-256 `1528149483EBDDAB6986DE948CE9615D3CDE7F09BB96E14F7B20EC81B735E2BC`）。PR #3725：同一 base、head `b917ff01261a517ac1edceedd1b138c7a988feb7`、29 檔完整 diff `+1387/-13`（SHA-256 `C224C1BD511FAB0CC483EA0DF6ADF5B228757D1CE65226DDBC4018377A19F76E`）。九份 issue 原文與必要留言已實讀；來源 URL、metadata 與 fork 對照／命令記錄見 `checkpoint-tailwind4-braces/upstream-3733-20261023/evidence.json`。
+- **水位語意**：以下的「採用候選」只排入獨立、可驗證產品批次，**不是**產品已採用、合併或已修復；release／commit 基線仍為 `v4.9.8`／`9f8e4f24…`。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3723 | 延後／整併既有 #3710 Responses 候選 | 3 檔新增 `text.format`→`response_format`、Gemini `responseSchema` 時直接移除 tools，並對任何可解析 JSON 的 Markdown fence 改寫輸出。fork `mappers/openai/models.rs` 尚無 `text`，`request.rs:1198` 只處理既有 `response_format`；但無條件刪 tools 與改寫文字都會改客戶端語意，不能直接採。需獨立驗證 `text.format` json_schema/json_object、tools 共存時的實際 provider 契約、raw schema gate、stream/non-stream 與僅在確定 Structured Output 合約下的 fence 行為。 |
+| PR #3725 | 延後／不採本 patch | 29 檔加入 QoSGuardian、TTFT 同儕基線、2–30 分鐘階梯、synthetic「你好」探針、session 強制解綁、排程過濾及 UI／12 locale；其中探針會真實出站，且選擇／sticky／cooldown 契約均與 fork 不同。#3720 的調查沒有可驗證 provider 因果，不能以慢回應自動換帳號、重試或繞過限速。若 owner 要求 QoS 診斷，先以 fake clock／transport 證明 TTFT、全域慢、thinking、429/5xx、手動停用、session isolation、無額外 provider 請求與明確 opt-in。 |
+| Issue #3724 | 監看／拒絕自動化規避 | 僅多位使用者的封號／申訴經驗，沒有去敏 provider response、帳號狀態或可重現因果。不得因而加換身份、切出口、重試、暖機或申訴流程；僅在有遮罩 403 契約與 fail-closed fixture 時評估帳號狀態分類。 |
+| Issue #3726 | 採用候選（限縮效能批次，未實作） | fork `modules/account.rs:2429-2492` 仍以 semaphore 包住但 `join_all(tasks)` 全量建 future，`BackgroundTaskRunner.tsx:21-31` 仍在 auto-refresh 啟用時立即刷新；這支持檢查受控並發／寫入放大，但不證明回報的 7.2GB。需獨立以假 storage／IPC 量測有界 in-flight、index coalescing、取消／失敗與既有帳號讀寫，禁止藉此增加 provider 重試或改身份。 |
+| Issue #3727 | 拒絕（產品範圍外） | RFC 是跨 Claude/Pi/Codex 的前置意圖重寫／動態 skills router；上游 maintainer 也明示不在本 gateway 實作。fork 維持協定代理界線，不注入或重寫使用者意圖／權限。 |
+| Issue #3728 | 延後／需 Linux 重現 | Ubuntu 22 回報 GUI 被置前／自行啟動及 App/CLI 帳號互相影響，沒有 target、process tree、Wayland/X11 或 config。fork `integration.rs:257-392` 對 Windows Classic/IDE 有明確 target、hot-switch fallback 與 restart 順序；不可用 Linux 個案改其 process lifecycle。需 Linux process/display trace 與 Classic/IDE/CLI target matrix 後才獨立評估。 |
+| Issue #3729 | 採用候選（安全限縮，未實作） | fork `middleware/auth.rs:120-137` 僅讀 Authorization／x-api-key／x-goog-api-key，故 Gemini `?key=` 相容性缺口存在。query secret 會擴大 URI、monitor、redirect 與 duplicate-key 風險；需 header 優先序、嚴格 percent decoding／重複 key 拒絕、全路徑 redaction、auth-off UserToken 不誤記錄與 Gemini 成功／錯誤 fixture，才可加入最小 extractor。 |
+| Issue #3730 | 採用候選（最小熱更新，未實作） | `server.rs:1779-1860` 的 `admin_save_config` 更新多個 state 卻未寫 `only_raw_quota_models`；同檔 `AxumServer::update_only_raw_quota_models` 已存在（:427-432）。獨立小批需驗證 Web save false→true→false 立即影響所有 model-list 路徑、失敗不留下 disk/memory 分歧，且不重啟或改動帳號選擇。 |
+| Issue #3731 | 監看 | 只有未證實模型／帳號可用性與圖片，沒有 model ID、API response 或 provider capability。不得硬編 catalog、UA 或路由；有授權的遮罩 discovery payload、tier／quota／404 矩陣後才重開。 |
+| Issue #3732 | 拒絕／已澄清 | 需求在留言中已澄清為 Gemini 本來支援多帳號、不同 Client ID 要另設 refresh token，issue 已關閉。沒有可採的 fork 行為差異；不把跨 client credentials 合併或自動同步。 |
+| Issue #3733 | 監看／fork 已有 Claude 隔離 | 回報主張 Claude parallel tool call 被注入 Gemini sentinel；fork `pipeline/inbound.rs:240-304` 僅對 Gemini 填／替換 functionCall signature，Claude 分支反而移除它，`thinking_store.rs:886-931` 也明定 Claude tool call 不帶 sentinel。沒有去敏雙工具 transcript 證明繞過該路徑；需最小 Claude parallel function-call/retry transcript，驗證首簽名、無 sentinel、session isolation 與 bounded retry 後才考慮修補。 |
+
+> 本輪 11 項均已逐項讀取；在 strict 重跑僅顯示這些固定項目後，候選 PR／issue watermark 才分別由 `#3714`／`#3722` 推進至 `#3725`／`#3733`。此水位只表示覆核完成，絕不表示上述採用候選或上游 beta patch 已進入 fork。
+
+### 0.19 2026-10-23 新增 Issue #3734／#3735（本輪候選）
+
+- **來源與界線**：上游僅讀；兩份完整 issue API 原文與留言快照保存於 `checkpoint-tailwind4-braces/upstream-3735-20261023/issue-{3734,3735}.json`、`issue-{3734,3735}-comments.json`。本輪未呼叫 provider、未寫入模型目錄，也未採用上游 development branch 的未定版修復。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3734 | 監看／不硬編模型淘汰 | 上游 maintainer 公告未來會淘汰 `<3.8` 舊模型、`gemini-3.1-pro` 與部分 Gemini/GPT 型號，但沒有 release SHA、正式 catalog、截止日期或 provider response。fork `modules/quota.rs:431-434` 已明定 `fetchAvailableModels` 對 free/Pro 都回傳同一全量目錄，不能把它當帳號 capability；`model_specs.rs` 仍有 3.x alias／tier 規則。未經授權的名稱刪除會破壞 custom alias、既有設定及 provider 實際仍可用的模型。只有取得版本化、去敏的官方 catalog／404 contract，以及 custom alias precedence、冷啟動／stale entry、model-list 與未知模型 fallback fixture 後，才以獨立 catalog 批次評估。 |
+| Issue #3735 | 延後／需可驗證的 Argon provider 契約 | issue 原文把可見 thought 輸出歸因於 `thinkingBudget`／`thinkingLevel` 組合；留言稱 upstream development branch 已改為 level-only，但沒有可採的 commit SHA 或可公開 provider 契約。fork 現行 `pipeline/inbound.rs:467-534` 在 Client mode 已互斥輸出正數 budget 或 level、`551-583` 在 Gateway mode 依既有 specs 注入；對 `src-tauri/src` 與 `src-tauri/resources` 的 `argon` 搜尋無命中，故不能宣稱已支援其模型或把 `-1`／`HIGH`／`10001` 硬編成通用規則。須先取得授權且遮罩的 Argon capability snapshot（model ID、tier、允許欄位與 400 contract），再以三協定的 high/medium/low/base、budget/level mutual exclusion、stream/non-stream visible-thought 與未支援模型 fallback fixture 評估；LOW/MEDIUM 靜默行為不可被擅自升級為 HIGH。 |
+
+> 兩項均為已讀治理結論，**不表示模型淘汰、Gemini 4 Argon 支援或 thinking 修復已進入 fork**。strict 重跑只確認這兩項且未出現額外未審項目後，候選 issue watermark 才由 `#3733` 推進至 `#3735`；release／commit／PR 水位不變。
+
+### 0.20 2026-10-23 新增 Issue #3736（本輪候選）
+
+- **來源與界線**：上游僅讀；完整 issue API 原文與空留言陣列保存於 `checkpoint-tailwind4-braces/upstream-3736-20261023/issue-3736.json`、`issue-3736-comments.json`。本文只有截圖與「Only Ultra will appear」，沒有版本、平台、入口、帳號／quota payload、預期清單或復現步驟；本輪未猜測圖片中的頁面或修改 model／tier 邏輯。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3736 | 監看／資料不足 | fork 至少有兩個不等價的相關層：`pages/Accounts.tsx:36,258-263,888-906` 是帳號 tier（all/pro/ultra/free）篩選；`components/accounts/AccountCard.tsx:102-131` 則依 `showAllQuotas`、pinned selection、預設模型與過期模型 filter 決定卡片 quota 顯示。單張截圖無法辨識是 tier filter、quota refresh、`only_raw_quota_models`、pinned selector、帳號狀態或前端 stale state，直接調整其中任一路徑可能使正常 Pro/Free／模型顯示倒退。需提供 fork/upstream 版本、OS、具體頁面／filter、至少兩個不同 tier 的遮罩 account quota payload、refresh 前後 state、預期與實際 model/tier list；之後以該最小 fixture 驗證 all/pro/ultra/free、pinned／raw quota toggles 與 reload，才可拆出產品批次。 |
+
+> 本項為已讀治理結論，**不表示「Only Ultra」已重現、已定位或已修復**。strict 重跑只確認 #3736 且未出現額外未審項目後，候選 issue watermark 才由 `#3735` 推進至 `#3736`；release／commit／PR 水位不變。
+
+### 0.21 2026-10-23 新增 PR #3738／#3740 與 Issue #3737／#3739（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3738：base `08fc86e71c28fbac0acb8b8f1a2a7b73973ee5ff`、head `304f445b1f09dac359e29d2d4156da3263c8ff56`、32 檔完整 diff `+1904/-563`；PR #3740：base `fe2ace7dc1d02332785a3d612cec2aa020be7136`、head `447490f930841f27b0b04cffa98a07ac99064aa3`、1 檔 `+51/-10`。兩份 PR metadata／固定-head diff、兩份 issue 與全部留言 API 快照已保存於 `checkpoint-tailwind4-braces/upstream-3736-20261023/`；本輪不執行 provider、Tauri UI 或 Rust runtime。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3738 | 逐元件延後／不採 bundle | **Mini/macOS/tray**：`Cargo.toml` 開啟 `macos-private-api`，另改 `tauri.conf`、capability、`lib.rs`、tray、commands、MiniView、stores 與跨窗 theme/language event；其中 `exit_app` 會停止 cloudflared/admin/proxy 後 `process::exit(0)`，tray focus/blur/pin 又改所有平台點擊行為，不能以 UI 功能名採用。需 macOS/Windows tray click、focus/blur、pin、main/mini restore、child shutdown/credential-write ordering、theme/language persisted sync 與 permission acceptance。**Claude pipeline**：上游清 sentinel、丟無簽名 thought、clamp budget；fork `thinking_store.rs:891-895,984-986,1569-1688` 已按 Claude signature 隔離，不能以新 clamp 覆寫既有模型／provider budget 契約。需跨 Gemini→Claude、valid/invalid signature、512/1024/disabled thinking、400 與無重複 retry fixture。**Quota/UI/locales**：GroupQuotaCard 細線、847 行 MiniView 與 12 locale 是完整 UI 設計變更；fork僅保留 `zh-TW`，上游同時改 `zh.json` 不可直接併入。各元件均待獨立 visual/a11y/localization acceptance，未採任何產品碼。 |
+| Issue #3737 | 採用候選（限縮 quota fallback，未實作） | fork `modules/quota.rs:387-413` 只有 `quotaInfo` 存在時才加入 `quota.models`，後續 `443-511` 的 group bucket 融合只迭代既有模型，故「模型存在但缺模型級 quotaInfo」確有被丟棄的路徑。可獨立修為：保留公開可用模型、僅在缺模型級資料時依已驗證 group bucket 產生未知／受限 quota；**明確 0 的模型額度必須優先**，兩種資料都缺時不得虛構正額度或繞過 disabled/forbidden。需遮罩 `fetchAvailableModels` fixture 覆蓋 Gemini/3P、5h/weekly 最嚴格 bucket、模型不存在、explicit zero、group 缺失、落盤/reload、selection 503→真 upstream 429 與 UI raw-model list。 |
+| Issue #3739／PR #3740 | 延後／stream lifecycle 獨立批次 | #3740 唯一改動把 `stream_lifecycle.rs` 的一次 Transition 寬限從「Thinking 且無 content」擴成任何 Thinking/Streaming 靜默；可避免 preamble 後巨型 tool JSON 被 120s 截斷，但也讓所有已輸出正文的協定多等一個 transition window，可能延後真斷線、取消或錯誤回報。不可只以 synthetic 文字 chunk 採用。需 fake-clock/transport 覆蓋 Claude/OpenAI/Gemini 的 thinking、preamble+巨型 function call、普通正文 idle、upstream 4xx/5xx、client cancel、heartbeat、單次 finalize、無 synthetic `end_turn` 與 bounded overall deadline。 |
+
+> 四項均為已讀治理結論，**不表示 quota fallback、mini 視窗、Claude budget/sentinel 或 streaming 寬限已採用或已修復**。strict 重跑僅在固定項目無新增時，候選 PR／issue watermark 才分別由 `#3725`／`#3736` 推進至 `#3740`／`#3739`；release／commit 水位不變。
+
+### 0.22 2026-10-24 新增 PR #3741（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3741：base `fe2ace7dc1d02332785a3d612cec2aa020be7136`（`beta`）、head `b0fa557c0c1a2e4a0876eabc852dc599b68721d8`，1 檔 `src/App.tsx`、`+22/-2`；PR API 原文、空 comments API 與固定-head diff 已保存於 `checkpoint-tailwind4-braces/upstream-3736-20261023/pr-3741-api.json`、`pr-3741-comments.json`、`pr-3741.diff`。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3741 | 延後／依賴未採用的 Mini 視窗架構 | 上游在 `App.tsx` 為 `index.html?mini=1` 與 `__TAURI_INTERNALS__` 加入首幀 Mini 判定，並將 router error、`index.html` 和所有 `*` path redirect 至 `/`。fork 的 `src/App.tsx:25-169` 僅有主 application router，搜尋不到 `isMini`、`MiniView`、`__TAURI_INTERNALS__` 或 `getCurrentWindow`；`src-tauri/tauri.conf.json` 也沒有對應 Mini 視窗入口。因此不能只搬 redirect：它會把既有未知路徑與 route error 隱藏為 Dashboard，且沒有修復不存在的 multi-window 載入鏈。若日後獨立採 Mini 視窗，先定義 `index.html?mini=1`／window label 的 Tauri contract，再以初次載入、重載、主／Mini 視窗切換、未知 path、真 route error 與非 Tauri browser fallback 測試決定是否採用同步判定或 error boundary；本輪不採產品碼。 |
+
+> 本項為已讀治理結論，**不表示 Mini 404 已在 fork 重現、已採用或已修復**。strict 重跑只在固定 PR 且無新增項目時，候選 PR watermark 才由 `#3740` 推進至 `#3741`；issue／release／commit 水位不變。
+
+### 0.23 2026-10-24 新增 PR #3742（本輪候選）
+
+- **來源與完整範圍**：上游僅讀。PR #3742：base `95ba737d097f1ef0080c86aa17ba38584f0b8546`（`beta`）、head `91c342c68f147968182fd7e80a2b6af0bd015b1c`，1 檔 `src-tauri/src/proxy/model_specs.rs`、`+1/-10`；完整 PR API、空 comments API 與固定-head diff 已保存於 `checkpoint-tailwind4-braces/upstream-3742-20261024/pr-3742.json`、`pr-3742-comments.json`、`pr-3742.diff`。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3742 | 延後／不採用 beta `-1` 語意 | 上游把 Claude low/medium/high 與未分級模型的**負數**設定由 `Some(-1)` 改為 `None`，讓其 beta pipeline 從官方 model struct 取預設（宣稱如 1024）；0 本來已回 `None`，不由此 hunk 改寫。fork 的 `model_specs.rs:421-470` 已有不同的 `claude_mode`、effort／suffix 分級與未分級 `claude_budget`／`claude_high` precedence；`config.rs:557-564,611-621` 的本地預設又是 budget 16384、low 1024、medium 4096、high 16384，與上游聲稱的單一 fallback 不同。fork 的 `pipeline/inbound.rs:543-583` 只有 resolver 回 `None` 時才依 tiered 規則不注入數值，因此整合負數 fallback 前仍須連同未分級 Claude 與 client/gateway authority 驗證 request body；0 與正數則是 config migration 的不回歸邊界，不是本 patch 的直接改動。#3735 也仍缺 Gemini 4 Argon／provider 400 capability contract，不能以 beta 單測把未公開的官方模型預設當跨協定事實。需遮罩 model-spec snapshot 與 config migration fixture 覆蓋 low/medium/high/未分級、`-1`/0/正數、client/gateway、三協定、maxOutputTokens guard、unsupported model 400/no-retry；確認本 fork 應否保留 16384 等既有值後，才以獨立產品批次評估。 |
+
+> 本項為已讀治理結論，**不表示 Claude／Argon default budget 已在 fork 採用、回退、重現或修復**。strict 重跑只在固定 PR 且無新增項目時，候選 PR watermark 才由 `#3741` 推進至 `#3742`；issue／release／commit 水位不變。
+
 ### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
 
 - **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。

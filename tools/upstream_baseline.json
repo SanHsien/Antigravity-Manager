@@ -4,8 +4,8 @@
   "track": "release",
   "reviewed_release": "v4.9.8",
   "reviewed_through": "9f8e4f24d61b33fa80b8078d104c942752a5fa0b",
-  "reviewed_date": "2026-10-21",
-  "reviewed_pr_through": 3714,
-  "reviewed_issue_through": 3720,
+  "reviewed_date": "2026-10-23",
+  "reviewed_pr_through": 3742,
+  "reviewed_issue_through": 3739,
   "decision_log": "REVIEW.md"
 }

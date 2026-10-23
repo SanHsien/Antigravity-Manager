@@ -170,6 +170,15 @@ impl TokenManager {
         crate::modules::account::get_data_dir().unwrap_or_else(|_| self.data_dir.clone())
     }
 
+    /// Resolve an account ID through the accounts directory entry boundary.
+    /// Cached paths are observational only; account IDs never construct a host path.
+    fn resolve_managed_account_path(&self, account_id: &str) -> Result<PathBuf, String> {
+        crate::utils::db_import_path::resolve_account_file_path(
+            &self.resolved_data_dir().join("accounts"),
+            account_id,
+        )
+    }
+
     /// 创建新的 TokenManager
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
@@ -285,14 +294,45 @@ impl TokenManager {
             })?;
             let path = entry.path();
 
-            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            if path.extension().and_then(|s| s.to_str()) != Some("json")
+                || !entry
+                    .file_type()
+                    .map(|kind| kind.is_file() && !kind.is_symlink())
+                    .unwrap_or(false)
+            {
                 continue;
             }
 
             // 尝试加载账号
             match self.load_single_account(&path).await {
-                Ok(Some(token)) => {
+                Ok(Some(mut token)) => {
                     let account_id = token.account_id.clone();
+                    let trusted_path = match self.resolve_managed_account_path(&account_id) {
+                        Ok(path) => path,
+                        Err(error) => {
+                            tracing::warn!(
+                                "Skipping account with an untrusted file path: {}",
+                                error
+                            );
+                            continue;
+                        }
+                    };
+                    let loaded_path = match std::fs::canonicalize(&path) {
+                        Ok(path) => path,
+                        Err(error) => {
+                            tracing::warn!(
+                                "Skipping unreadable account file {:?}: {}",
+                                path,
+                                error
+                            );
+                            continue;
+                        }
+                    };
+                    if loaded_path != trusted_path {
+                        tracing::warn!("Skipping account whose ID does not match its filename");
+                        continue;
+                    }
+                    token.account_path = trusted_path;
                     self.tokens.insert(account_id, token);
                     count += 1;
                 }
@@ -311,10 +351,7 @@ impl TokenManager {
 
     /// 重新加载指定账号（用于配额更新后的实时同步）
     pub async fn reload_account(&self, account_id: &str) -> Result<(), String> {
-        let path = crate::utils::db_import_path::resolve_account_file_path(
-            &self.data_dir.join("accounts"),
-            account_id,
-        )?;
+        let path = self.resolve_managed_account_path(account_id)?;
 
         match self.load_single_account(&path).await {
             Ok(Some(token)) => {
@@ -372,12 +409,24 @@ impl TokenManager {
     /// Note: this is intentionally tolerant to transient read/parse failures (e.g. concurrent
     /// writes). Failures are reported as `Unknown` so callers can skip without purging the in-memory
     /// token pool.
-    async fn get_account_state_on_disk(account_path: &std::path::PathBuf) -> OnDiskAccountState {
+    async fn get_account_state_on_disk(&self, account_id: &str) -> OnDiskAccountState {
         const MAX_RETRIES: usize = 2;
         const RETRY_DELAY_MS: u64 = 5;
 
+        let account_path = match self.resolve_managed_account_path(account_id) {
+            Ok(path) => path,
+            Err(error) => {
+                tracing::debug!(
+                    "Managed account path is unavailable for {}: {}",
+                    account_id,
+                    error
+                );
+                return OnDiskAccountState::Disabled;
+            }
+        };
+
         for attempt in 0..=MAX_RETRIES {
-            let content = match tokio::fs::read_to_string(account_path).await {
+            let content = match tokio::fs::read_to_string(&account_path).await {
                 Ok(c) => c,
                 Err(e) => {
                     // If the file is gone, the in-memory token is definitely stale.
@@ -443,6 +492,15 @@ impl TokenManager {
 
         let mut account: serde_json::Value =
             serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {}", e))?;
+
+        let account_id = account["id"].as_str().ok_or("缺少 id 字段")?.to_string();
+        let trusted_path = self.resolve_managed_account_path(&account_id)?;
+        let loaded_path =
+            std::fs::canonicalize(path).map_err(|e| format!("账号文件不可读取: {}", e))?;
+        if loaded_path != trusted_path {
+            return Err("账号 ID 与固定 accounts 目录中的文件不匹配".to_string());
+        }
+        let path = &trusted_path;
 
         // [修复 #1344] 先检查账号是否被手动禁用(非配额保护原因)
         let is_proxy_disabled = account
@@ -536,7 +594,7 @@ impl TokenManager {
         }
 
         // Safety check: verify state on disk again to handle concurrent mid-parse writes
-        if Self::get_account_state_on_disk(path).await == OnDiskAccountState::Disabled {
+        if self.get_account_state_on_disk(&account_id).await == OnDiskAccountState::Disabled {
             tracing::debug!("Account file {:?} is disabled on disk, skipping.", path);
             return Ok(None);
         }
@@ -571,8 +629,6 @@ impl TokenManager {
             );
             return Ok(None);
         }
-
-        let account_id = account["id"].as_str().ok_or("缺少 id 字段")?.to_string();
 
         let email = account["email"]
             .as_str()
@@ -1064,7 +1120,10 @@ impl TokenManager {
         let Some(token) = self.tokens.get(account_id) else {
             return mapped_model.to_string();
         };
-        let account_path = token.account_path.clone();
+        let account_path = match self.resolve_managed_account_path(account_id) {
+            Ok(path) => path,
+            Err(_) => return mapped_model.to_string(),
+        };
         drop(token);
 
         let available_models = match Self::get_available_models_from_json(&account_path) {
@@ -1679,7 +1738,10 @@ impl TokenManager {
                 .cloned()
             {
                 // 检查账号是否可用（未限流、未被配额保护）
-                match Self::get_account_state_on_disk(&preferred_token.account_path).await {
+                match self
+                    .get_account_state_on_disk(&preferred_token.account_id)
+                    .await
+                {
                     OnDiskAccountState::Disabled => {
                         tracing::warn!(
                             "🔒 [FIX #820] Preferred account {} is disabled on disk, purging and falling back",
@@ -1790,47 +1852,56 @@ impl TokenManager {
                                                 // [FIX] 写盘操作后台化：避免阻塞 get_token 的 5s 超时窗口
                                                 // 内存已更新完毕，将磁盘持久化 spawn 到 blocking 线程池
                                                 {
-                                                    let write_path = token.account_path.clone();
-                                                    let access_token =
-                                                        token_response.access_token.clone();
-                                                    let expires_in = token_response.expires_in;
-                                                    let id_token = token_response.id_token.clone();
-                                                    let new_rt =
-                                                        token_response.refresh_token.clone();
-                                                    let write_ts = now + token_response.expires_in;
-                                                    tokio::task::spawn_blocking(move || {
-                                                        let Ok(_lk) = crate::modules::account::lock_account_file_updates() else { return; };
-                                                        let Ok(raw) =
-                                                            std::fs::read_to_string(&write_path)
-                                                        else {
-                                                            return;
-                                                        };
-                                                        let Ok(mut val) = serde_json::from_str::<
-                                                            serde_json::Value,
-                                                        >(
-                                                            &raw
-                                                        ) else {
-                                                            return;
-                                                        };
-                                                        val["token"]["access_token"] =
-                                                            access_token.into();
-                                                        val["token"]["expires_in"] =
-                                                            expires_in.into();
-                                                        val["token"]["expiry_timestamp"] =
-                                                            write_ts.into();
-                                                        if let Some(it) = id_token {
-                                                            val["token"]["id_token"] = it.into();
-                                                        }
-                                                        if let Some(rt) = new_rt {
-                                                            val["token"]["refresh_token"] =
-                                                                rt.into();
-                                                        }
-                                                        if let Ok(s) =
-                                                            serde_json::to_string_pretty(&val)
-                                                        {
-                                                            let _ = std::fs::write(&write_path, s);
-                                                        }
-                                                    });
+                                                    if let Ok(write_path) = self
+                                                        .resolve_managed_account_path(
+                                                            &token.account_id,
+                                                        )
+                                                    {
+                                                        let access_token =
+                                                            token_response.access_token.clone();
+                                                        let expires_in = token_response.expires_in;
+                                                        let id_token =
+                                                            token_response.id_token.clone();
+                                                        let new_rt =
+                                                            token_response.refresh_token.clone();
+                                                        let write_ts =
+                                                            now + token_response.expires_in;
+                                                        tokio::task::spawn_blocking(move || {
+                                                            let Ok(_lk) = crate::modules::account::lock_account_file_updates() else { return; };
+                                                            let Ok(raw) = std::fs::read_to_string(
+                                                                &write_path,
+                                                            ) else {
+                                                                return;
+                                                            };
+                                                            let Ok(mut val) = serde_json::from_str::<
+                                                                serde_json::Value,
+                                                            >(
+                                                                &raw
+                                                            ) else {
+                                                                return;
+                                                            };
+                                                            val["token"]["access_token"] =
+                                                                access_token.into();
+                                                            val["token"]["expires_in"] =
+                                                                expires_in.into();
+                                                            val["token"]["expiry_timestamp"] =
+                                                                write_ts.into();
+                                                            if let Some(it) = id_token {
+                                                                val["token"]["id_token"] =
+                                                                    it.into();
+                                                            }
+                                                            if let Some(rt) = new_rt {
+                                                                val["token"]["refresh_token"] =
+                                                                    rt.into();
+                                                            }
+                                                            if let Ok(s) =
+                                                                serde_json::to_string_pretty(&val)
+                                                            {
+                                                                let _ =
+                                                                    std::fs::write(&write_path, s);
+                                                            }
+                                                        });
+                                                    }
                                                 }
                                             }
                                             Err(e) => {
@@ -1871,24 +1942,32 @@ impl TokenManager {
                                         }
                                         // [FIX] 写盘后台化：project_id 已写入内存，磁盘持久化不阻塞热路径
                                         {
-                                            let write_path = token.account_path.clone();
-                                            let pid_clone = pid.clone();
-                                            tokio::task::spawn_blocking(move || {
-                                                let Ok(_lk) = crate::modules::account::lock_account_file_updates() else { return; };
-                                                let Ok(raw) = std::fs::read_to_string(&write_path)
-                                                else {
-                                                    return;
-                                                };
-                                                let Ok(mut val) =
-                                                    serde_json::from_str::<serde_json::Value>(&raw)
-                                                else {
-                                                    return;
-                                                };
-                                                val["token"]["project_id"] = pid_clone.into();
-                                                if let Ok(s) = serde_json::to_string_pretty(&val) {
-                                                    let _ = std::fs::write(&write_path, s);
-                                                }
-                                            });
+                                            if let Ok(write_path) =
+                                                self.resolve_managed_account_path(&token.account_id)
+                                            {
+                                                let pid_clone = pid.clone();
+                                                tokio::task::spawn_blocking(move || {
+                                                    let Ok(_lk) = crate::modules::account::lock_account_file_updates() else { return; };
+                                                    let Ok(raw) =
+                                                        std::fs::read_to_string(&write_path)
+                                                    else {
+                                                        return;
+                                                    };
+                                                    let Ok(mut val) =
+                                                        serde_json::from_str::<serde_json::Value>(
+                                                            &raw,
+                                                        )
+                                                    else {
+                                                        return;
+                                                    };
+                                                    val["token"]["project_id"] = pid_clone.into();
+                                                    if let Ok(s) =
+                                                        serde_json::to_string_pretty(&val)
+                                                    {
+                                                        let _ = std::fs::write(&write_path, s);
+                                                    }
+                                                });
+                                            }
                                         }
                                         pid
                                     }
@@ -2224,7 +2303,7 @@ impl TokenManager {
 
             // Safety net: avoid selecting an account that has been disabled on disk but still
             // exists in the in-memory snapshot (e.g. stale cache + sticky session binding).
-            match Self::get_account_state_on_disk(&token.account_path).await {
+            match self.get_account_state_on_disk(&token.account_id).await {
                 OnDiskAccountState::Disabled => {
                     tracing::warn!(
                         "Selected account {} is disabled on disk, purging and retrying",
@@ -2293,39 +2372,44 @@ impl TokenManager {
                                 // [FIX] 写盘操作后台化：内存已更新，磁盘持久化 spawn 到 blocking 线程池
                                 // 避免在 get_token 的 5s 超时窗口内因磁盘 I/O 或锁争抢导致超时
                                 {
-                                    let write_path = token.account_path.clone();
-                                    let access_token = token_response.access_token.clone();
-                                    let expires_in = token_response.expires_in;
-                                    let id_token = token_response.id_token.clone();
-                                    let new_rt = token_response.refresh_token.clone();
-                                    let write_ts = now + token_response.expires_in;
-                                    tokio::task::spawn_blocking(move || {
-                                        let Ok(_lk) =
-                                            crate::modules::account::lock_account_file_updates()
-                                        else {
-                                            return;
-                                        };
-                                        let Ok(raw) = std::fs::read_to_string(&write_path) else {
-                                            return;
-                                        };
-                                        let Ok(mut val) =
-                                            serde_json::from_str::<serde_json::Value>(&raw)
-                                        else {
-                                            return;
-                                        };
-                                        val["token"]["access_token"] = access_token.into();
-                                        val["token"]["expires_in"] = expires_in.into();
-                                        val["token"]["expiry_timestamp"] = write_ts.into();
-                                        if let Some(it) = id_token {
-                                            val["token"]["id_token"] = it.into();
-                                        }
-                                        if let Some(rt) = new_rt {
-                                            val["token"]["refresh_token"] = rt.into();
-                                        }
-                                        if let Ok(s) = serde_json::to_string_pretty(&val) {
-                                            let _ = std::fs::write(&write_path, s);
-                                        }
-                                    });
+                                    if let Ok(write_path) =
+                                        self.resolve_managed_account_path(&token.account_id)
+                                    {
+                                        let access_token = token_response.access_token.clone();
+                                        let expires_in = token_response.expires_in;
+                                        let id_token = token_response.id_token.clone();
+                                        let new_rt = token_response.refresh_token.clone();
+                                        let write_ts = now + token_response.expires_in;
+                                        tokio::task::spawn_blocking(move || {
+                                            let Ok(_lk) =
+                                                crate::modules::account::lock_account_file_updates(
+                                                )
+                                            else {
+                                                return;
+                                            };
+                                            let Ok(raw) = std::fs::read_to_string(&write_path)
+                                            else {
+                                                return;
+                                            };
+                                            let Ok(mut val) =
+                                                serde_json::from_str::<serde_json::Value>(&raw)
+                                            else {
+                                                return;
+                                            };
+                                            val["token"]["access_token"] = access_token.into();
+                                            val["token"]["expires_in"] = expires_in.into();
+                                            val["token"]["expiry_timestamp"] = write_ts.into();
+                                            if let Some(it) = id_token {
+                                                val["token"]["id_token"] = it.into();
+                                            }
+                                            if let Some(rt) = new_rt {
+                                                val["token"]["refresh_token"] = rt.into();
+                                            }
+                                            if let Ok(s) = serde_json::to_string_pretty(&val) {
+                                                let _ = std::fs::write(&write_path, s);
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -2466,37 +2550,32 @@ impl TokenManager {
                                     }
                                     // [FIX] 写盘后台化：project_id 已写入内存，磁盘持久化不阻塞热路径
                                     {
-                                        let write_path = self
-                                            .tokens
-                                            .get(&token.account_id)
-                                            .map(|e| e.account_path.clone())
-                                            .unwrap_or_else(|| {
-                                                self.resolved_data_dir()
-                                                    .join("accounts")
-                                                    .join(format!("{}.json", token.account_id))
+                                        if let Ok(write_path) =
+                                            self.resolve_managed_account_path(&token.account_id)
+                                        {
+                                            let pid_clone = pid.clone();
+                                            tokio::task::spawn_blocking(move || {
+                                                let Ok(_lk) =
+                                                    crate::modules::account::lock_account_file_updates(
+                                                    )
+                                                else {
+                                                    return;
+                                                };
+                                                let Ok(raw) = std::fs::read_to_string(&write_path)
+                                                else {
+                                                    return;
+                                                };
+                                                let Ok(mut val) =
+                                                    serde_json::from_str::<serde_json::Value>(&raw)
+                                                else {
+                                                    return;
+                                                };
+                                                val["token"]["project_id"] = pid_clone.into();
+                                                if let Ok(s) = serde_json::to_string_pretty(&val) {
+                                                    let _ = std::fs::write(&write_path, s);
+                                                }
                                             });
-                                        let pid_clone = pid.clone();
-                                        tokio::task::spawn_blocking(move || {
-                                            let Ok(_lk) =
-                                                crate::modules::account::lock_account_file_updates(
-                                                )
-                                            else {
-                                                return;
-                                            };
-                                            let Ok(raw) = std::fs::read_to_string(&write_path)
-                                            else {
-                                                return;
-                                            };
-                                            let Ok(mut val) =
-                                                serde_json::from_str::<serde_json::Value>(&raw)
-                                            else {
-                                                return;
-                                            };
-                                            val["token"]["project_id"] = pid_clone.into();
-                                            if let Ok(s) = serde_json::to_string_pretty(&val) {
-                                                let _ = std::fs::write(&write_path, s);
-                                            }
-                                        });
+                                        }
                                     }
                                     pid
                                 }
@@ -2548,13 +2627,7 @@ impl TokenManager {
     }
 
     async fn disable_account(&self, account_id: &str, reason: &str) -> Result<(), String> {
-        let path = if let Some(entry) = self.tokens.get(account_id) {
-            entry.account_path.clone()
-        } else {
-            self.resolved_data_dir()
-                .join("accounts")
-                .join(format!("{}.json", account_id))
-        };
+        let path = self.resolve_managed_account_path(account_id)?;
 
         let now = chrono::Utc::now().timestamp();
         let reason_owned = reason.to_string();
@@ -2575,12 +2648,7 @@ impl TokenManager {
 
     /// 保存 project_id 到账号文件
     async fn save_project_id(&self, account_id: &str, project_id: &str) -> Result<(), String> {
-        let path = self
-            .tokens
-            .get(account_id)
-            .ok_or("账号不存在")?
-            .account_path
-            .clone();
+        let path = self.resolve_managed_account_path(account_id)?;
         let project_id_owned = project_id.to_string();
         update_account_json(&path, move |content| {
             content["token"]["project_id"] = serde_json::Value::String(project_id_owned);
@@ -2597,12 +2665,7 @@ impl TokenManager {
         account_id: &str,
         token_response: &crate::modules::oauth::TokenResponse,
     ) -> Result<(), String> {
-        let path = self
-            .tokens
-            .get(account_id)
-            .ok_or("账号不存在")?
-            .account_path
-            .clone();
+        let path = self.resolve_managed_account_path(account_id)?;
         let now = chrono::Utc::now().timestamp();
         let access_token = token_response.access_token.clone();
         let expires_in = token_response.expires_in;
@@ -2820,10 +2883,9 @@ impl TokenManager {
     }
 
     fn clear_all_persisted_live_limits(&self, account_id: &str) -> bool {
-        let path = self
-            .data_dir
-            .join("accounts")
-            .join(format!("{}.json", account_id));
+        let Ok(path) = self.resolve_managed_account_path(account_id) else {
+            return false;
+        };
         let Ok(_account_write) = crate::modules::account::lock_account_file_updates() else {
             return false;
         };
@@ -2931,10 +2993,7 @@ impl TokenManager {
     /// - `account_id`: 账号 ID（用于查找账号文件）
     pub fn get_quota_reset_time(&self, account_id: &str) -> Option<String> {
         // 直接用 account_id 查找账号文件（文件名是 {account_id}.json）
-        let account_path = self
-            .data_dir
-            .join("accounts")
-            .join(format!("{}.json", account_id));
+        let account_path = self.resolve_managed_account_path(account_id).ok()?;
 
         let content = std::fs::read_to_string(&account_path).ok()?;
         let account: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -3430,12 +3489,8 @@ impl TokenManager {
             return;
         };
 
-        let path = if let Some(entry) = self.tokens.get(account_id) {
-            entry.account_path.clone()
-        } else {
-            self.resolved_data_dir()
-                .join("accounts")
-                .join(format!("{}.json", account_id))
+        let Ok(path) = self.resolve_managed_account_path(account_id) else {
+            return;
         };
 
         let Ok(raw) = std::fs::read_to_string(&path) else {
@@ -3481,12 +3536,8 @@ impl TokenManager {
         let model_key = crate::proxy::common::model_mapping::normalize_to_standard_id(raw_model)
             .unwrap_or_else(|| raw_model.to_string());
 
-        let path = if let Some(entry) = self.tokens.get(account_id) {
-            entry.account_path.clone()
-        } else {
-            self.resolved_data_dir()
-                .join("accounts")
-                .join(format!("{}.json", account_id))
+        let Ok(path) = self.resolve_managed_account_path(account_id) else {
+            return;
         };
 
         let Ok(_account_write) = crate::modules::account::lock_account_file_updates() else {
@@ -3903,7 +3954,10 @@ impl TokenManager {
             // Keep the raw quota model IDs for /v1/models discovery. `model_quotas`
             // intentionally stores normalized protection buckets (e.g. gemini-3-flash),
             // but clients need concrete usable IDs such as gemini-3-flash-agent.
-            if let Some(raw_models) = Self::get_available_models_from_json(&token.account_path) {
+            let Ok(account_path) = self.resolve_managed_account_path(&token.account_id) else {
+                continue;
+            };
+            if let Some(raw_models) = Self::get_available_models_from_json(&account_path) {
                 for model_id in raw_models {
                     all_models.insert(model_id);
                 }
@@ -3949,6 +4003,8 @@ impl TokenManager {
         block_until: i64,
         reason: &str,
     ) -> Result<(), String> {
+        let path = self.resolve_managed_account_path(account_id)?;
+
         // 1. Update memory
         if let Some(mut token) = self.tokens.get_mut(account_id) {
             token.validation_blocked = true;
@@ -3956,14 +4012,6 @@ impl TokenManager {
         }
 
         // 2. Persist to disk
-        let path = self
-            .data_dir
-            .join("accounts")
-            .join(format!("{}.json", account_id));
-        if !path.exists() {
-            return Err(format!("Account file not found: {:?}", path));
-        }
-
         // [NEW] 尝试从消息中提取验证链接 (#1522)
         let extracted_url = if let Ok(parsed_json) =
             serde_json::from_str::<serde_json::Value>(reason)
@@ -4832,6 +4880,85 @@ mod tests {
         assert!(collected_models.contains("gemini-3-flash"));
 
         let _ = std::fs::remove_dir_all(&tmp_root);
+    }
+
+    #[tokio::test]
+    async fn task_path_boundary_stale_cached_account_path_fails_closed_and_skips_models() {
+        let _data_dir = crate::proxy::monitor::prompt_log_tests::TestDataDir::new();
+        let tmp_root = crate::modules::account::get_data_dir().unwrap();
+        let accounts_dir = tmp_root.join("accounts");
+        std::fs::create_dir_all(&accounts_dir).unwrap();
+
+        let now = chrono::Utc::now().timestamp();
+        let managed_path = accounts_dir.join("acc1.json");
+        let managed_account = serde_json::json!({
+            "id": "acc1",
+            "email": "managed@example.com",
+            "token": {
+                "access_token": "managed-access",
+                "refresh_token": "managed-refresh",
+                "expires_in": 3600,
+                "expiry_timestamp": now + 3600
+            },
+            "quota": {
+                "models": [{ "name": "managed-model", "percentage": 88 }]
+            },
+            "disabled": false,
+            "proxy_disabled": false,
+            "created_at": now,
+            "last_used": now
+        });
+        std::fs::write(&managed_path, managed_account.to_string()).unwrap();
+
+        let stale = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            stale.path(),
+            serde_json::json!({
+                "disabled": false,
+                "quota": { "models": [{ "name": "stale-external-model", "percentage": 88 }] }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let manager = TokenManager::new(tmp_root.clone());
+        manager.load_accounts().await.unwrap();
+        manager.tokens.get_mut("acc1").unwrap().account_path = stale.path().to_path_buf();
+
+        assert_eq!(
+            manager.get_account_state_on_disk("acc1").await,
+            OnDiskAccountState::Enabled
+        );
+        let managed_models = manager.get_all_collected_models();
+        assert!(managed_models.contains("managed-model"));
+        assert!(!managed_models.contains("stale-external-model"));
+
+        std::fs::remove_file(&managed_path).unwrap();
+        assert_eq!(
+            manager.get_account_state_on_disk("acc1").await,
+            OnDiskAccountState::Disabled
+        );
+        assert!(!manager.get_all_collected_models().contains("managed-model"));
+    }
+
+    #[tokio::test]
+    async fn task_path_boundary_rejects_json_id_filename_mismatch() {
+        let _data_dir = crate::proxy::monitor::prompt_log_tests::TestDataDir::new();
+        let tmp_root = crate::modules::account::get_data_dir().unwrap();
+        let accounts_dir = tmp_root.join("accounts");
+        std::fs::create_dir_all(&accounts_dir).unwrap();
+
+        std::fs::write(accounts_dir.join("acc1.json"), r#"{"id":"acc1"}"#).unwrap();
+        let mismatched_path = accounts_dir.join("other.json");
+        std::fs::write(&mismatched_path, r#"{"id":"acc1"}"#).unwrap();
+
+        let manager = TokenManager::new(tmp_root.clone());
+        let error = manager
+            .load_single_account(&mismatched_path)
+            .await
+            .unwrap_err();
+        assert!(error.contains("账号 ID 与固定 accounts 目录中的文件不匹配"));
+        assert!(manager.tokens.is_empty());
     }
 
     #[tokio::test]
