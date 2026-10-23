@@ -306,6 +306,17 @@
 
 > 本輪 11 項均已逐項讀取；在 strict 重跑僅顯示這些固定項目後，候選 PR／issue watermark 才分別由 `#3714`／`#3722` 推進至 `#3725`／`#3733`。此水位只表示覆核完成，絕不表示上述採用候選或上游 beta patch 已進入 fork。
 
+### 0.19 2026-10-23 新增 Issue #3734／#3735（本輪候選）
+
+- **來源與界線**：上游僅讀；兩份完整 issue API 原文與留言快照保存於 `checkpoint-tailwind4-braces/upstream-3735-20261023/issue-{3734,3735}.json`、`issue-{3734,3735}-comments.json`。本輪未呼叫 provider、未寫入模型目錄，也未採用上游 development branch 的未定版修復。
+
+| 項目 | 判定 | 實際差異、風險與重新開案條件 |
+|---|---|---|
+| Issue #3734 | 監看／不硬編模型淘汰 | 上游 maintainer 公告未來會淘汰 `<3.8` 舊模型、`gemini-3.1-pro` 與部分 Gemini/GPT 型號，但沒有 release SHA、正式 catalog、截止日期或 provider response。fork `modules/quota.rs:431-434` 已明定 `fetchAvailableModels` 對 free/Pro 都回傳同一全量目錄，不能把它當帳號 capability；`model_specs.rs` 仍有 3.x alias／tier 規則。未經授權的名稱刪除會破壞 custom alias、既有設定及 provider 實際仍可用的模型。只有取得版本化、去敏的官方 catalog／404 contract，以及 custom alias precedence、冷啟動／stale entry、model-list 與未知模型 fallback fixture 後，才以獨立 catalog 批次評估。 |
+| Issue #3735 | 延後／需可驗證的 Argon provider 契約 | issue 原文把可見 thought 輸出歸因於 `thinkingBudget`／`thinkingLevel` 組合；留言稱 upstream development branch 已改為 level-only，但沒有可採的 commit SHA 或可公開 provider 契約。fork 現行 `pipeline/inbound.rs:467-534` 在 Client mode 已互斥輸出正數 budget 或 level、`551-583` 在 Gateway mode 依既有 specs 注入；對 `src-tauri/src` 與 `src-tauri/resources` 的 `argon` 搜尋無命中，故不能宣稱已支援其模型或把 `-1`／`HIGH`／`10001` 硬編成通用規則。須先取得授權且遮罩的 Argon capability snapshot（model ID、tier、允許欄位與 400 contract），再以三協定的 high/medium/low/base、budget/level mutual exclusion、stream/non-stream visible-thought 與未支援模型 fallback fixture 評估；LOW/MEDIUM 靜默行為不可被擅自升級為 HIGH。 |
+
+> 兩項均為已讀治理結論，**不表示模型淘汰、Gemini 4 Argon 支援或 thinking 修復已進入 fork**。strict 重跑只確認這兩項且未出現額外未審項目後，候選 issue watermark 才由 `#3733` 推進至 `#3735`；release／commit／PR 水位不變。
+
 ### 附錄 A. 2026-10-19 歷史停點：coverage 與第一批 12 commits（保留歷史證據，計數已過期）
 
 - **範圍**：`b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b`；162 commits、161 files、53,124 additions／26,597 deletions。完整 SHA coverage、每筆檔案／patch 的可重現 Git 指令、既有 exact-patch 證據映射，保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
