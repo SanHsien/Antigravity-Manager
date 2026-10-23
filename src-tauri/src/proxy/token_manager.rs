@@ -1017,8 +1017,15 @@ impl TokenManager {
         None
     }
 
-    fn get_available_models_from_json(account_path: &PathBuf) -> Option<HashSet<String>> {
-        let content = std::fs::read_to_string(account_path).ok()?;
+    fn get_available_models_from_managed_account(
+        &self,
+        account_id: &str,
+    ) -> Option<HashSet<String>> {
+        let content = crate::utils::db_import_path::read_managed_account_file(
+            &self.resolved_data_dir().join("accounts"),
+            account_id,
+        )
+        .ok()?;
         let account: serde_json::Value = serde_json::from_str(&content).ok()?;
         let models = account.get("quota")?.get("models")?.as_array()?;
         let mut result = HashSet::new();
@@ -1120,13 +1127,9 @@ impl TokenManager {
         let Some(token) = self.tokens.get(account_id) else {
             return mapped_model.to_string();
         };
-        let account_path = match self.resolve_managed_account_path(account_id) {
-            Ok(path) => path,
-            Err(_) => return mapped_model.to_string(),
-        };
         drop(token);
 
-        let available_models = match Self::get_available_models_from_json(&account_path) {
+        let available_models = match self.get_available_models_from_managed_account(account_id) {
             Some(models) if !models.is_empty() => models,
             _ => return mapped_model.to_string(),
         };
@@ -3950,14 +3953,12 @@ impl TokenManager {
         let mut all_models = std::collections::HashSet::new();
         for entry in self.tokens.iter() {
             let token = entry.value();
+            let account_id = token.account_id.clone();
 
             // Keep the raw quota model IDs for /v1/models discovery. `model_quotas`
             // intentionally stores normalized protection buckets (e.g. gemini-3-flash),
             // but clients need concrete usable IDs such as gemini-3-flash-agent.
-            let Ok(account_path) = self.resolve_managed_account_path(&token.account_id) else {
-                continue;
-            };
-            if let Some(raw_models) = Self::get_available_models_from_json(&account_path) {
+            if let Some(raw_models) = self.get_available_models_from_managed_account(&account_id) {
                 for model_id in raw_models {
                     all_models.insert(model_id);
                 }

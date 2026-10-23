@@ -17,7 +17,7 @@ pub fn resolve_custom_db_import_path(
 
     // Return an existing ordinary directory entry, never a path constructed from request data.
     // Rechecking the canonical parent also rejects a symlink or Windows reparse-point escape.
-    for entry in std::fs::read_dir(import_dir)
+    for entry in std::fs::read_dir(&canonical_import_dir)
         .map_err(|_| "Custom database import directory is unavailable".to_string())?
     {
         let entry =
@@ -67,9 +67,23 @@ pub fn resolve_account_file_path(
         .map_err(|_| "Account file is not available in the accounts directory".to_string())
 }
 
+/// Read an account file only after resolving its ID through the managed directory entry boundary.
+///
+/// Callers that only need account JSON must not retain or reopen a cached path.
+pub fn read_managed_account_file(
+    accounts_dir: &std::path::Path,
+    account_id: &str,
+) -> Result<String, String> {
+    let account_path = resolve_account_file_path(accounts_dir, account_id)?;
+    std::fs::read_to_string(account_path)
+        .map_err(|_| "Account file is not available in the accounts directory".to_string())
+}
+
 #[cfg(test)]
 mod custom_db_import_path_tests {
-    use super::{resolve_account_file_path, resolve_custom_db_import_path};
+    use super::{
+        read_managed_account_file, resolve_account_file_path, resolve_custom_db_import_path,
+    };
 
     #[test]
     fn account_id_selects_only_a_regular_file_inside_accounts_directory() {
@@ -110,6 +124,23 @@ mod custom_db_import_path_tests {
         let selected = resolve_account_file_path(&accounts, "acc1").unwrap();
         std::fs::write(&selected, b"updated").unwrap();
         assert_eq!(std::fs::read(&selected).unwrap(), b"updated");
+    }
+
+    #[test]
+    fn path_boundary_managed_account_read_rejects_non_matching_ids_and_reads_exact_entry() {
+        let root = tempfile::tempdir().unwrap();
+        let accounts = root.path().join("accounts");
+        std::fs::create_dir(&accounts).unwrap();
+        std::fs::write(accounts.join("acc1.json"), b"managed").unwrap();
+        std::fs::write(root.path().join("outside.json"), b"outside").unwrap();
+
+        assert_eq!(
+            read_managed_account_file(&accounts, "acc1").unwrap(),
+            "managed"
+        );
+        for invalid in ["acc1.json", "../outside", "..\\outside", "missing"] {
+            assert!(read_managed_account_file(&accounts, invalid).is_err());
+        }
     }
 
     #[cfg(unix)]
