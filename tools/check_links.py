@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """檢查本 fork overlay 文件之間的相對連結。
 
-驗證 FORK.md、NOTICE.md、REVIEW.md、CLAUDE.md、SECURITY.md、
+驗證 FORK.md、NOTICE.md、REVIEW.md、SECURITY.md、
 CONTRIBUTING.md、AGENTS.md、README.md、README_EN.md 與 docs/ 內文件的相對連結。
 
     python tools/check_links.py
