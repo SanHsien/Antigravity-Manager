@@ -1017,10 +1017,24 @@ impl TokenManager {
         None
     }
 
-    fn get_available_models_from_json(account_path: &PathBuf) -> Option<HashSet<String>> {
-        let content = std::fs::read_to_string(account_path).ok()?;
-        let account: serde_json::Value = serde_json::from_str(&content).ok()?;
-        let models = account.get("quota")?.get("models")?.as_array()?;
+    fn get_available_models_from_managed_account(
+        &self,
+        account_id: &str,
+    ) -> Result<HashSet<String>, ()> {
+        let content = crate::utils::db_import_path::read_managed_account_file(
+            &self.resolved_data_dir().join("accounts"),
+            account_id,
+        )
+        .map_err(|_| ())?;
+        let account: serde_json::Value = serde_json::from_str(&content).map_err(|_| ())?;
+        if account.get("id").and_then(|id| id.as_str()) != Some(account_id) {
+            return Err(());
+        }
+        let models = account
+            .get("quota")
+            .and_then(|quota| quota.get("models"))
+            .and_then(|models| models.as_array())
+            .ok_or(())?;
         let mut result = HashSet::new();
         for model in models {
             if let Some(name) = model.get("name").and_then(|v| v.as_str()) {
@@ -1030,7 +1044,7 @@ impl TokenManager {
                 }
             }
         }
-        Some(result)
+        Ok(result)
     }
 
     fn build_dynamic_model_candidates(model_name: &str) -> Option<Vec<String>> {
@@ -1120,14 +1134,10 @@ impl TokenManager {
         let Some(token) = self.tokens.get(account_id) else {
             return mapped_model.to_string();
         };
-        let account_path = match self.resolve_managed_account_path(account_id) {
-            Ok(path) => path,
-            Err(_) => return mapped_model.to_string(),
-        };
         drop(token);
 
-        let available_models = match Self::get_available_models_from_json(&account_path) {
-            Some(models) if !models.is_empty() => models,
+        let available_models = match self.get_available_models_from_managed_account(account_id) {
+            Ok(models) if !models.is_empty() => models,
             _ => return mapped_model.to_string(),
         };
 
@@ -3950,17 +3960,18 @@ impl TokenManager {
         let mut all_models = std::collections::HashSet::new();
         for entry in self.tokens.iter() {
             let token = entry.value();
+            let account_id = token.account_id.clone();
 
             // Keep the raw quota model IDs for /v1/models discovery. `model_quotas`
             // intentionally stores normalized protection buckets (e.g. gemini-3-flash),
             // but clients need concrete usable IDs such as gemini-3-flash-agent.
-            let Ok(account_path) = self.resolve_managed_account_path(&token.account_id) else {
+            let Ok(raw_models) = self.get_available_models_from_managed_account(&account_id) else {
+                // A missing, malformed, or ID-mismatched managed file means this token's
+                // cached model data is no longer authoritative; fail closed for discovery.
                 continue;
             };
-            if let Some(raw_models) = Self::get_available_models_from_json(&account_path) {
-                for model_id in raw_models {
-                    all_models.insert(model_id);
-                }
+            for model_id in raw_models {
+                all_models.insert(model_id);
             }
 
             // Also keep normalized bucket IDs for existing quota/protection behavior.
@@ -4932,6 +4943,15 @@ mod tests {
         let managed_models = manager.get_all_collected_models();
         assert!(managed_models.contains("managed-model"));
         assert!(!managed_models.contains("stale-external-model"));
+
+        let mismatched_account = serde_json::json!({
+            "id": "other-account",
+            "quota": { "models": [{ "name": "mismatched-managed-model", "percentage": 88 }] }
+        });
+        std::fs::write(&managed_path, mismatched_account.to_string()).unwrap();
+        let mismatched_models = manager.get_all_collected_models();
+        assert!(!mismatched_models.contains("managed-model"));
+        assert!(!mismatched_models.contains("mismatched-managed-model"));
 
         std::fs::remove_file(&managed_path).unwrap();
         assert_eq!(
