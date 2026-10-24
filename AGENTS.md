@@ -39,6 +39,7 @@
     - `cd src-tauri && cargo clippy --all-targets --all-features` (comprehensive Rust gate, rather than running redundant `cargo check`)
     - `npm run build` (when `src/` or frontend configs changed)
     - Rely on CI for full-app compilation (`tauri build`), reserving local checks for fast feedback.
+  - **Frontend Dev Loop**: Use `npm run dev` for local frontend development and `npm run build` to verify the production bundle.
 - **Release Channels & Discipline**:
   - **Release Channel Separation**:
     - **Stable Releases (正式版)**: Exclusively on `main`. Deploys official production packages, updates Docker/GitHub `latest` tags, and services automatic update channels.
