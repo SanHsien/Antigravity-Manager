@@ -17,7 +17,7 @@
 3. **上游水位雙軌追蹤**：
    建立 `tools/upstream_baseline.json` 與 `tools/check_upstream_updates.py`，完整涵蓋 commit、PR 與 issue 三個維度的水位監控與每週 GitHub Actions 定時檢查。
 4. **AI 治理與多 Agent 規範**：
-   落地 `AGENTS.md` 單一真相源，並提供 `CLAUDE.md`、`GEMINI.md` 以及 `.cursor/rules/no-upstream-pr.mdc`，防止 AI 代理人誤向上游提交 PR 或推送分支。
+   落地 `AGENTS.md` 單一真相源，並提供 `GEMINI.md` 以及 `.cursor/rules/no-upstream-pr.mdc`，防止 AI 代理人誤向上游提交 PR 或推送分支。
 5. **在地化與文檔治理**：
    提供繁體中文指引與治理文件，並維持文件相對連結正確性。
 
@@ -30,7 +30,7 @@
 | **預設治理規範** | 增加 `FORK.md`、`NOTICE.md`、`REVIEW.md`、`SECURITY.md`、`CONTRIBUTING.md` | 僅上游原始說明與規範 |
 | **一鍵式驗證 Gate** | `tools/dev_check.ps1`（前端建置、工具編譯、連結檢查、上游巡檢） | 無單一 PowerShell 一鍵門禁 |
 | **上游追蹤水位** | `tools/upstream_baseline.json` + `tools/check_upstream_updates.py` + 每週 Actions | 無 |
-| **AI 代理規範** | `AGENTS.md`（疊加維護 overlay）、`CLAUDE.md`、`GEMINI.md`、`.cursor/rules/no-upstream-pr.mdc` | 僅上游通用規範 |
+| **AI 代理規範** | `AGENTS.md`（疊加維護 overlay）、`GEMINI.md`、`.cursor/rules/no-upstream-pr.mdc` | 僅上游通用規範 |
 | **連結檢查** | `tools/check_links.py` | 無 |
 | **GitHub Pages** | 不部署，`deploy-pages.yml` 已移除 | 有 `deploy-pages.yml`（發布 `web_site/` 到 `lbjlaq.github.io`） |
 | **`package.json` devDependencies** | 移除 `vitepress`（見下方「相依套件偏移」） | 保留 `vitepress` |
