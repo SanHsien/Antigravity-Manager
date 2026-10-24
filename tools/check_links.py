@@ -28,7 +28,6 @@ FORK_DOCUMENTS = [
     ROOT / "FORK.md",
     ROOT / "NOTICE.md",
     ROOT / "REVIEW.md",
-    ROOT / "CLAUDE.md",
     ROOT / "GEMINI.md",
     ROOT / "SECURITY.md",
     ROOT / "CONTRIBUTING.md",
