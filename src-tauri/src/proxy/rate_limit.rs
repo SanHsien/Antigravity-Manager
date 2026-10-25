@@ -2,6 +2,10 @@ use dashmap::DashMap;
 use regex::Regex;
 use std::time::{Duration, SystemTime};
 
+// Baseline 解析器的 "resets in" 文字样式，只编译一次。
+static RE_RESETS_IN_BASELINE: once_cell::sync::Lazy<Regex> =
+    once_cell::sync::Lazy::new(|| Regex::new(r"(?i)resets in ([^.,;\]\n]+)").unwrap());
+
 const MAX_LOCKOUT_SECONDS: u64 = 300;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -481,9 +485,16 @@ impl RateLimitTracker {
                 crate::proxy::upstream::retry::parse_retry_delay(body, retry_after_header)
                     .map(|delay_ms| delay_ms.saturating_add(999) / 1000)
             }
-            RetryParserMode::Baseline => retry_after_header
-                .and_then(|value| value.parse::<u64>().ok())
-                .or_else(|| self.parse_retry_time_from_body_baseline(body)),
+            RetryParserMode::Baseline => {
+                // Retry-After 与本文延迟取较大者，避免短标头（如 8 秒）盖过本文的长配额重置倒数。
+                let header_sec = retry_after_header.and_then(|value| value.parse::<u64>().ok());
+                let body_sec = self.parse_retry_time_from_body_baseline(body);
+                match (header_sec, body_sec) {
+                    (Some(header), Some(body)) => Some(header.max(body)),
+                    (Some(delay), None) | (None, Some(delay)) => Some(delay),
+                    (None, None) => None,
+                }
+            }
         };
         let has_explicit_retry_time = retry_after_sec.is_some();
         let preserve_explicit_quota = parser_mode == RetryParserMode::Current
@@ -650,20 +661,25 @@ impl RateLimitTracker {
         let trimmed = body.trim();
         if trimmed.starts_with('{') || trimmed.starts_with('[') {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                if let Some(reason_str) = json
+                // 遍历 details 数组中的所有对象：ErrorInfo 不一定位于 index 0，
+                // 只看第一项会漏判（例如 index 0 是 Help / RetryInfo）。
+                if let Some(details) = json
                     .get("error")
                     .and_then(|e| e.get("details"))
                     .and_then(|d| d.as_array())
-                    .and_then(|a| a.get(0))
-                    .and_then(|o| o.get("reason"))
-                    .and_then(|v| v.as_str())
                 {
-                    return match reason_str {
-                        "QUOTA_EXHAUSTED" => RateLimitReason::QuotaExhausted,
-                        "RATE_LIMIT_EXCEEDED" => RateLimitReason::RateLimitExceeded,
-                        "MODEL_CAPACITY_EXHAUSTED" => RateLimitReason::ModelCapacityExhausted,
-                        _ => RateLimitReason::Unknown,
-                    };
+                    for item in details {
+                        if let Some(reason_str) = item.get("reason").and_then(|v| v.as_str()) {
+                            match reason_str {
+                                "QUOTA_EXHAUSTED" => return RateLimitReason::QuotaExhausted,
+                                "RATE_LIMIT_EXCEEDED" => return RateLimitReason::RateLimitExceeded,
+                                "MODEL_CAPACITY_EXHAUSTED" => {
+                                    return RateLimitReason::ModelCapacityExhausted
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
                 // [NEW] 尝试从 message 字段进行文本匹配（防止 missed reason）
                 if let Some(msg) = json
@@ -746,17 +762,21 @@ impl RateLimitTracker {
         let trimmed = body.trim();
         if trimmed.starts_with('{') || trimmed.starts_with('[') {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                if let Some(delay) = json
+                if let Some(details) = json
                     .get("error")
                     .and_then(|error| error.get("details"))
                     .and_then(|details| details.as_array())
-                    .and_then(|details| details.first())
-                    .and_then(|detail| detail.get("metadata"))
-                    .and_then(|metadata| metadata.get("quotaResetDelay"))
-                    .and_then(|value| value.as_str())
-                    .and_then(|value| self.parse_duration_string_baseline(value))
                 {
-                    return Some(delay);
+                    // quotaResetDelay 不一定在 details[0]，取第一个可解析的项。
+                    if let Some(delay) = details.iter().find_map(|detail| {
+                        detail
+                            .get("metadata")
+                            .and_then(|metadata| metadata.get("quotaResetDelay"))
+                            .and_then(|value| value.as_str())
+                            .and_then(|value| self.parse_duration_string_baseline(value))
+                    }) {
+                        return Some(delay);
+                    }
                 }
                 if let Some(retry) = json
                     .get("error")
@@ -766,6 +786,15 @@ impl RateLimitTracker {
                     return Some(retry);
                 }
             }
+        }
+
+        // "Individual quota reached. Resets in 1h19m6s." 之类的纯文字配额重置倒数。
+        if let Some(delay) = RE_RESETS_IN_BASELINE
+            .captures(body)
+            .and_then(|caps| caps.get(1))
+            .and_then(|m| self.parse_duration_string_baseline(m.as_str()))
+        {
+            return Some(delay);
         }
 
         for pattern in [
@@ -1268,5 +1297,118 @@ mod tests {
         assert!(tracker.is_rate_limited("acc_text", Some("gemini-2.5-pro")));
         // 归一化标准 ID 也能探测到该锁定
         assert!(tracker.is_rate_limited("acc_text", Some("gemini-3-pro-high")));
+    }
+
+    fn multi_details_quota_body() -> &'static str {
+        r#"{
+            "error": {
+                "code": 429,
+                "message": "Resource has been exhausted",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "domain": "cloudcode-pa.googleapis.com"
+                    },
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "QUOTA_EXHAUSTED",
+                        "metadata": {"quotaResetDelay": "3600s"}
+                    }
+                ]
+            }
+        }"#
+    }
+
+    #[test]
+    fn task_baseline_scans_all_details_for_quota_reset_delay() {
+        let tracker = RateLimitTracker::new();
+        assert_eq!(
+            tracker.parse_retry_time_from_body_baseline(multi_details_quota_body()),
+            Some(3600)
+        );
+    }
+
+    #[test]
+    fn task_baseline_retry_after_header_does_not_shadow_longer_body_delay() {
+        let tracker = RateLimitTracker::new();
+        let info = tracker
+            .parse_from_error_baseline(
+                "acc-baseline-max",
+                429,
+                Some("8"),
+                multi_details_quota_body(),
+                None,
+                &[60, 300, 7200],
+            )
+            .unwrap();
+        assert_eq!(info.retry_after_sec, 3600);
+
+        // 标头较长时仍以标头为准。
+        let longer_header = tracker
+            .parse_from_error_baseline(
+                "acc-baseline-header",
+                429,
+                Some("5400"),
+                multi_details_quota_body(),
+                None,
+                &[60, 300, 7200],
+            )
+            .unwrap();
+        assert_eq!(longer_header.retry_after_sec, 5400);
+
+        // 只有标头时维持原行为。
+        let header_only = tracker
+            .parse_from_error_baseline("acc-baseline-only", 429, Some("30"), "", None, &[60])
+            .unwrap();
+        assert_eq!(header_only.retry_after_sec, 30);
+    }
+
+    #[test]
+    fn task_baseline_parses_resets_in_text() {
+        let tracker = RateLimitTracker::new();
+        let body = "Individual quota reached. Resets in 1h19m6s.";
+        assert_eq!(
+            tracker.parse_retry_time_from_body_baseline(body),
+            Some(4746)
+        );
+        assert_eq!(
+            tracker.parse_retry_time_from_body_baseline("Resets in soon."),
+            None
+        );
+    }
+
+    #[test]
+    fn task_current_retry_after_header_does_not_shadow_resets_in_text() {
+        let tracker = RateLimitTracker::new();
+        let info = tracker
+            .parse_from_error(
+                "acc-current-resets-in",
+                429,
+                Some("8"),
+                "Individual quota reached. Resets in 1h19m6s.",
+                None,
+                &[60, 300, 7200],
+            )
+            .unwrap();
+        assert_eq!(info.retry_after_sec, 4746);
+    }
+
+    #[test]
+    fn task_parse_rate_limit_reason_scans_all_details() {
+        let tracker = RateLimitTracker::new();
+        assert_eq!(
+            tracker.parse_rate_limit_reason(multi_details_quota_body()),
+            RateLimitReason::QuotaExhausted
+        );
+
+        // details[0] 是 RetryInfo，ErrorInfo 在后面。
+        let capacity_body = r#"{"error":{"details":[
+            {"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"3s"},
+            {"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"MODEL_CAPACITY_EXHAUSTED"}
+        ]}}"#;
+        assert_eq!(
+            tracker.parse_rate_limit_reason(capacity_body),
+            RateLimitReason::ModelCapacityExhausted
+        );
     }
 }

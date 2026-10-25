@@ -36,7 +36,9 @@ fn classify_rate_limit_reason(error_body: &str) -> crate::proxy::rate_limit::Rat
         || body.contains("quota limit")
         || body.contains("per day")
         || body.contains("daily quota")
-        || body.contains("credits");
+        || body.contains("credits")
+        || body.contains("individual quota")
+        || body.contains("resets in");
 
     if body.contains("model_capacity") {
         RateLimitReason::ModelCapacityExhausted
@@ -4135,6 +4137,21 @@ mod tests {
     use super::*;
     use std::cmp::Ordering;
     use std::time::Duration;
+
+    #[test]
+    fn classify_rate_limit_reason_recognizes_individual_quota_reset_text() {
+        use crate::proxy::rate_limit::RateLimitReason;
+
+        assert_eq!(
+            classify_rate_limit_reason("Individual quota reached. Resets in 1h19m6s."),
+            RateLimitReason::QuotaExhausted
+        );
+        // 分钟级限速文字仍优先判为速率限制。
+        assert_eq!(
+            classify_rate_limit_reason("Rate limit exceeded. Resets in 10s."),
+            RateLimitReason::RateLimitExceeded
+        );
+    }
 
     fn weekly_quota_account(now: i64) -> serde_json::Value {
         let reset = |seconds| {

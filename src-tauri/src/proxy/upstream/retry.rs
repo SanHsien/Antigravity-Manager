@@ -13,6 +13,7 @@ static RE_TEXT_DELAY_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
         Regex::new(r"(?i)quota will reset after ([^.,;\]\n]+)").unwrap(),
         Regex::new(r"(?i)quota will reset in ([^.,;\]\n]+)").unwrap(),
+        Regex::new(r"(?i)resets in ([^.,;\]\n]+)").unwrap(),
         Regex::new(r"(?i)retry after ([^.,;\]\n]+)").unwrap(),
         Regex::new(r"(?i)reset after ([^.,;\]\n]+)").unwrap(),
         Regex::new(r"(?i)try again in ([^.,;\]\n]+)").unwrap(),
@@ -109,43 +110,56 @@ pub fn parse_retry_delay_with_source(
     retry_after: Option<&str>,
 ) -> Option<ParsedRetryDelay> {
     // 1. Retry-After delta-seconds，也兼容已有的 duration 字符串来源
-    if let Some(value) = retry_after.map(str::trim).filter(|value| !value.is_empty()) {
-        if let Ok(seconds) = value.parse::<u64>() {
-            return seconds.checked_mul(1000).map(|raw_ms| ParsedRetryDelay {
-                raw_ms,
-                source: RetryDelaySource::Structured,
-            });
-        }
-        if let Some(delay) = parse_duration_ms(value) {
-            return Some(ParsedRetryDelay {
-                raw_ms: delay,
-                source: RetryDelaySource::Structured,
-            });
-        }
-    }
+    let header_delay = retry_after
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| {
+            if let Ok(seconds) = value.parse::<u64>() {
+                seconds.checked_mul(1000)
+            } else {
+                parse_duration_ms(value)
+            }
+        })
+        .map(|raw_ms| ParsedRetryDelay {
+            raw_ms,
+            source: RetryDelaySource::Structured,
+        });
 
     // 2. 结构化 JSON 字段优先，避免把 JSON 中的 retryDelay 当作响应文字。
-    if let Ok(json) = serde_json::from_str(error_text) {
-        if let Some(raw_ms) = extract_structured_delay_recursive(&json, 0, false) {
-            return Some(ParsedRetryDelay {
-                raw_ms,
-                source: RetryDelaySource::Structured,
-            });
-        }
-    }
+    let body_structured_delay = serde_json::from_str::<serde_json::Value>(error_text)
+        .ok()
+        .and_then(|json| extract_structured_delay_recursive(&json, 0, false))
+        .map(|raw_ms| ParsedRetryDelay {
+            raw_ms,
+            source: RetryDelaySource::Structured,
+        });
 
-    // 3. 仅从响应文字中提取自然语言时长。
-    for re in RE_TEXT_DELAY_PATTERNS.iter() {
-        if let Some(cap) = re.captures(error_text) {
-            if let Some(delay) = parse_duration_ms(&cap[1]) {
-                return Some(ParsedRetryDelay {
-                    raw_ms: delay,
+    // 3. 结构化字段缺失时，才从响应文字中提取自然语言时长。
+    let body_delay = body_structured_delay.or_else(|| {
+        RE_TEXT_DELAY_PATTERNS.iter().find_map(|re| {
+            re.captures(error_text)
+                .and_then(|cap| parse_duration_ms(&cap[1]))
+                .map(|raw_ms| ParsedRetryDelay {
+                    raw_ms,
                     source: RetryDelaySource::ResponseText,
-                });
+                })
+        })
+    });
+
+    // 4. Retry-After 与响应本文的延迟取较大者：上游前门可能回传很短的
+    //    Retry-After（例如 8 秒），而本文才带真实的配额重置倒数（例如数小时）。
+    //    只取标头会让账号提早解锁并连环 429。两者相等时保留本文来源。
+    match (header_delay, body_delay) {
+        (Some(header), Some(body)) => {
+            if body.raw_ms >= header.raw_ms {
+                Some(body)
+            } else {
+                Some(header)
             }
         }
+        (Some(delay), None) | (None, Some(delay)) => Some(delay),
+        (None, None) => None,
     }
-    None
 }
 
 /// Preserve the pre-state-machine delay parsing used by the Claude handler.
@@ -310,5 +324,45 @@ mod tests {
         let response_text = parse_retry_delay_with_source("quota reset after 3s", None).unwrap();
         assert_eq!(response_text.source, RetryDelaySource::ResponseText);
         assert_eq!(response_text.actual_wait_ms(), 4000);
+    }
+
+    #[test]
+    fn task_retry_after_header_does_not_shadow_longer_body_delay() {
+        let text_body = "Individual quota reached. Resets in 1h19m6s.";
+        let text_only = parse_retry_delay_with_source(text_body, None).unwrap();
+        assert_eq!(text_only.raw_ms, 4_746_000);
+        assert_eq!(text_only.source, RetryDelaySource::ResponseText);
+
+        let text_with_header = parse_retry_delay_with_source(text_body, Some("8")).unwrap();
+        assert_eq!(text_with_header.raw_ms, 4_746_000);
+        assert_eq!(text_with_header.source, RetryDelaySource::ResponseText);
+
+        let json_body = r#"{"error":{"details":[{"metadata":{"quotaResetDelay":"4746s"}}]}}"#;
+        let json_with_header = parse_retry_delay_with_source(json_body, Some("8")).unwrap();
+        assert_eq!(json_with_header.raw_ms, 4_746_000);
+        assert_eq!(json_with_header.source, RetryDelaySource::Structured);
+    }
+
+    #[test]
+    fn task_retry_after_header_wins_when_longer_than_body_delay() {
+        let json_body = r#"{"error":{"details":[{"metadata":{"quotaResetDelay":"5s"}}]}}"#;
+        let parsed = parse_retry_delay_with_source(json_body, Some("120")).unwrap();
+        assert_eq!(parsed.raw_ms, 120_000);
+
+        let text_with_header =
+            parse_retry_delay_with_source("quota reset after 3s", Some("30")).unwrap();
+        assert_eq!(text_with_header.raw_ms, 30_000);
+
+        // 空白或无法解析的标头不得影响本文解析。
+        let blank_header = parse_retry_delay_with_source("Resets in 2m", Some("  ")).unwrap();
+        assert_eq!(blank_header.raw_ms, 120_000);
+        let invalid_header = parse_retry_delay_with_source("Resets in 2m", Some("soon")).unwrap();
+        assert_eq!(invalid_header.raw_ms, 120_000);
+    }
+
+    #[test]
+    fn task_resets_in_pattern_requires_a_parsable_duration() {
+        assert!(parse_retry_delay_with_source("Individual quota reached.", None).is_none());
+        assert!(parse_retry_delay_with_source("Resets in soon.", None).is_none());
     }
 }
