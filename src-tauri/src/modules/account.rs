@@ -608,6 +608,81 @@ mod tests {
         assert!(!updated.live_limited_models.contains_key("gemini-2.5-pro"));
         std::env::remove_var("ABV_DATA_DIR");
     }
+
+    fn forbidden_test_account() -> Account {
+        let mut account = Account::new(
+            "forbidden-acc".to_string(),
+            "forbidden@example.com".to_string(),
+            TokenData::new(
+                "test_access_token".to_string(),
+                "test_refresh_token".to_string(),
+                3600,
+                None,
+                None,
+                None,
+                false,
+                None,
+            ),
+        );
+        let mut quota = QuotaData::new();
+        quota.is_forbidden = true;
+        account.quota = Some(quota);
+        account
+    }
+
+    #[test]
+    fn task_batch_refresh_skips_forbidden_account_while_validation_block_active() {
+        let now = 1_000_000;
+        let mut account = forbidden_test_account();
+        account.validation_blocked = true;
+        account.validation_blocked_until = Some(now + 600);
+        assert!(should_skip_forbidden_in_batch_refresh(&account, now));
+    }
+
+    #[test]
+    fn task_batch_refresh_reprobes_forbidden_account_after_validation_block_expired() {
+        let now = 1_000_000;
+        let mut account = forbidden_test_account();
+        account.validation_blocked = true;
+        account.validation_blocked_until = Some(now - 1);
+        assert!(!should_skip_forbidden_in_batch_refresh(&account, now));
+
+        // A block without a recorded deadline cannot stay active forever.
+        account.validation_blocked_until = None;
+        assert!(!should_skip_forbidden_in_batch_refresh(&account, now));
+
+        // Disabled and proxy-disabled accounts are only re-probed, never re-enabled here.
+        account.proxy_disabled = true;
+        account.proxy_disabled_reason = Some("Forbidden (403): VALIDATION_REQUIRED".to_string());
+        assert!(!should_skip_forbidden_in_batch_refresh(&account, now));
+        assert!(account.proxy_disabled);
+    }
+
+    #[test]
+    fn task_batch_refresh_keeps_skipping_plain_forbidden_account() {
+        let now = 1_000_000;
+        let mut account = forbidden_test_account();
+        assert!(should_skip_forbidden_in_batch_refresh(&account, now));
+
+        account.proxy_disabled = true;
+        account.disabled = true;
+        assert!(should_skip_forbidden_in_batch_refresh(&account, now));
+    }
+
+    #[test]
+    fn task_batch_refresh_never_skips_non_forbidden_account() {
+        let now = 1_000_000;
+        let mut account = forbidden_test_account();
+        account.quota = Some(QuotaData::new());
+        assert!(!should_skip_forbidden_in_batch_refresh(&account, now));
+
+        account.validation_blocked = true;
+        account.validation_blocked_until = Some(now + 600);
+        assert!(!should_skip_forbidden_in_batch_refresh(&account, now));
+
+        account.quota = None;
+        assert!(!should_skip_forbidden_in_batch_refresh(&account, now));
+    }
 }
 
 /// Global account write lock to prevent corruption during concurrent operations
@@ -2425,6 +2500,26 @@ pub struct RefreshStats {
     pub details: Vec<String>,
 }
 
+/// Whether the batch quota refresh should skip an account because it is forbidden.
+///
+/// A 403 VALIDATION_REQUIRED marks the account both `validation_blocked` and
+/// `quota.is_forbidden`, and the block is only cleared by a successful refresh. Skipping
+/// every forbidden account would therefore lock it out for good. Once the validation
+/// block has expired (or carries no deadline) the account is probed again and the refresh
+/// result decides. Forbidden accounts without a validation block (plain 403) stay skipped.
+/// This only gates the batch refresh; it never re-enables a disabled or proxy-disabled account.
+fn should_skip_forbidden_in_batch_refresh(account: &Account, now: i64) -> bool {
+    let forbidden = account.quota.as_ref().is_some_and(|q| q.is_forbidden);
+    if !forbidden {
+        return false;
+    }
+    if account.validation_blocked {
+        let until = account.validation_blocked_until.unwrap_or(0);
+        return now < until;
+    }
+    true
+}
+
 /// Core logic to batch refresh all account quotas (decoupled from Tauri status)
 pub async fn refresh_all_quotas_logic() -> Result<RefreshStats, String> {
     use futures::future::join_all;
@@ -2441,22 +2536,27 @@ pub async fn refresh_all_quotas_logic() -> Result<RefreshStats, String> {
     let accounts = list_accounts()?;
 
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
+    let now = chrono::Utc::now().timestamp();
 
     let tasks: Vec<_> = accounts
         .into_iter()
         .filter(|account| {
             // [MOD] Now we allow refreshing disabled and proxy_disabled accounts
             // to support forced re-sync from UI.
-            // Only strictly skip forbidden accounts if necessary, but even those
-            // might want a retry to see if they are unbanned.
-            if let Some(ref q) = account.quota {
-                if q.is_forbidden {
-                    crate::modules::logger::log_info(&format!(
-                        "  - Skipping {} (Forbidden)",
-                        account.email
-                    ));
-                    return false;
-                }
+            // Forbidden accounts are skipped, except once a validation block has
+            // expired: then the refresh itself decides whether they are usable again.
+            if should_skip_forbidden_in_batch_refresh(account, now) {
+                crate::modules::logger::log_info(&format!(
+                    "  - Skipping {} (Forbidden)",
+                    account.email
+                ));
+                return false;
+            }
+            if account.quota.as_ref().is_some_and(|q| q.is_forbidden) {
+                crate::modules::logger::log_info(&format!(
+                    "  - Retrying {} (Forbidden but validation block expired, re-probing)",
+                    account.email
+                ));
             }
             true
         })

@@ -557,15 +557,27 @@ impl TokenManager {
                 );
                 return Ok(None);
             } else {
-                // Block expired - clear it
+                // Block expired - clear it.
+                //
+                // quota.is_forbidden is the cached "account is blocked" verdict written by the
+                // same 403. It must expire together with the block, otherwise the batch quota
+                // refresh and the on-disk state check keep treating the account as forbidden
+                // and it can never recover. Manual and proxy disables are separate flags and
+                // are deliberately left untouched.
                 account["validation_blocked"] = serde_json::json!(false);
                 account["validation_blocked_until"] = serde_json::json!(0);
                 account["validation_blocked_reason"] = serde_json::Value::Null;
+                if let Some(q) = account.get_mut("quota").and_then(|v| v.as_object_mut()) {
+                    q.insert("is_forbidden".to_string(), serde_json::json!(false));
+                }
 
                 update_account_json(path, |latest| {
                     latest["validation_blocked"] = serde_json::json!(false);
                     latest["validation_blocked_until"] = serde_json::json!(0);
                     latest["validation_blocked_reason"] = serde_json::Value::Null;
+                    if let Some(q) = latest.get_mut("quota").and_then(|v| v.as_object_mut()) {
+                        q.insert("is_forbidden".to_string(), serde_json::json!(false));
+                    }
                 })
                 .await?;
                 tracing::info!(
@@ -4137,6 +4149,73 @@ mod tests {
     use super::*;
     use std::cmp::Ordering;
     use std::time::Duration;
+
+    fn validation_expired_forbidden_account(account_id: &str) -> serde_json::Value {
+        let now = chrono::Utc::now().timestamp();
+        serde_json::json!({
+            "id": account_id,
+            "email": format!("{}@test.invalid", account_id),
+            "created_at": now,
+            "last_used": now,
+            "token": {
+                "access_token": "test", "refresh_token": "test", "token_type": "Bearer",
+                "expires_in": 3600, "expiry_timestamp": now + 3600, "project_id": "test"
+            },
+            "quota": {"models": [], "last_updated": now, "is_forbidden": true},
+            "validation_blocked": true,
+            "validation_blocked_until": now - 60,
+            "validation_blocked_reason": "VALIDATION_REQUIRED"
+        })
+    }
+
+    async fn load_validation_expired_account(
+        account: serde_json::Value,
+    ) -> (Option<ProxyToken>, serde_json::Value) {
+        let _data_dir = crate::proxy::monitor::prompt_log_tests::TestDataDir::new();
+        let tmp_root = crate::modules::account::get_data_dir().unwrap();
+        let accounts_dir = tmp_root.join("accounts");
+        std::fs::create_dir_all(&accounts_dir).unwrap();
+        let account_id = account["id"].as_str().unwrap().to_string();
+        let account_path = accounts_dir.join(format!("{}.json", account_id));
+        std::fs::write(&account_path, account.to_string()).unwrap();
+
+        let manager = TokenManager::new(tmp_root);
+        let loaded = manager.load_single_account(&account_path).await.unwrap();
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&account_path).unwrap()).unwrap();
+        (loaded, on_disk)
+    }
+
+    #[tokio::test]
+    async fn task_expired_validation_block_clears_quota_is_forbidden() {
+        let (_loaded, on_disk) =
+            load_validation_expired_account(validation_expired_forbidden_account("expired-acc"))
+                .await;
+        assert_eq!(on_disk["validation_blocked"], false);
+        assert_eq!(on_disk["quota"]["is_forbidden"], false);
+    }
+
+    #[tokio::test]
+    async fn task_expired_validation_block_does_not_release_proxy_disabled_account() {
+        let mut account = validation_expired_forbidden_account("proxy-disabled-acc");
+        account["proxy_disabled"] = serde_json::json!(true);
+        account["proxy_disabled_reason"] =
+            serde_json::json!("Forbidden (403): VALIDATION_REQUIRED");
+        let (loaded, on_disk) = load_validation_expired_account(account).await;
+        assert!(loaded.is_none());
+        assert_eq!(on_disk["proxy_disabled"], true);
+        assert_eq!(on_disk["validation_blocked"], true);
+        assert_eq!(on_disk["quota"]["is_forbidden"], true);
+    }
+
+    #[tokio::test]
+    async fn task_expired_validation_block_does_not_release_manually_disabled_account() {
+        let mut account = validation_expired_forbidden_account("manual-disabled-acc");
+        account["disabled"] = serde_json::json!(true);
+        let (loaded, on_disk) = load_validation_expired_account(account).await;
+        assert!(loaded.is_none());
+        assert_eq!(on_disk["disabled"], true);
+    }
 
     #[test]
     fn classify_rate_limit_reason_recognizes_individual_quota_reset_text() {
