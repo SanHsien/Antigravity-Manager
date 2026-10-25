@@ -1,5 +1,275 @@
 # 證據式覆核報告 (Review)
 
+## 00. 2026-10-26 Antigravity-Manager 上游 commit 分診（v4.9.8 之後 -> v5.0.0，`0067fe04`）
+
+- 範圍：`git log 9f8e4f24d61b33fa80b8078d104c942752a5fa0b..upstream/main --no-merges`，共 67 筆（最新 `fd6fab80`）。
+- fork 基準：`C:/GitHub/Antigravity-Manager` HEAD `df98b51a`，工作樹乾淨；全程唯讀（`git show`、grep、讀檔），未改 repo、未 push、未對上游做任何寫入。
+- 判準：移植「做法」不是 diff；每筆先在 fork 對應檔 grep 確認缺陷是否存在。判定詞沿用 REVIEW.md：採用候選／延後／拒絕／監看（另加「已存在」）。
+- 本機實況佐證（唯讀）：`~/.antigravity_tools/accounts/*.json` 共 4 個帳號（3 FREE、1 PRO）；`proxy_logs.db` 僅 5 筆（全為 200，皆為 `/internal/warmup`）。本機實際流量極低，下方「價值」排序以「缺陷在 fork 程式碼中確實存在」加「影響面」判斷，不以本機症狀為準。
+- 本機驗證能力：本機 `cargo` 無 MSVC `link.exe`（bash PATH 上的 `link.exe` 是 Git 的 coreutils，不是 MSVC），所有 Rust 單元測試只能靠 CI；`rustfmt` 在本 bash 找不到。純前端改動可用 `npm run build`（`tsc && vite build`）本機驗。
+
+### 00.1 Release、PR、issue 判讀（水位：release v5.0.0／PR 3751／issue 3750）
+
+| 項目 | 判定 | 證據與重新開案條件 |
+|---|---|---|
+| `0067fe04`（v5.0.0 release bump）與 11 筆 beta bump | 拒絕 | 版本號與 changelog metadata，只由獨立 release packet 評估。 |
+| PR #3751（QoS 巡檢 DashMap 自死鎖、Headless Argon 熔斷；合併於上游 `beta`，在 v5.0.0 之後，另有 `v5.0.0-beta.3` 同在 beta 軌） | 拒絕 | 5 檔 +183/-71 全在 `qos_guardian.rs`／QoS 版 `token_manager`；本 fork 無 QoS 排程（`grep -ri qos_guardian src-tauri/src` 無命中，唯一 `qos` 字樣是 `lib.rs:47` 的 Windows EcoQoS）。fork 採用 QoS 系列時重開。 |
+| PR #3747（已關閉；Argon 虛假配額、macOS 懸浮窗） | 拒絕 | 動到 fork 沒有的 Argon／Mini 窗；`quota.rs` 的無 `quotaInfo` 問題另見 00 的 `7fcb1a2a`。 |
+| PR #3746（open；入站 Gzip 解壓） | 監看 | 功能新增（Ref #425／#146），非缺陷；fork 無 `RequestDecompression`。上游合併且有明確使用者需求時再評估。 |
+| Issue #3749／#3750／#3744／#3745／#3743／#3748 | 拒絕 | 全部指向 QoS、Argon、Mini 窗或託盤互動；fork 無對應程式碼。 |
+
+
+---
+
+### 結論先行：建議採用清單（依價值排序）
+
+| 序 | SHA | 做法（一句話） | 價值 | 本機可測 |
+|---|---|---|---|---|
+| 1 | `7ed0f10e`（僅第 1 段 429 解析） | `Retry-After` 標頭與回應本文延遲取 max、補 `resets in` 文字樣式、掃描全部 `details`；fork 的 `retry.rs`／`rate_limit.rs` 與上游修前一模一樣 | 高：標頭 8s 蓋過本文數小時的配額重置，帳號早退解鎖後 429 連環 | 否（CI） |
+| 2 | `47a0f182`（僅防 Direct 洩漏與密文護欄） | 綁定專屬代理的帳號，代理不健康時不回退直連，改為先試公用池、再不行仍走綁定代理；`ag_enc_` 解密失敗且無 URL 憑證時不送密文 | 高：專屬 IP 帳號會洩漏來源 IP（`upstream/client.rs:253-292` 對 `Ok(None)` 回預設 client） | 否（CI） |
+| 3 | `505deb09` | 新增 `extract_api_key()`，支援 `?key=`、`x-goog-api-key`、小寫 `bearer`；另加 fork 專屬要求：query key 不得進監控日誌，管理端點不接受 query key | 中高：Gemini 官方 REST 客戶端用 `?key=` 會被誤 401；但需補日誌去敏，否則會把金鑰寫進 `proxy_logs.db` | 否（CI） |
+| 4 | `d6974bc3`（REVIEW 已列採用候選） | 驗證封鎖到期後放行批次刷新、到期清除時一併清 `quota.is_forbidden` | 中高：帳號永久自鎖，只能手改 JSON | 否（CI） |
+| 5 | `f86c2485` | 會話指紋改為「摘要化多模態」「單字元也算有效輸入」「`[System` 未閉合不截斷」；fork 的 Gemini 路徑兜底是 `request.to_string()` 整包雜湊，每輪必漂移 | 中：影響 thinking_store／prompt cache 連續性 | 否（CI） |
+| 6 | `073d6a97`（僅 OpenAI Chat 串流收尾，且需改良） | EOF 時若無 finishReason 但已有內容／工具呼叫，補發 `finish_reason`（建議只在已收到 usageMetadata 時補，避免掩蓋中斷） | 中：下游客戶端判 `finish=unknown`；fork 的 Responses 串流刻意標 `upstream_interrupted`，需保留語意 | 否（CI） |
+| 7 | `d206e57e`（僅 Web 模式熱更新缺口，hub 指紋略） | `admin_save_config` 補 `only_raw_quota_models`、`debug_logging`、UA、`capture_health_logs`、代理池綁定同步、預設 client 重建；另補 `circuit_breaker`（上游也漏） | 中：Web／Docker 儲存設定後部分欄位不生效 | 否（CI） |
+| 8 | `7fcb1a2a`（僅「無 quotaInfo 的模型被丟棄」，Argon／i18n 略；需先實測確認） | `fetch_quota_with_cache` 取消「必須有 quotaInfo」門檻，改用 quota_groups 補額度；**本機 PRO 帳號有 Gemini 群組（5h 74%），卻無任何 gemini-3.1-pro 模型**，與此缺陷吻合但未證實 | 中（待驗證）：Pro 模型從清單消失，會讓調度器 503 | 否（CI） |
+| 9 | `cae8fb9b`（僅第 3 項：強制 tool_choice 與 Claude thinking 衝突） | 目標為 Claude 且 `toolConfig.mode == ANY` 時移除 `generationConfig.thinkingConfig` | 中低：Anthropic 規則「forced tool_choice 不可開 thinking」；fork 的 OpenAI mapper 會把 `required`／物件形式映射成 ANY | 否（CI） |
+| 10 | `16d31898`（僅 Claude handler 的 429 外洩） | `claude.rs` 補 `FailureStatusTracker`（`common.rs:120` 已有，gemini／openai handler 已用，Claude 沒用） | 中低：混合 429 與逾時時，Claude 客戶端收到 429 而進入 1 分鐘退避 | 否（CI） |
+| 11 | `e18d31fc` | 輕量模式重建主視窗時不立即 `show()`，由前端首幀後顯示；`ThemeManager` 補 `unminimize`／`setFocus` | 低中：Windows WebView2 黑底閃現；fork 為 Windows 原生，直接相關 | TSX 部分可 `npm run build`；Rust 部分 CI；視覺需手動實機 |
+| 12 | `bec5c554` | warmup 先經 `resolve_model_route` 再送上游 | 低：本機 quota 清單的模型名都是具名／有 `-tiered` 後綴，現況不會 404；只在上游回傳裸名時才觸發 | 否（CI） |
+| 13 | `aa6cd5b1`（僅 `lookup_signature_by_thought_snippet` 一小項） | 對 GZIP 壓縮的 thought 不可用 SQL `LIKE`，改取近 50 筆解包後比對 | 低：只影響 UI 簽名顯示兜底（`monitor.rs:389`） | 否（CI） |
+
+其餘（QoS／Argon／Mini 窗／簡中／CLI／Linux 專用／stream_lifecycle 家族）fork 無對應程式碼，全部拒絕或延後，見下方全表。
+
+最需要決策者注意的三點：
+1. `505deb09` 單獨照搬會讓 `?key=` 進 `proxy_logs.db`（`monitor.rs:736/912` 把完整 URI 存成 `url`）與 `ip_filter.rs:111`，必須同批去敏。
+2. `073d6a97` 的合成 `finish_reason` 與 fork 既有「Responses 串流無 finishReason 即標 incomplete／upstream_interrupted」的設計取向相反，建議只在 clean EOF（已有 usage）時合成。
+3. `7fcb1a2a`／`bba1e3d6` 是同一個 Issue（#3737）的兩半；本機證據顯示 Pro 模型沒進清單，先實測再動手，單做模型改名（bba1e3d6）無效。
+
+---
+
+### 完整分診表（依 git log 由新到舊，67 筆）
+
+欄位：`SHA | 判定 | 證據（上游動了哪些檔／行數；fork 對應檔實況） | 觸發條件／採用要點`
+
+| SHA | 判定 | 證據 | 觸發條件／採用要點 |
+|---|---|---|---|
+| `fd6fab80` `6279e5e1` `fe2ace7d` `4b9c983e` `f356c3e9` `61ddc8ef` `01a60a28` `8a998cb3` `b04fea67` `74bb2324` `6b75dcb4`（共 11 筆 chore(release)） | 拒絕 | 各為版本號／changelog／lockfile／tauri.conf 變更（9–15 檔，+21~+89 行） | 僅由 fork 獨立 release packet 評估 |
+| `e18d31fc` | 採用候選 | 上游：`modules/lightweight.rs`(13)、`ThemeManager.tsx`(2)。fork：`lightweight.rs:67-72` `exit_lightweight_mode` 對剛重建的視窗立即 `show()/unminimize()/set_focus()`；`tauri.conf.json:23` 主視窗 `visible:false`；`ThemeManager.tsx:13-19` 已於 100ms 後 `show()`。同缺陷存在 | 見實作方案 P11 |
+| `bc7f5e59` | 拒絕 | 上游 5 檔：`commands/mod.rs`(45)、`capabilities/default.json`、`lib.rs`、`MiniView.tsx`、`main.tsx`；修 Mini 窗喚醒主控台的跨執行緒死鎖。fork 無獨立 `mini` 窗（`tauri.conf.json` 無 mini；`MiniView.tsx` 是主窗內 `isMiniView` 版面，`Layout.tsx:13`）；`exit_lightweight_mode` 的呼叫點只有 `tray.rs:92,237`、`lib.rs:305`（事件迴圈執行緒），沒有 tokio 非同步指令呼叫 | 重開條件：fork 新增從 async command 呼叫 `exit_lightweight_mode` 的入口時，改用 `run_on_main_thread` |
+| `d1f41575` | 拒絕 | `openai.rs`(6)、`inbound.rs`(4)：修 `c819efa5` 的可變性綁定與格式；母 commit 未採 | 隨 `c819efa5` |
+| `c819efa5` | 延後 | 上游 4 檔（+283）：Responses API `text.format` 結構化輸出映射、`reasoning.effort=low` 時 thinkingBudget<=1024、tools 與 responseSchema 互斥、Responses 回應整包圍欄解殼。fork：`openai/request.rs:1198-1206` 只處理 Chat 的 `response_format`；`openai/models.rs:36` 有 `response_format`，無 `text` 欄位 | 重開條件：Codex（Responses API）打 fork 時出現結構化輸出 JSON 解析失敗或對話命名逾時；需 Responses 結構化輸出、圍欄解殼零誤殺的對抗測試 |
+| `91c342c6` | 拒絕 | `model_specs.rs`(11)：把 Claude 預算 `<0` 的 `Some(-1)` 分支砍成 `None`，是上游對自己先前語意的回改。fork `model_specs.rs:355-430` 的 `resolve_custom_budget` 無 `tb_config.effort` 回退鏈，Claude 分支結構不同，無對應回歸 | 無 repro，不動 |
+| `b0fa557c` | 拒絕 | `App.tsx`(24)：修 Mini 窗載入 `index.html` 觸發 React Router 404；fork 無獨立 mini 窗 | 同 `bc7f5e59` |
+| `447490f9` | 拒絕 | `pipeline/stream_lifecycle.rs`(61)；fork `proxy/pipeline/` 只有 `inbound.rs mod.rs policy.rs usage.rs`，無 `stream_lifecycle.rs` | REVIEW 既有「stream lifecycle 家族」延後條件 |
+| `bba1e3d6` | 延後 | 上游 4 檔（+96/-44）：`variant_mapping.rs` 3.1 Pro Medium/High 由 `gemini-pro-agent` 改 `gemini-3.1-pro-high`；`claude.rs` 補 `resolve_dynamic_model_for_account`。fork：`variant_mapping.rs:323,612,618` 與 `model_mapping.rs:50,105` 仍用 `gemini-pro-agent`；`claude.rs` 無 `resolve_dynamic_model_for_account`（`gemini.rs:304`、`openai.rs:2243,4132,5354,5860` 有）。**本機 4 個帳號的 quota 清單既無 `gemini-pro-agent` 也無 `gemini-3.1-pro-*`**（僅 `gemini-2.5-pro`），改名對現有帳號無影響；日誌無 `No accounts available ... gemini-pro-agent` | 重開條件：帳號清單出現 `gemini-3.1-pro-high/low` 但無 `gemini-pro-agent`，或日誌出現該 503。先做 `7fcb1a2a` 的實測。若觸發，見 P8b |
+| `7fcb1a2a` | 採用候選（待實測；僅 quota 解析部分） | 上游 16 檔（+207/-121）：`modules/quota.rs`(263) 重構、`GroupQuotaCard` 與 12 語系 key。fork `quota.rs:388` `if let Some(quota_info) = info.quota_info` 沒有 quotaInfo 就整個模型丟棄；`quota.rs:439` 已有 `fetch_quota_summary`。本機 PRO 帳號 `80c5da24`：群組 `Gemini Models` 有 `gemini-5h 0.74`／`gemini-weekly 0.82`，models 共 19 筆卻無 3.1 Pro | 見 P8a；先以 debug 日誌確認 `fetchAvailableModels` 是否回傳無 `quotaInfo` 的 Pro 模型。i18n 與 Argon 群組部分拒絕（fork 無 Argon、無 zh.json） |
+| `33c6ab4a` | 拒絕 | 13 檔 locale＋`ApiProxy.tsx`；含 `zh.json`（fork 已刪），導覽順序純 UI 偏好 | 無 |
+| `3ed27de4` | 拒絕 | `GroupQuotaCard.tsx`(33)、`zh.json`(4)；fork 無 `zh.json`，且為 Argon 外觀 | 無 |
+| `304f445b` | 拒絕 | 32 檔 +1904：Mini 獨立視窗、`tray.rs`(293)、`lib.rs`(73)、`inbound.rs`(158) 含 Claude 拓撲防禦。fork 無獨立 mini 窗；`inbound.rs` 部分與 fork 的 `align_google_request_prefix_topology`（`inbound.rs:673`）簽名不同、無 `_with_model` | 拆出 `inbound.rs` 子項另案評估才可重開 |
+| `08fc86e7` | 拒絕 | `quota.rs`(20)、`token_manager.rs`(68)、`AccountTable.tsx`：Argon 獨立配額組調度；fork 無 argon | 同 Argon 家族 |
+| `e9c7ecd4` | 拒絕 | 15 檔：QoS 小黑屋剩餘時長／手動移除，依賴 `qos_guardian.rs`（fork 不存在，已 `ls` 確認） | 無 |
+| `ec2272a7` | 拒絕 | `quota.rs`(52)、`token_manager.rs`(150)、`model_mapping.rs`(10)、3 個 UI：配額分組能力繼承（Argon 為主） | 無 |
+| `5fcab3e5` | 拒絕 | 24 檔 +1310/-909：`model_specs.json`、`official_models.json`、`model_mapping.rs`(512)、QoS 排程、Argon 隔離、`cli_sync.rs`(251)。fork 無 QoS／Argon，路由表分歧大 | 重開條件：owner 明確要求跟進上游模型元資料整體架構；需分拆為獨立 packet |
+| `fc75d8c1` | 拒絕 | `inbound.rs`(28)：修 `42523542` 的 borrow checker | 隨 `42523542` |
+| `ee7b0484` | 拒絕 | rustfmt（`inbound.rs`、`thinking_store.rs`） | 無 |
+| `42523542` | 延後 | `inbound.rs`(186)、`thinking_store.rs`(125)、`proxy_db.rs`(11)：Claude 全鏈 0 哨兵、跨模型切換簽名處理、哨兵升級 Base64 且不落庫、廢除 `<think>` 包裝。fork `thinking_store.rs:23` 仍為 `skip_thought_signature_validator` 字串常數，簽名生命週期自訂（REVIEW 既有多筆延後） | 重開條件：Claude 並行工具呼叫或 Gemini<->Claude 切換出現簽名 400；需跨模型切換簽名 fixture，且哨兵不落庫的回歸測試 |
+| `d206e57e` | 採用候選 | 上游 `server.rs`(+37)。fork `admin_save_config`（`server.rs:1779-1861`）只熱更新 custom_mapping／upstream_proxy／security／experimental／proxy_pool 與全域 config；缺 `only_raw_quota_models`、`debug_logging`、UA、`capture_health_logs`、預設 client 重建、`sync_bindings_from_config`；桌面端 `commands/mod.rs:430-520` 已全做 | 見 P7 |
+| `505deb09` | 採用候選 | 上游 `auth.rs`(+232/-35)。fork `auth.rs:120-137` 只取 header（`Authorization`、`x-api-key`、`x-goog-api-key`），無 query；`url = "2.5.7"` 已在 `Cargo.toml:39`；`monitor.rs:736/912` 以完整 URI 為 `url` 入庫、`ip_filter.rs:111` 亦記完整 URI | 見 P3 |
+| `20df8616` | 拒絕 | `integration.rs`(131)、`version.rs`(240)、`account.rs`(21)：Linux 憑證與 CLI 版本探測；fork 為 Windows 原生 | 無 |
+| `af8e9112` | 延後 | `useAccountStore.ts`(+41)：冷啟動快照水合避免空狀態閃現。fork `src/stores/useAccountStore.ts` 存在，本機僅 4 帳號，閃現不明顯 | 重開條件：帳號數量大、冷啟動可見空清單閃現；純前端，可 `npm run build` 本機驗 |
+| `a58bd81d` | 延後 | `commands/mod.rs`(21)、`account.rs`(70)；依賴 `e933f63d` 的 `batch_import_accounts_logic`，另含 `list_accounts` 改 `try_read` | 隨 `e933f63d` |
+| `c9f84b6c` | 拒絕 | `models/mod.rs`(3)：re-export 批次匯入結構，隨 `e933f63d` | 隨 `e933f63d` |
+| `e933f63d` | 延後 | 上游 12 檔 +1037/-170：`batch_import_accounts_logic`（6 路並發＋抖動＋429 退避）、Axum `/accounts/batch-import`、CLI `import/export`、`refresh_all_quotas_logic` 改 `buffer_unordered`、`detect_active_clients_status` 降頻。fork：`refresh_all_quotas_logic`（`account.rs:2429`）用 `join_all`＋Semaphore(5)，無 `cli_handler.rs`；匯入路徑限制在 `server.rs:3295`（`ANTIGRAVITY_DB_IMPORT_DIR`）只針對 DB 路徑匯入，`batch-import` 接 JSON entries 不碰檔案路徑，本身不衝突；**CLI `import <file>` 會讀任意路徑並寫 `<file>-backup`，若移植須保持僅限本機 CLI、不得掛成遠端路由** | 重開條件：帳號數破百且實測記憶體暴增／匯入逾時；僅取 `refresh_all_quotas_logic` 單次寫索引一項較安全（獨立 packet）；本機僅 4 帳號，無症狀 |
+| `30cae0d8` | 拒絕 | `handlers/common.rs`(16) rustfmt | 無 |
+| `b917ff01` | 拒絕 | 28 檔 +1386：QoS 自適應排程、`qos_guardian.rs`(723)；fork 無 | 無 |
+| `16d31898` | 採用候選（僅 Claude 429 外洩；多日配額快換延後） | 上游 `claude.rs`(9)、`common.rs`(85)。fork：`FailureStatusTracker` 在 `common.rs:120-142`，`gemini.rs:183,271,412,535,834,1085`、`openai.rs:2131,...,3054` 已使用；`claude.rs` 無 `failure_statuses`，最終狀態取 `last_status`（`claude.rs:2039-2052,2086-2099`）。多日 quotaResetDelay 硬配額（`common.rs:223`）fork 仍要求 `parsed_delay.is_none()`，但 pool>1 的第一輪本來就 50ms 換號，差異只在第二輪與 2 帳號池，本機 4 帳號影響小 | 見 P10；多日配額項重開條件：2 帳號池或單帳號出現長延遲仍等待 12s／30s |
+| `c8ae4224` | 拒絕 | `release.yml`(+1)：preview 的 `removeArtifacts: true`。fork `release.yml:289-291` 為統一發版 job，且 preview 極少 | 重開條件：prerelease 資產數逼近 GitHub 上限 |
+| `2560efcd` | 拒絕 | tray 的 import 路徑修正與全面 fmt（`monitor.rs`(80)、`openai.rs`(36) 等）；母 commit `6d4f1013` 未採 | 隨 `6d4f1013` |
+| `6d4f1013` | 拒絕 | 25 檔：跨平台托盤配額感知（`tray.rs`(202)、`MiniView.tsx`），含 Homebrew Cask 與版本 bump；fork `tray.rs:281-292` 已有自己的托盤配額邏輯，且不要 Cask | 無 |
+| `cae8fb9b` | 採用候選（僅第 3 項）；其餘拒絕 | 上游 8 檔：①Linux 行程自識別（`process.rs`(122)）②Linux Wayland 顯示守護（`linux_display_guard.rs`(196)，fork 無）③`inbound.rs`(160)＋`policy.rs`(20)＋`claude.rs`／`openai.rs` 強制 tool_choice 與 thinking 衝突自癒。fork：`openai/request.rs:1383-1394` 將 `required` 與物件形式映射為 `ANY`；`inbound.rs:763` 保留 `ANY`；全專案 grep 無任何「ANY 時移除 thinkingConfig」；`claude/request.rs` 完全未處理 `tool_choice` | 見 P9。①②Linux 專用拒絕 |
+| `f693015a` | 延後 | `monitor.rs`(+441)、`config.rs`(4)：第三方閘道（NewAPI/OneAPI）探活請求在 `capture_health_logs` 關閉時過濾。fork `monitor.rs:63,854` 已有 `capture_health_logs` 開關（只處理 `GET /health`） | 重開條件：fork 被 NewAPI 類閘道探測並造成監控面板刷屏；需成功探活被過濾、失敗仍記錄的 fixture |
+| `a1d7a655` | 拒絕 | `prompt_sanitizer.rs`(6)：把不支援的 regex lookahead `(?=\d)` 改為 `\d+\.\d+`。fork `prompt_sanitizer.rs` grep 無 `(?=`／`(?!`，且身份歸一正規式為舊版，未引入該 lookahead | 無缺陷，無需處理 |
+| `aff0a9ef` | 拒絕 | `IDENTITY_FAST_MARKERS` 型別修正，母 commit `63cbbb42` 未採 | 隨 `63cbbb42` |
+| `63cbbb42` | 延後 | `prompt_sanitizer.rs`(+288)＋版本 bump：多客戶端身份歸一、掃描窗擴至 8 句／1500 字元、框架白名單（JeikCode）。fork 的 sanitizer 有自己的防誤殺註解與測試（`prompt_sanitizer.rs:94-110`），白名單針對上游專屬名稱 | 重開條件：fork 需支援 OpenCode／Cursor 等身份歸一；需保留現有「`… agent, and the config was created by X` 不得整段誤刪」回歸，並加 33k 級提示詞的效能測試 |
+| `54fd90b0` | 拒絕 | 全專案 `cargo fmt`（13 檔 +190/-101）；fork 有自己的 `dev_check.ps1` 與格式門禁，批量 fmt 會與 fork 分歧處產生衝突 | 無 |
+| `03dab1bc` `a739ca07` | 拒絕 | 上游 CHANGELOG 文字 | 無 |
+| `073d6a97` | 採用候選（僅 OpenAI Chat 串流收尾）；`common_utils` 半部分監看 | 上游：`openai/streaming.rs`(+118)、`common_utils.rs`(+218/-57)。fork：`create_openai_sse_stream_with_anchor`（`streaming.rs:73-376`）收尾（`:354-372`）只補 usage 與 `[DONE]`，無 `has_emitted_finish_reason`，上游若沒下發 finishReason 就沒有終態 chunk。`common_utils.rs:1628` `ensure_gemini_payload_ends_with_user` 是上游「暫時廢棄」之前的舊版（末尾 model 一律補 `.` user），已能避免 400，上游新增的「空尾輪剔除」「functionResponse 例外」非必要 | 見 P6。`common_utils` 半部分重開條件：客戶端送空 model 尾輪造成對話污染 |
+| `37fc65d6` | 拒絕 | `lib.rs`(21)、Cask：CLI symlink；fork 無 CLI | 無 |
+| `dc9e9c97` | 拒絕 | 17 檔 +1023：`cli_handler.rs`(293)、`agy` 帳號切換；fork `modules/` 無 `cli_handler.rs`（已確認） | 無 |
+| `bec5c554` | 採用候選（低優先） | 上游 `warmup.rs`(+73/-23)。fork `warmup.rs:81-82,92,147,158,170,178` 全用 `req.model` 原名；`model_mapping.rs:42` 有 `gemini-3.8-flash -> gemini-3.8-flash-tiered` 映射，但 warmup 未經過 `resolve_model_route`。本機 quota 模型名為具名或 `-tiered`，現況不 404 | 見 P12 |
+| `8a496c6c` | 延後 | `upstream/client.rs`(99)、`token_manager.rs`(54)：看門狗標頭逾時收斂 30s、慢端點降級、終態失敗 30s 冷卻。fork 逾時契約不同（REVIEW 批次 0.1 已延後同類） | 重開條件：實測出現 85s~140s 壅塞掛起；需 fake-clock 端點降級 fixture |
+| `ef5a8751` | 延後 | `client.rs`(+183)：動態看門狗預算與容量耗盡快探；同上 | 同 `8a496c6c` |
+| `c8c80083` | 延後 | `openai.rs`(+136)、`auth.rs`(10)、`server.rs`(6)：新增 `/props`、`/version`（llama.cpp／vLLM 探測，Hermes 類客戶端用），`/v1/models` 補 context_length 欄位並把探測路徑視為免鑑權。fork `server.rs` 無 `/props`／`/version`，也無 `OfficialModelCatalog`，`handle_list_models`（`openai.rs:5004-5027`）不帶長度欄位 | 重開條件：有客戶端（如 Hermes）指向 fork 且因 404 退化；移植時需用 fork 的 model_specs 自行解析 n_ctx，免鑑權路徑只回靜態版本字串 |
+| `47a0f182` | 採用候選（防 Direct 洩漏與密文護欄）；其餘監看 | 上游 `proxy_pool.rs`(+180/-20)。fork：`proxy_pool.rs:248-250` `get_bound_proxy` 在 `auto_failover && !is_healthy` 回 `Ok(None)`；`get_proxy_for_account:206-235` 接著走公用池（已排除綁定代理，`:268-284`），池空則 `Ok(None)`；`upstream/client.rs:253-292` 對 `Ok(None)`／`Err` 都回預設 client＝直連。`build_proxy_config:382-393` 僅在 `parsed_auth.is_some()` 時攔 `ag_enc_`，否則 `basic_auth(&auth.username, &auth.password)` 把密文送給代理。`set_username`／`set_password` 順序（`:362-363`）：url 2.5 兩種順序輸出應相同，上游宣稱的缺陷未證實；health check 逾時放寬（`:594` 只有 `.timeout(10s)`）屬調參 | 見 P2 |
+| `a5ddccd3` | 拒絕 | `pipeline/estimator.rs`(+42)；fork 無 `estimator.rs`（已確認） | 無 |
+| `76327e93` | 拒絕 | `session_manager.rs` 純 fmt，隨 `f86c2485` | 隨 `f86c2485` |
+| `61c81822` | 已存在（countTokens 信封）；預算繼承拒絕 | 上游：`inbound.rs` 新 `align_count_tokens_envelope`、`client.rs` countTokens 分支、`model_specs.rs` 的 `.or(tb_config.effort)`。fork：`gemini.rs:1230-1241` `execute_count_tokens` 已只送 `{"request": ...}` 並移除 `safetySettings`（註解「已驗證」），且 fork 無 `align_official_envelope`，無信封污染路徑。`ThinkingBudgetConfig.effort`（`config.rs:572`）在 fork 是舊版相容欄位，前端 `ThinkingBudget.tsx` 無 UI 可設，`model_specs.rs` 無 4 處 `tb_config.effort` 回退 | 提交說明自述為 AI 靜態審計、未經生產驗證。預算部分重開條件：前端新增全域 effort 設定入口 |
+| `74f3a9fd` | 延後 | `claude/request.rs`(73)、`client.rs`(59)：孤兒 tool_result 函式名由 `tool_use_id` 改 `"unknown"`。fork `claude/request.rs:1456-1460` 仍 `unwrap_or_else(\|\| tool_use_id.clone())`，但上游改法依賴其 pipeline 的「unknown 降級為文字」，fork 無該降級，貿然改名可能同樣 400；提交說明自述未經生產驗證 | 重開條件：實際捕獲 Vertex 400 且根因為孤兒 tool_result；需 fork 自有降級邏輯與測試 |
+| `f86c2485` | 採用候選 | 上游 `session_manager.rs`(+351/-64)。fork 三項缺陷皆在：①`clean_text.len() >= 2` 於 `session_manager.rs:83,182,286`；②兜底用 `format!("{:?}", msg.content)`（`:94,107,193,205`）與 `request.to_string()`（`:297`），多模態 base64 整包序列化；③`sanitize_user_text_for_fingerprint` `[System` 無閉合時 `s.truncate(start)`（`:34-41`）。Gemini 路徑尤其嚴重：首則 user 為單字元或純圖片時，兜底雜湊整個 body，每輪指紋都變 | 見 P5 |
+| `158e8e9b` | 拒絕 | `openai.rs`(32)：補 `acquire_in_flight`（P2C 負載計數）與 `is_responses_api_path` 路徑別名。fork 無 `acquire_in_flight`、`is_responses_api_path`（grep 無） | 無 |
+| `7ed0f10e` | 採用候選（第 1 段）；其餘延後 | 上游 9 檔：①`retry.rs`／`rate_limit.rs` 429 延遲解析 ②`token_manager.rs` 即時標記配額 0% ③`thinking_store.rs` 效能與 TTL ④`collector.rs` 思考合併、`gemini.rs` 輪次索引。fork：①`retry.rs:107-149` 標頭回傳優先，結構化次之，文字最後；`RE_TEXT_DELAY_PATTERNS`（`retry.rs:13`）無 `resets in`；`rate_limit.rs:484-486` Baseline 為 `header.or_else(body)`；`rate_limit.rs:745-` `details.first()`；`token_manager.rs:27-39` `classify_rate_limit_reason` 無 `individual quota`／`resets in`。③`thinking_store.rs:645` 內層迴圈仍每次 `normalize_ws(&rec.thought)`，`:130-135` 水位 TTL 被 `sessions.len() <= MAX_SESSIONS` 短路 | 見 P1；③效能與 TTL 解耦為可選小項（重開條件：長會話思考水合耗時可量測）；②④延後 |
+| `aa6cd5b1` | 延後（一小項採用） | 上游 7 檔（+433/-74）：`auto_heal.rs`、`stream_lifecycle.rs`、`inbound.rs` 角色交替合併、工具宣告保序、`has_available_account`、`auto_switch.rs`、`proxy_db.rs`。fork：`proxy/pipeline/` 無 `auto_heal.rs`、`stream_lifecycle.rs`，無 `normalize_function_response_roles`，無 `auto_switch.rs`；`inbound.rs:700-736` 工具宣告是刻意「按 name 字典序排序」做前綴穩定（保序與其設計相反）；`has_available_account`（`token_manager.rs:2952`）在 fork 無任何呼叫端（grep），修了也無效；唯一對應缺陷是 `proxy_db.rs:956-970` `lookup_signature_by_thought_snippet` 用 `thought LIKE` 比對可能已 GZIP 的 BLOB（`proxy_db.rs:16,34-54` `MIN_GZIP_THOUGHT=384`），呼叫端 `monitor.rs:389` | 小項見 P13；其餘重開條件：fork 引入 auto-heal 或 stream lifecycle 時一併評估 |
+
+---
+
+### 實作方案（只規劃，未實作）
+
+共通：所有 Rust 測試只能走 CI；本機只能做靜態檢查與前端 `npm run build`。提交前走 fork 規則 `powershell -File tools\dev_check.ps1`（本機若缺 MSVC 則該步驟由 CI 代跑）。每項為獨立 commit，並回註 REVIEW.md（採用 commit hash 與日期）。
+
+#### P1  `7ed0f10e` 第 1 段：429 延遲解析（最高價值）
+
+- 檔案與函式：
+  - `src-tauri/src/proxy/upstream/retry.rs`
+    - `RE_TEXT_DELAY_PATTERNS`（`:13` 附近）新增 `(?i)resets in ([^.,;\]\n]+)`。
+    - `parse_retry_delay_with_source`（`:107-149`）：不要在標頭有值時提早 return。分別算 `header_delay`、`body_structured`（`extract_structured_delay_recursive`）、`body_text`（結構化為 None 才試文字），最後 `match (header, body)`：兩者皆有取 `raw_ms` 較大者；其餘取有值者。`source` 沿用勝出者。
+  - `src-tauri/src/proxy/rate_limit.rs`
+    - `Baseline` 分支（`:484-486`）：`header_sec` 與 `parse_retry_time_from_body_baseline` 取 max。
+    - `parse_retry_time_from_body_baseline`（`:745-`）：`details.first()` 改為迭代全部 `details`，取第一個含 `metadata.quotaResetDelay` 的；文字備援補 `resets in`，正規式改用 `once_cell::Lazy<Regex>`（上游每次呼叫 `Regex::new`）。
+    - `classify_reason` 內 `details` 迴圈（上游約 `:693`）：補 `@type` 含 `QuotaFailure` 判 `QuotaExhausted`（先確認 fork 對應位置）。
+  - `src-tauri/src/proxy/token_manager.rs:27-39` `classify_rate_limit_reason`：`explicit_quota_exhausted` 加 `individual quota`、`resets in`。
+  - 可選：`proxy/handlers/common.rs:223` 的硬配額判定加 `individual quota`（上游同改）。
+- 測試（Rust，CI）：
+  - `retry.rs`：本文 `"Individual quota reached. Resets in 1h19m6s."` 單獨解析為 4_746_000ms；加 `Some("8")` 標頭仍為 4_746_000；JSON `quotaResetDelay: "4746s"` 加標頭 8 亦同。
+  - 保護既有行為：`retry.rs` 現有測試 `parse_retry_delay_with_source("", Some("3"))` 仍為 3200ms 實等待；標頭大於本文時取標頭。
+  - `rate_limit.rs`：多 `details`（ErrorInfo 在 index 0，quotaResetDelay 在 index 1）與標頭 `8` 時 Baseline 回 3600。
+  - 檢查 `rate_limit.rs:1085-1110` 既有 `current`／`baseline` 斷言（標頭 `None`），預期不受影響。
+- 本機可測：否。
+- 風險備註：「標頭 8s 為 Google 前門反 DDoS」是上游單方說法，作者在提交說明中自述未於生產驗證。取 max 的行為保守（只會延長鎖定），風險為帳號鎖定時間變長，可接受。
+
+#### P2  `47a0f182`：專屬代理不洩漏直連、密文不外送
+
+- 檔案與函式：`src-tauri/src/proxy/proxy_pool.rs`
+  - `get_bound_proxy`（`:240-257`）：改為
+    1. `entry.enabled && entry.is_healthy` -> 回綁定代理。
+    2. 不健康且 `config.auto_failover` -> 先 `select_proxy_from_pool(config)`，成功則 `warn!` 後回該代理。
+    3. 其餘一律仍回綁定代理（`warn!` 說明為防直連洩漏），不再回 `Ok(None)`。
+  - `build_proxy_config`（`:348-410`）：`ag_enc_` 分支改為 `starts_with("ag_enc_")` 單獨判斷；有 `parsed_auth` 用 URL 憑證，否則 `warn!` 並不呼叫 `basic_auth`（不送密文）。
+  - 可選：把 URL 解析抽成 `pub fn parse_and_clean_proxy_url(raw) -> (String, Option<(String,String)>)` 以利單測；`set_password`／`set_username` 的順序先不動，需在 CI 用測試證明差異才改。
+  - 另注意：`upstream/client.rs:253-292` 對 `Err` 與 `build_client_with_proxy` 失敗仍回預設 client；若要真正封閉洩漏，專屬綁定帳號在這兩種情況應回錯誤而非直連。這是上游也沒處理的延伸缺口，建議另開 packet。
+  - 決策點：不健康時改走公用池會讓專屬帳號換出口 IP；若希望「專屬帳號絕不換 IP」，則步驟 2 應省略，直接用綁定代理（較嚴格，但無容錯）。
+- 測試（CI）：上游 4 個測試可直接移植（`bound_account_prevents_direct_leak_when_unhealthy`、`bound_account_fails_over_to_healthy_pool_proxy`、`build_proxy_config_blocks_ciphertext_when_no_url_auth`、URL 清洗兩個）；fork 現有 `test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure`（`proxy_pool.rs:~705`）要保持綠燈。
+- 本機可測：否。
+
+#### P3  `505deb09`：Gemini `?key=`（含日誌去敏）
+
+- 檔案與函式：
+  - `src-tauri/src/proxy/middleware/auth.rs`
+    - 新增 `pub fn extract_api_key<B>(request: &Request<B>) -> Option<Cow<'_, str>>`：順序 Authorization（`Bearer`／`bearer`／裸 token）、`x-api-key`、`x-goog-api-key`、query `key`（`url::form_urlencoded::parse`）。fork 專屬：函式加參數 `allow_query: bool`，管理端點（`force_strict == true`）傳 `false`，避免 admin 密碼進 URL。
+    - 取代 `auth.rs:71-81`（`ProxyAuthMode::Off` 的 UserToken 辨識）與 `:120-137` 兩段重複的 header 取值；`:155-170` 之後的 `api_key.map(...)` 改 `api_key.as_deref()`，`api_key.unwrap()` 改 `as_deref().unwrap()`。
+  - `src-tauri/src/proxy/middleware/monitor.rs:736,912` 與 `ip_filter.rs:111`：記錄 `url`／`path` 前先去敏，新增小函式 `redact_query_secret(uri: &str) -> String`，把 `key=`、`api_key=` 的值換成 `***`（可放 `proxy/middleware/mod.rs`）。注意 `monitor.rs:773-775` 依 URI 解析模型名（`/v1beta/models/xxx:...`），去敏後的字串只用於入庫，解析仍用原字串。
+- 測試（CI）：
+  - `auth.rs` 目前無 `mod tests`，新增：移植上游 `test_extract_api_key_sources`（9 種來源與優先序）；`allow_query=false` 時 `?key=` 回 None；`test_auth_middleware_with_gemini_query_key`（正確 key 200、錯 key 403、無 key 401，用 `tower::ServiceExt::oneshot`，fork 已有 `tower = 0.4 util`）。
+  - 新增 `redact_query_secret` 單測：`/v1beta/models/x:streamGenerateContent?alt=sse&key=abc` -> `...&key=***`。
+- 本機可測：否。
+- 備註：本機 `proxy_logs.db` 目前 `url LIKE '%key=%'` 為 0 筆，修前無歷史洩漏。
+
+#### P5  `f86c2485`：會話指紋
+
+- 檔案：`src-tauri/src/proxy/session_manager.rs`
+- 改法：
+  1. 新增三個摘要函式（Claude／OpenAI／Gemini parts）：文字原樣；`image`／`document`／`inlineData` 只取 `[type:mime:長度]`；`tool_result` 取 `[tool_result:id:is_error]`。fork 的 `ContentBlock::{Text, Image{source}, Document{source}, ToolResult{..}}` 與 `OpenAIContentBlock::{Text, ImageUrl, AudioUrl, InputAudio, VideoUrl}` 皆存在（`claude/models.rs:96-136`、`openai/models.rs:143-156`），欄位名需對齊（`ImageSource.media_type`／`data` 先讀 `claude/models.rs:162` 確認）。
+  2. `:83,182,286` 的 `clean_text.len() >= 2` 改 `!clean_text.trim().is_empty()`。
+  3. 兜底：Claude／OpenAI 的 `format!("{:?}", ...)`（`:94,107,193,205`）改用摘要；Gemini 的 `request.to_string()`（`:297`）改為「首個 user 的 parts 摘要 -> 最後一個 content 的 parts 摘要」兩段兜底。
+  4. `sanitize_user_text_for_fingerprint`（`:34-41`）：只在 `[System` 後緊接 `:`／空白／`]` 時才視為標籤；找不到 `]` 時不截斷，僅推進搜尋起點。
+  5. 注意指紋改變會讓單字元／純圖片會話的既有 session_id 變動一次（thinking_store 命中重置一次），可接受。
+- 測試（CI）：移植 `test_unclosed_system_tag_and_code_preserved`（`[System.out.println(...)]` 不被刪）、`test_single_char_input_multi_turn_stability_all_protocols`（三協定第 1 輪與第 2 輪同 session_id）；另加「同一張大圖 base64 + 不同後續文字，指紋一致且不序列化整包」。fork 既有 `test_sanitize_user_text_for_fingerprint`（`session_manager.rs:347`）要確認仍綠。
+- 本機可測：否。
+
+#### P6  `073d6a97`：OpenAI Chat 串流終態 finish_reason
+
+- 檔案：`src-tauri/src/proxy/mappers/openai/streaming.rs`，函式 `create_openai_sse_stream_with_anchor`（`:73-376`）。
+- 改法：
+  1. 迴圈外新增 `let mut has_emitted_finish_reason = false; let mut has_content = false;`（`:94` 附近與 `emitted_tool_calls` 並列）。
+  2. 解析 `finishReason`（`:246`）補 `.or_else(|| candidate.get("finish_reason"))`。
+  3. `:281-299` 發出內容 chunk 時：`!content_out.is_empty()` 設 `has_content = true`；`finish_reason.is_some()` 設 `has_emitted_finish_reason = true`。
+  4. `:354` `thinking_acc.commit` 之後、`if include_usage` 之前，`if !error_occurred && !has_emitted_finish_reason && (has_content || !emitted_tool_calls.is_empty())` 補發 `{"delta":{},"finish_reason": tool_calls|stop}`；`!include_usage` 時把 `final_usage.take()` 附在該 chunk（與 `:292-297` 一致）。
+  5. 決策點（建議）：fork 的 Responses 串流刻意把「無 finishReason」標成 `incomplete`＋`upstream_interrupted`（`streaming.rs:1046-1090`）。為避免 Chat 這邊把中斷偽裝成 `stop`，建議加條件 `final_usage.is_some()`（收到 usageMetadata 才視為正常 EOF）；無 usage 時維持現狀不補。這與上游行為不完全一致，需決策者定奪。
+- 測試（CI）：移植 `test_openai_stream_emits_fallback_finish_reason_when_upstream_omits_it`（文字 chunk＋usage-only chunk，斷言 `["stop"]` 與 `[DONE]`）；補工具呼叫案例斷言 `tool_calls`；補「純文字無 usage、無 finishReason 時不補」（若採決策點 5）；既有測試 `streaming.rs:~1920`（`test-malformed-session`，斷言 `final_finish_reason == "stop"`）要仍綠。
+- 本機可測：否。`legacy` completions 串流（`create_legacy_sse_stream`，`:378`）上游也沒處理，不在本案。
+
+#### P7  `d206e57e`：Web 模式儲存設定熱更新
+
+- 檔案：`src-tauri/src/proxy/server.rs`，函式 `admin_save_config`（`:1779-1861`）。
+- 在現有各段之後補（`AppState` 欄位皆已存在：`only_raw_quota_models`、`debug_logging`、`upstream`、`monitor`、`proxy_pool_manager`、`token_manager`，見 `server.rs:89-111`）：
+  1. `*state.only_raw_quota_models.write().await = new_config.proxy.only_raw_quota_models;`
+  2. `*state.debug_logging.write().await = new_config.proxy.debug_logging.clone();`
+  3. `upstream_proxy` 段後：`state.upstream.rebuild_default_client(Some(new_config.proxy.upstream_proxy.clone())).await; state.upstream.clear_client_cache();`（`client.rs:133,164` 已有；上游多呼叫的 `utils::http::invalidate_shared_clients` 在 fork 不存在，略過）。
+  4. `proxy_pool` 段後：`state.proxy_pool_manager.sync_bindings_from_config().await; state.upstream.clear_client_cache();`
+  5. `state.upstream.set_user_agent_override(new_config.proxy.user_agent_override.clone()).await;`
+  6. `state.monitor.set_capture_health_logs(new_config.proxy.capture_health_logs);`
+  7. fork 額外（上游也漏）：`state.token_manager.update_circuit_breaker_config(new_config.circuit_breaker.clone()).await;`（桌面端 `commands/mod.rs:~505` 有做）。
+  8. 上游還同步 `hub_version` 指紋（`update_hub_fingerprint`）；fork 無 `hub_version` 模組，略過。
+- 測試：`admin_save_config` 依賴 `AppState` 全量建構，不易單測。建議抽成 `async fn apply_hot_reload(state: &AppState, cfg: &AppConfig)` 讓桌面端與 Web 端共用，並以最小 AppState（若現有測試輔助可用）斷言 `only_raw_quota_models` 等欄位被更新；否則以 CI 編譯＋手動 Web 模式驗證。
+- 本機可測：否。
+
+#### P8  `7fcb1a2a`／`bba1e3d6`（Issue #3737 兩半，需先實測）
+
+- P8a（`quota.rs`）：
+  - 先驗證：在 `fetch_quota_with_cache`（`quota.rs:~381`）臨時以 debug 日誌印出被丟棄的 `(name, has_quota_info)`，對本機 PRO 帳號跑一次配額刷新，確認 `gemini-3.1-pro-*` 是否以「無 quotaInfo」形式出現。若上游本來就沒回傳，則本案不成立。
+  - 改法（確認後）：把 `fetch_quota_summary`（`:439`）移到模型迴圈前；迴圈對符合前綴篩選（`gemini`／`claude`／`gpt`／`image`／`imagen`，`:398-402`）的模型一律保留：`model_pct`（有 quotaInfo 才有）與 `group_pct`（用現有 `:444-510` 的群組比對邏輯抽成 `fn pick_group_bucket(name, groups) -> Option<(i32, String)>`）取較嚴者，模型級明確 0% 不被正數群組覆蓋；兩者皆無時記 100%、reset 空字串。
+  - 風險：上游靠 `is_model_compliant_with_baseline`＋官方模型清單避免內部遺留項（如 `gemini-3-flash-agent`、`chat_*`）混入；fork 無此過濾，放寬 quotaInfo 門檻後這些條目可能出現在 UI／調度器。因此必須同步加白名單（沿用現有名稱前綴再加官方清單），不能只拿掉 `if let Some(quota_info)`。
+  - 測試：抽出純函式 `build_model_quotas(models, groups, filter)`，覆蓋「有 quotaInfo／無 quotaInfo 取群組／兩者皆無／內部條目被濾掉／模型級 0% 不被覆蓋」。CI。
+- P8b（`bba1e3d6`，P8a 確認 3.1 Pro 在清單中後才做）：`variant_mapping.rs` 新增 `SPEC_31_PRO_HIGH{id:"gemini-3.1-pro-high", thinking_budget:10001, max_output_tokens:65535}`，3.1 Pro 的 Medium／High 改用之；`SPEC_PRO_AGENT` 保留並 `#[allow(dead_code)]`；同步更新 `variant_mapping.rs:656-662,846-901,1000,1019-1086` 的期望值（共十餘處 `gemini-pro-agent`）；`claude.rs` 在選號後補 `token_manager.resolve_dynamic_model_for_account(&account_id, &mapped_model).await`（選號處約 `claude.rs:1125-1180`，與 `gemini.rs:304` 對稱）。另外 `model_mapping.rs:50,105` 的 `gemini-3.1-pro-high -> gemini-pro-agent` 映射上游未動，需另行決定。CI。
+- 本機證據：`resolve_dynamic_model_for_account`（`token_manager.rs:1123`）本來就會在帳號可用模型含 `gemini-3.1-pro-high` 時改寫，故補 Claude 對稱呼叫比改名更安全，可單獨先做。
+
+#### P9  `cae8fb9b` 第 3 項：強制 tool_choice 與 Claude thinking 衝突
+
+- 檔案：`src-tauri/src/proxy/mappers/openai/request.rs`（`:1383-1394` 決定 mode，`:1483` 呼叫 pipeline）。
+- 改法（最小範圍）：在 `align_google_request_prefix_topology(&mut inner_request)` 之前，若目標模型字串含 `claude` 且 `inner_request["toolConfig"]["functionCallingConfig"]["mode"] == "ANY"`，則移除 `inner_request["generationConfig"]["thinkingConfig"]`（`tracing::warn!` 一行）。fork 的 pipeline 函式沒有 `target_model` 參數，所以放在 mapper 內比改 pipeline 簽名小。Claude 原生協定路徑（`claude/request.rs`）fork 根本未處理 `tool_choice`，不受影響，不需動。
+- 測試（CI）：Claude 模型＋`tool_choice:"required"`＋thinking 開啟 -> 結果無 `thinkingConfig`、`toolConfig` 仍為 ANY；Gemini 模型同樣輸入 -> 保留 `thinkingConfig`；`tool_choice:"auto"` -> 不動。
+- 備註：此為 Anthropic 公開規則，但 Antigravity 上游的 Claude 端點是否嚴格套用未驗證；上游另有「遇衝突 400 就地移除重試」的自癒，fork 先不做。
+- 本機可測：否。
+
+#### P10  `16d31898`：Claude handler 429 外洩
+
+- 檔案：`src-tauri/src/proxy/handlers/claude.rs`
+- 改法：`handle_messages` 在 `last_status`（`:903`）旁新增 `let mut failure_statuses = FailureStatusTracker::default();`（`gemini.rs:16` 的 import 寫法可參照）。在所有設定 `last_status = status` 處（`:1383`、`:1722`）補 `failure_statuses.record(status)`；上游呼叫 `Err` 分支與全域預算逾時處補 `record(StatusCode::GATEWAY_TIMEOUT)`（fork 對應位置需讀 `claude.rs:1700-1760` 確認哪些路徑有逾時／網路錯誤）。收尾兩處（`:2039-2052`、`:2086-2099`）把 `last_status` 換成 `failure_statuses.final_status()`，保留原 403 -> 503 的特例。
+- 測試（CI）：`common.rs:375-390` 已有 tracker 單測；Claude handler 為整合邏輯，建議把「最終狀態選擇」抽成純函式後測：`[429, 504] -> 504`、`[429, 429] -> 429`、`[403] -> 503`。
+- 本機可測：否。
+
+#### P11  `e18d31fc`：輕量模式重建主視窗黑屏
+
+- 檔案：`src-tauri/src/modules/lightweight.rs`、`src/components/common/ThemeManager.tsx`
+- 改法：
+  1. `exit_lightweight_mode`（`lightweight.rs:67`）在 `ensure_main_window` 前記 `let already_running = app.get_webview_window("main").is_some();`，只有 `already_running` 時才 `show()/unminimize()/set_focus()`；新建視窗保持 `visible:false`，由前端在首幀後顯示。
+  2. `ThemeManager.tsx:17`（`await getCurrentWindow().show()` 之後）補 `await win.unminimize().catch(()=>{}); await win.setFocus().catch(()=>{});`（fork 無 `mini` 標籤，不需要上游的 `win.label !== 'mini'` 判斷）。
+  3. 風險：若前端載入失敗，新建視窗永遠不顯示。加保底：Rust 端對新建視窗啟動 `tokio::time::sleep(3s)` 後仍未 visible 則強制 `show()`。
+- 驗證：TSX 部分 `npm run build` 可本機；視覺需實機（切到輕量模式再從托盤叫出，Windows 11）。Rust 部分 CI。
+
+#### P12  `bec5c554`：warmup 先解析路由
+
+- 檔案：`src-tauri/src/proxy/handlers/warmup.rs`（`handle_warmup`，`:81-178`）
+- 改法：函式開頭 `let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(&req.model, &*state.custom_mapping.read().await);`（fork 的簽名是兩參數，`model_mapping.rs:269`；上游用的 `resolve_model_route_with_effort` 在 fork 不存在）；之後 `is_claude`／`is_image` 同時判 `mapped_model` 與 `req.model`，請求體 `model` 與 `wrap_request` 第三參數、`prefer_non_stream` 判斷、日誌 `mapped_model`、`X-Mapped-Model` 皆改用 `mapped_model`。`state.custom_mapping` 為 `AppState` 欄位（`gemini.rs:189` 同樣用法）。
+- 測試（CI）：`resolve_model_route("gemini-3.8-flash", {})` 回 `gemini-3.8-flash-tiered`（`model_mapping.rs:42` 的映射），具名模型不變，自訂映射優先。
+- 本機可測：否。
+
+#### P13  `aa6cd5b1` 小項：思考簽名片段查詢（GZIP）
+
+- 檔案：`src-tauri/src/modules/proxy_db.rs`，`lookup_signature_by_thought_snippet`（`:956-970`）。
+- 改法：改為 `SELECT id, thought, signature FROM thinking_records WHERE signature IS NOT NULL ORDER BY id DESC LIMIT 50`，逐筆 `unpack_thought(&bytes)`（`:54`）後 `contains(clean)`，命中即回傳；`thought` 欄位以 `Vec<u8>` 讀取。fork 的版本沒有 `normalize_and_heal_signature` 的回寫，直接回 `signature`。
+- 測試（CI）：移植 `test_lookup_signature_by_thought_snippet_gzip_compressed`（`>= MIN_GZIP_THOUGHT` 的長思考，片段命中回簽名、不存在回 None）。fork 測試輔助名稱（`TestDataDir`、`save_thinking_record` 簽名）需先讀 `proxy_db.rs` 的 `thinking_sqlite_tests`。
+- 本機可測：否。價值低，可併入下一個 proxy_db 相關 commit。
+
+#### 補充：`d6974bc3`（REVIEW 已列採用候選）的精確修法（P4）
+
+- 檔案與函式：
+  1. `src-tauri/src/modules/account.rs`，`refresh_all_quotas_logic` 的 `.filter`（`:2449-2463`）：只在「`q.is_forbidden && account.validation_blocked && now < account.validation_blocked_until.unwrap_or(0)`」時跳過；`is_forbidden` 但封鎖已到期（或 `validation_blocked == false`）一律放行刷新並 `log_info("Retrying ... 重新探測")`。注意 fork 的 `validation_blocked_until` 是 `Option<i64>`（`models/account.rs:59`）。
+  2. `src-tauri/src/proxy/token_manager.rs`，`load_single_account` 的「Block expired」分支（`:557-575`）：在記憶體 JSON 與 `update_account_json` 閉包兩處都加 `quota.is_forbidden = false`（`account.get_mut("quota").and_then(|v| v.as_object_mut())`）。
+  3. 現況成因確認：fork 的 `is_forbidden` 寫入點有兩處——配額抓取遇 403（`account.rs:2367`，直接存回）與 `mark_account_forbidden`（`account.rs:2096-2125`，同時 `proxy_disabled = true`）；`token_manager.rs:465-476` 把 `is_forbidden` 視為停用。因此清除 `is_forbidden` 只解除「刷新被跳過」，不會自動恢復 `proxy_disabled`；是否一併清除需另行決定（建議不清，由成功刷新後使用者／既有恢復邏輯處理）。
+- 測試（CI）：把 filter 抽成 `fn should_skip_forbidden_in_batch_refresh(account: &Account, now: i64) -> bool` 後單測：封鎖中跳過、已到期放行、`validation_blocked=false` 但 `is_forbidden=true` 放行。擴充 `token_manager.rs:~4560` 既有「expired 清除」測試，斷言 `updated["quota"]["is_forbidden"] == false`。
+- 本機可測：否。本機目前無任何帳號處於封鎖狀態（4 個帳號 `is_forbidden=0`、`validation_blocked=0`），無法重現，修前先靠 fake clock 單測。
+
+---
+
+### 附：未採用但可能被問到的點
+
+- `e933f63d`／`a58bd81d` 與匯入路徑限制：`ANTIGRAVITY_DB_IMPORT_DIR` 只約束 `admin_import_custom_db`（`server.rs:3295-3301`）。批次匯入 API 收 JSON 的 `{email, refresh_token}`，不碰路徑，所以在 API 層面不衝突；真正的衝突點是 CLI `import <file>` 會讀取任意路徑並在旁邊寫 `-backup`，以及批次匯入把大量 refresh token 透過管理端點寫入（需維持現有管理端鑑權）。若日後採用，CLI 與遠端路由必須分開，遠端不得接受路徑參數。
+- `61c81822` 與 `74f3a9fd`、`158e8e9b` 三筆的提交說明皆自述為「AI 靜態審計發現、未經生產驗證」；`aa6cd5b1`、`f86c2485` 同為 AI 協作產物。採用時請保留這項風險註記，先寫能重現缺陷的失敗測試再改碼。
+- 本機證據的限制：4 個帳號、5 筆日誌，只能證明「程式碼缺陷存在」與「某些症狀吻合」（P8），不能證明「已發生」。
+
+---
+
 ## 0. 2026-10-21 `v4.9.8` release 逐批覆核
 
 - **範圍與界線**：仍只覆核 `b601f5e7375343343922ccab5e50653bc3450c3b..9f8e4f24d61b33fa80b8078d104c942752a5fa0b` 的 release commit；首個歷史批次閱讀 12 個實際 patch（merge 一律以第一父差異計），其後批次已完成全部 162 筆覆核；沒有移植任何產品碼。完整 SHA、檔案清單、第一父基底與可重現 patch blob SHA-1 保存於 `checkpoint-tailwind4-braces/upstream-v498-release-review/coverage.json`。
@@ -479,15 +749,15 @@ found 0 vulnerabilities
 ✓ built in 1m 23s
 ```
 
-移除決定與理由已記錄於 `FORK.md`「相依套件偏移」一節（依主人指示，所有偏離上游 `package.json`/`package-lock.json` 的地方都要留痕）。
+移除決定與理由已記錄於 `FORK.md`「相依套件偏移」一節（依維護者指示，所有偏離上游 `package.json`/`package-lock.json` 的地方都要留痕）。
 
 ### 2.4 Dependabot alerts（`gh api repos/SanHsien/Antigravity-Manager/dependabot/alerts`）
 
-- Dependabot security alerts 與 automated security fixes 已由主人／主 session 開啟（本次覆核僅用 `gh api` 讀取驗證，未重新切換設定）：
+- Dependabot security alerts 與 automated security fixes 已由維護者／主 session 開啟（本次覆核僅用 `gh api` 讀取驗證，未重新切換設定）：
   - `GET .../vulnerability-alerts` → `204 No Content`（已啟用）
   - `GET .../automated-security-fixes` → `200 OK`（已啟用）
-- 目前列出的 alerts 全部是 **npm 生態系**（`colord`、`browserslist`、`mermaid`、`dompurify`、`vite`、`js-cookie`、`lodash`/`lodash-es`、`uuid`、`rollup`、`picomatch`、`yaml`、`esbuild` 等，多筆 `state: open`，少數 `auto_dismissed`）。這批是 Dependabot 對現有 `package-lock.json` 的历史掃描結果，與本次 `npm audit` 抓到的 24 筆有重疊但編號體系不同（Dependabot 以 GHSA 為單位、按套件版本區間列出，不會因為某個套件被移除就自動清空舊 alert，需要等下次掃描或手動 dismiss）。**這些 Dependabot alert 條目不在本次「待主人決策」範圍內處理**，因為 `npm audit` 這條路徑（實際 lockfile 狀態）已驗證歸零；是否要手動到 GitHub UI 把 Dependabot 上對應已解決套件的 alert 標記為 resolved，留給主人決定。
-- **Cargo 生態系 alerts：目前 0 筆**（`gh api .../dependabot/alerts --jq '[.[] | select(.dependency.package.ecosystem=="cargo")] | length'` → `0`）。可能是還在建立索引（主人在同一時段剛啟用），也可能 Rust 依賴目前沒有已知漏洞。本機沒裝 `cargo`，依指示不動 `Cargo.lock`/`Cargo.toml`。**列為待觀察的 open item**，之後重新查一次確認是否跑出新項目。
+- 目前列出的 alerts 全部是 **npm 生態系**（`colord`、`browserslist`、`mermaid`、`dompurify`、`vite`、`js-cookie`、`lodash`/`lodash-es`、`uuid`、`rollup`、`picomatch`、`yaml`、`esbuild` 等，多筆 `state: open`，少數 `auto_dismissed`）。這批是 Dependabot 對現有 `package-lock.json` 的历史掃描結果，與本次 `npm audit` 抓到的 24 筆有重疊但編號體系不同（Dependabot 以 GHSA 為單位、按套件版本區間列出，不會因為某個套件被移除就自動清空舊 alert，需要等下次掃描或手動 dismiss）。**這些 Dependabot alert 條目不在本次「待維護者決策」範圍內處理**，因為 `npm audit` 這條路徑（實際 lockfile 狀態）已驗證歸零；是否要手動到 GitHub UI 把 Dependabot 上對應已解決套件的 alert 標記為 resolved，留給維護者決定。
+- **Cargo 生態系 alerts：目前 0 筆**（`gh api .../dependabot/alerts --jq '[.[] | select(.dependency.package.ecosystem=="cargo")] | length'` → `0`）。可能是還在建立索引（維護者在同一時段剛啟用），也可能 Rust 依賴目前沒有已知漏洞。本機沒裝 `cargo`，依指示不動 `Cargo.lock`/`Cargo.toml`。**列為待觀察的 open item**，之後重新查一次確認是否跑出新項目。
 
 ---
 
@@ -503,7 +773,7 @@ found 0 vulnerabilities
   ```
 
 - 維護者決定本 fork 不需要 Pages 網站 → **直接刪除該 workflow**（上一輪覆核暫時加了條件閘門，這次改為直接刪除，更乾淨）。
-- 已確認 repo 內（README、`docs/`、`web_site/`、`package.json`、`src-tauri` 設定、`index.html`）沒有任何 `github.io` / Pages 相關連結需要改寫——`lbjlaq.github.io` 只出現在 GitHub repo 設定的 homepage 欄位，不在任何檔案內。該欄位已由主人清空（`gh api repos/SanHsien/Antigravity-Manager --jq '.homepage'` 現在回傳空字串），本次覆核未變更任何 repo 設定，只是驗證這件事已完成。
+- 已確認 repo 內（README、`docs/`、`web_site/`、`package.json`、`src-tauri` 設定、`index.html`）沒有任何 `github.io` / Pages 相關連結需要改寫——`lbjlaq.github.io` 只出現在 GitHub repo 設定的 homepage 欄位，不在任何檔案內。該欄位已由維護者清空（`gh api repos/SanHsien/Antigravity-Manager --jq '.homepage'` 現在回傳空字串），本次覆核未變更任何 repo 設定，只是驗證這件事已完成。
 - `web_site/`（`index.html`、`qa.html`、圖片）是上游原始靜態頁原始碼，維持不動——沒有東西建置或部署它，留著只是縮小與上游的 diff，不影響本 fork 運作。
 
 ---
