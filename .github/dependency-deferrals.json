@@ -6,15 +6,15 @@
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
     "@lobehub/fluent-emoji": {
-      "deferredLatest": "5.0.0",
+      "deferredLatest": "5.0.1",
       "reason": "major upgrade of an asset library needing bundle/asset compatibility audit; not now"
     },
     "@lobehub/icons": {
-      "deferredLatest": "6.0.0",
+      "deferredLatest": "6.11.0",
       "reason": "major upgrade of an icon library needing brand asset audit and frontend build check; not now"
     },
     "@lobehub/ui": {
-      "deferredLatest": "6.0.4",
+      "deferredLatest": "6.9.0",
       "reason": "Official v6.x metadata requires coordinated Node, antd, icons, and React toolchain migration; not now"
     },
     "@vitejs/plugin-react": {
@@ -22,7 +22,7 @@
       "reason": "v6 peers Vite ^8, so it cannot be isolated from the Vite 8/Rolldown toolchain migration; recheck with that coordinated migration, a clean install, and a frontend build"
     },
     "antd": {
-      "deferredLatest": "6.6.6",
+      "deferredLatest": "6.6.7",
       "reason": "v6 requires @ant-design/icons >=6 and changes CSS-variable, DOM, and component API behavior; this fork currently declares antd/icons v5 and has a Lobe peer-resolution mismatch, so do not bump antd in isolation. Recheck with an explicit package/lockfile cleanup or coordinated Lobe UI/antd/icons migration, clean install, and light/dark UI acceptance"
     },
     "antd-style": {
@@ -30,23 +30,23 @@
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
     "framer-motion": {
-      "deferredLatest": "14.3.0",
+      "deferredLatest": "14.6.0",
       "reason": "the 11-to-14 path includes Motion 13's explicit Emotion prop-filtering injection and v14's stricter internal dependency versioning; this fork directly uses AnimatePresence/layout/hover animations and @emotion dependencies, so recheck with focused interaction, prop-forwarding, and accessibility regression coverage"
     },
     "i18next": {
-      "deferredLatest": "26.4.7",
+      "deferredLatest": "26.5.10",
       "reason": "v26 remains a core i18next migration across the fork's locale initialization, translation types, and language switching. Official 26.4.5 fixes hasLoadedNamespace({ lng }) readiness for resolved or unsupported language codes, but this fork currently ships local resource aliases, has no supportedLngs setting, and has no useTranslation call with lng; it does not make the major migration safe to adopt. Current react-i18next 16 accepts i18next >=25.6.2, so this is not falsely deferred as a required v17 pair; recheck the actual core upgrade with typecheck/build and language-switch acceptance"
     },
     "lucide-react": {
-      "deferredLatest": "1.58.0",
+      "deferredLatest": "1.61.0",
       "reason": "Official 1.58.0 retains the React peer range; this fork's 0.561.0-to-v1 migration requires accessibility-default and brand-icon-removal audit across 59 lucide-react source uses. Recheck with a complete import audit and keyboard/screen-reader acceptance after an approved v1 migration"
     },
     "react-i18next": {
-      "deferredLatest": "17.0.20",
+      "deferredLatest": "17.1.8",
       "reason": "v17 raises its i18next peer floor to >=26.2; recheck only as the paired i18next 26 migration with locale initialization, typecheck, and language-switch acceptance"
     },
     "react-router": {
-      "deferredLatest": "8.4.0",
+      "deferredLatest": "8.5.0",
       "reason": "major upgrade of a frontend runtime library needing UI migration work; not now"
     },
     "tailwind-merge": {
@@ -62,7 +62,7 @@
       "reason": "major upgrade of a build toolchain package needing migration work and a frontend build check; not now"
     },
     "vite": {
-      "deferredLatest": "8.3.4",
+      "deferredLatest": "8.3.5",
       "reason": "v8 introduces the Rolldown toolchain dependency and @vitejs/plugin-react v6 peers Vite ^8; recheck as one Vite/plugin-react migration with a clean install and frontend build"
     },
     "aes-gcm": {
@@ -98,7 +98,7 @@
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
     },
     "rusqlite": {
-      "deferredLatest": "0.40.2",
+      "deferredLatest": "0.41.0",
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
     },
     "sha2": {
@@ -144,6 +144,10 @@
     "docker/setup-buildx-action": {
       "deferredLatest": "4.4.1",
       "reason": "major upgrade of a release-only Docker action; the release workflow cannot be exercised without cutting a release, so it needs a dry-run migration; not now"
+    },
+    "parking_lot": {
+      "deferredLatest": "0.13.0",
+      "reason": "0.x minor is a major-series change for a runtime locking crate used across proxy/token state; recheck with a full Windows Tauri build and the lock-using tests, which this host cannot run locally (no MSVC linker)"
     }
   }
 }

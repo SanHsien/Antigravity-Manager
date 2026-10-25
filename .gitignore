@@ -63,3 +63,4 @@ pnpm-lock.yaml
 
 # Upstream report
 upstream-review-report.md
+dependency-freshness-report.md
