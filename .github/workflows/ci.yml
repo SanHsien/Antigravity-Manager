@@ -93,6 +93,12 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::middleware::internal::tests
 
+      - name: Test 429 retry-delay parsing and validation-block refresh
+        run: |
+          cd src-tauri
+          cargo test --locked --lib task_ -- --test-threads=1
+          cargo test --locked --lib classify_rate_limit_reason_recognizes_individual_quota_reset_text
+
       - name: Test Gemini inert protocol padding defense (Windows loader diagnostics)
         shell: pwsh
         run: |
