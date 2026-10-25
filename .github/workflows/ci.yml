@@ -93,11 +93,35 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::middleware::internal::tests
 
-      - name: Test 429 retry-delay parsing and validation-block refresh
+      - name: Test retry delay
+        timeout-minutes: 6
         run: |
           cd src-tauri
-          cargo test --locked --lib task_ -- --test-threads=1
-          cargo test --locked --lib classify_rate_limit_reason_recognizes_individual_quota_reset_text
+          cargo test --locked --lib proxy::upstream::retry::tests::task_ -- --test-threads=1
+
+      - name: Test rate-limit parsing
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::rate_limit::tests::task_ -- --test-threads=1
+
+      - name: Test account batch-refresh skip
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib modules::account::tests::task_batch_refresh -- --test-threads=1
+
+      - name: Test token manager validation block
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::token_manager::tests::task_expired_validation_block -- --test-threads=1
+
+      - name: Test rate-limit reason classify
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib classify_rate_limit_reason_recognizes_individual_quota_reset_text -- --test-threads=1
 
       - name: Test Gemini inert protocol padding defense (Windows loader diagnostics)
         shell: pwsh
