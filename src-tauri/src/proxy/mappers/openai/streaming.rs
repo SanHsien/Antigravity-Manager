@@ -1756,15 +1756,17 @@ mod tests {
         assert_eq!(usage["total_tokens"], 15);
     }
 
-    async fn collect_chat_chunks(
-        payloads: Vec<Value>,
-        include_usage: bool,
-    ) -> (Vec<Value>, bool) {
+    async fn collect_chat_chunks(payloads: Vec<Value>, include_usage: bool) -> (Vec<Value>, bool) {
         let items: Vec<Result<Bytes, reqwest::Error>> = payloads
             .iter()
-            .map(|p| Ok(Bytes::from(format!("data: {}
+            .map(|p| {
+                Ok(Bytes::from(format!(
+                    "data: {}
 
-", p))))
+",
+                    p
+                )))
+            })
             .collect();
         let mut stream = create_openai_sse_stream(
             Box::pin(stream::iter(items)),
@@ -1811,7 +1813,10 @@ mod tests {
         assert!(done);
         assert_eq!(finish_reasons(&chunks), vec!["stop".to_string()]);
         // The synthesized finish chunk is the last choice-bearing chunk and carries usage.
-        let last = chunks.iter().rfind(|c| c["choices"].get(0).is_some()).unwrap();
+        let last = chunks
+            .iter()
+            .rfind(|c| c["choices"].get(0).is_some())
+            .unwrap();
         assert_eq!(last["choices"][0]["finish_reason"], "stop");
         assert_eq!(last["usage"]["total_tokens"], 5);
     }
