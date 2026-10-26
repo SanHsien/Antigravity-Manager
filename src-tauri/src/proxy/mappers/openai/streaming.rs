@@ -1784,14 +1784,7 @@ mod tests {
     async fn collect_chat_chunks(payloads: Vec<Value>, include_usage: bool) -> (Vec<Value>, bool) {
         let items: Vec<Result<Bytes, reqwest::Error>> = payloads
             .iter()
-            .map(|p| {
-                Ok(Bytes::from(format!(
-                    "data: {}
-
-",
-                    p
-                )))
-            })
+            .map(|p| Ok(Bytes::from(format!("data: {}\n\n", p))))
             .collect();
         let mut stream = create_openai_sse_stream(
             Box::pin(stream::iter(items)),
