@@ -108,7 +108,10 @@ pub async fn ip_filter_middleware(
                         client_ip: ip.clone(),
                         timestamp: chrono::Utc::now().timestamp(),
                         method: Some(request.method().to_string()),
-                        path: Some(request.uri().to_string()),
+                        // The URI may carry a client credential (?key=); never persist it verbatim.
+                        path: Some(crate::proxy::middleware::redact::redact_query_secret(
+                            &request.uri().to_string(),
+                        )),
                         user_agent: request
                             .headers()
                             .get("user-agent")

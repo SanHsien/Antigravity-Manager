@@ -734,6 +734,9 @@ pub async fn monitor_middleware(
 
     let method = request.method().to_string();
     let uri = request.uri().to_string();
+    // uri is only used for routing decisions; anything stored or logged must use
+    // log_url, because Gemini clients may put their API key in ?key=.
+    let log_url = crate::proxy::middleware::redact::redact_query_secret(&uri);
 
     if uri.contains("event_logging") || uri.contains("/api/") || uri.starts_with("/internal/") {
         return next.run(request).await;
@@ -794,7 +797,7 @@ pub async fn monitor_middleware(
             Ok(bytes) => {
                 request_body_str = if request_content_type.starts_with("multipart/form-data") {
                     if let Some((summary, multipart_model)) =
-                        summarize_multipart_request(&bytes, &request_content_type, &uri)
+                        summarize_multipart_request(&bytes, &request_content_type, &log_url)
                     {
                         if model.is_none() {
                             model = multipart_model;
@@ -909,7 +912,7 @@ pub async fn monitor_middleware(
         id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
         method,
-        url: uri,
+        url: log_url,
         status,
         duration,
         model,
