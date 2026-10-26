@@ -159,6 +159,12 @@ jobs:
           cd src-tauri
           cargo test --locked --lib modules::proxy_db::thinking_sqlite_tests::task_ -- --test-threads=1
 
+      - name: Test monitor thought snippet slicing
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::middleware::monitor::tests::task_thought_snippet -- --test-threads=1
+
       - name: Test rate-limit reason classify
         timeout-minutes: 6
         run: |

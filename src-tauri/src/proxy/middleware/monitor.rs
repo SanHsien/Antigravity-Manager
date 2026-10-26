@@ -380,11 +380,7 @@ fn build_canonical_consolidated_response(
             // 1. 优先按当前轮次的思考文本片段精准直捞专属签名
             if !thinking_content.is_empty() {
                 let trimmed = thinking_content.trim();
-                let snippet = if trimmed.len() > 32 {
-                    &trimmed[..32]
-                } else {
-                    trimmed
-                };
+                let snippet = thought_snippet_prefix(trimmed);
                 if let Some(sig) =
                     crate::modules::proxy_db::lookup_signature_by_thought_snippet(snippet)
                 {
@@ -1656,8 +1652,40 @@ pub async fn monitor_middleware(
     }
 }
 
+/// Longest prefix of `text` that is at most 32 bytes and ends on a char boundary,
+/// so multi-byte thinking text (e.g. Chinese) never makes the slice panic.
+fn thought_snippet_prefix(text: &str) -> &str {
+    if text.len() <= 32 {
+        return text;
+    }
+    let mut end = 32;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn task_thought_snippet_prefix_respects_char_boundaries() {
+        assert_eq!(
+            crate::proxy::middleware::monitor::thought_snippet_prefix("short"),
+            "short"
+        );
+        let ascii = "a".repeat(40);
+        assert_eq!(
+            crate::proxy::middleware::monitor::thought_snippet_prefix(&ascii).len(),
+            32
+        );
+        // 12 CJK chars = 36 bytes; byte 32 falls inside the 11th char.
+        let cjk = "思考".repeat(6);
+        let prefix = crate::proxy::middleware::monitor::thought_snippet_prefix(&cjk);
+        assert!(prefix.len() <= 32);
+        assert!(cjk.starts_with(prefix));
+        assert_eq!(prefix.chars().count(), 10);
+    }
+
     use super::next_chunk_while_receiver_open;
     use futures::stream;
     use std::sync::{
