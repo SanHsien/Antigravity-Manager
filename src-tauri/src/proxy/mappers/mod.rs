@@ -5,6 +5,7 @@ pub mod caveman_cleaner;
 pub mod claude;
 pub mod common_utils;
 pub mod context_manager;
+pub mod corrupted_image_guard;
 pub mod error_classifier;
 pub mod estimation_calibrator;
 pub mod gemini;

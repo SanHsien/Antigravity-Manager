@@ -36,6 +36,9 @@ pub enum UpstreamClassification {
     InternalGatewayMessage,
     /// 思考签名失效或跨模型异构签名污染错误（400 Invalid signature in thinking block）
     ThoughtSignatureError,
+    /// 上游多模态图像解码或处理失败错误（400 Unable to process input image 等）。
+    /// 不是账号问题：不锁定账号、不换号，剔除图片后在同一账号原地重试。
+    ImageProcessingError,
     /// 其他普通客户端错误
     OtherClientError(u16),
 }
@@ -86,14 +89,19 @@ impl UpstreamClassification {
             return UpstreamClassification::ThoughtSignatureError;
         }
 
-        // 4. 判定真正的限流 (仅限 429 和 529)
+        // 4. 判定上游图像解码/处理失败 (400 Unable to process input image)
+        if Self::is_image_processing_error_str(status, body) {
+            return UpstreamClassification::ImageProcessingError;
+        }
+
+        // 5. 判定真正的限流 (仅限 429 和 529)
         if status == 429 || status == 529 {
             let delay = crate::proxy::upstream::retry::parse_retry_delay(body, retry_after_header)
                 .map(|ms| ms.saturating_add(999) / 1000);
             return UpstreamClassification::RateLimited { retry_after: delay };
         }
 
-        // 5. 瞬时故障 (500 / 503 等，绝非账号限流)
+        // 6. 瞬时故障 (500 / 503 等，绝非账号限流)
         if status == 500 || status == 503 {
             return UpstreamClassification::TransientServerError;
         }
@@ -116,8 +124,103 @@ impl UpstreamClassification {
         matches!(self, UpstreamClassification::ThoughtSignatureError)
     }
 
+    /// 该分类是否为上游图像解码/处理失败
+    pub fn is_image_processing_error(&self) -> bool {
+        matches!(self, UpstreamClassification::ImageProcessingError)
+    }
+
     /// 该分类是否为网关自身内部消息
     pub fn is_internal_gateway_message(&self) -> bool {
         matches!(self, UpstreamClassification::InternalGatewayMessage)
+    }
+
+    /// 判断是否为上游多模态图像解码或处理错误 (400 "Unable to process input image")。
+    /// 这是该判定的唯一来源：`classify` 与任何需要字串判定的呼叫端都走这里，避免两份线索清单漂移。
+    pub fn is_image_processing_error_str(status: u16, body: &str) -> bool {
+        if status != 400 {
+            return false;
+        }
+        let lower = body.to_lowercase();
+        lower.contains("unable to process input image")
+            || lower.contains("failed to process input image")
+            || lower.contains("cannot process input image")
+            || lower.contains("could not process image")
+            || lower.contains("error processing input image")
+            || lower.contains("invalid input image")
+            || lower.contains("unable to decode image")
+            || lower.contains("unsupported image format")
+            || lower.contains("image decoding failed")
+            || (lower.contains("process input image")
+                && lower.contains("developers.generativeai.google"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GOOGLE_IMAGE_400: &str = r#"API Error: 400 Unable to process input image. Please retry or report in https://developers.generativeai.google/guide/troubleshooting"#;
+
+    #[test]
+    fn task_image_processing_error_classification() {
+        let classification = UpstreamClassification::classify(400, GOOGLE_IMAGE_400, None);
+        assert_eq!(classification, UpstreamClassification::ImageProcessingError);
+        assert!(classification.is_image_processing_error());
+        // 坏图不是账号的错：不得进入账号冷却池
+        assert!(!classification.should_lock_account());
+        assert!(!classification.is_model_not_found());
+        assert!(!classification.is_thought_signature_error());
+    }
+
+    #[test]
+    fn task_image_processing_error_is_gated_on_status_400() {
+        // 同样的文字出现在非 400 状态码不能被当成坏图（例如 429 / 500 的包装文字）
+        for status in [200u16, 429, 500, 503] {
+            assert!(
+                !UpstreamClassification::is_image_processing_error_str(status, GOOGLE_IMAGE_400),
+                "status {status} must not be classified as an image error"
+            );
+        }
+        assert_eq!(
+            UpstreamClassification::classify(429, GOOGLE_IMAGE_400, None),
+            UpstreamClassification::RateLimited { retry_after: None }
+        );
+        assert_eq!(
+            UpstreamClassification::classify(500, GOOGLE_IMAGE_400, None),
+            UpstreamClassification::TransientServerError
+        );
+    }
+
+    #[test]
+    fn task_image_processing_error_cue_variants_and_negatives() {
+        assert!(UpstreamClassification::is_image_processing_error_str(
+            400,
+            r#"{"error":{"message":"Failed to process input image due to decoding error"}}"#
+        ));
+        assert!(UpstreamClassification::is_image_processing_error_str(
+            400,
+            "UNSUPPORTED IMAGE FORMAT"
+        ));
+        // 无关的 400 不得被误判为坏图，否则会无谓地剔除用户图片
+        assert!(!UpstreamClassification::is_image_processing_error_str(
+            400,
+            "Invalid signature in thinking block"
+        ));
+        assert!(!UpstreamClassification::is_image_processing_error_str(
+            400,
+            "Normal 400 bad request"
+        ));
+    }
+
+    #[test]
+    fn task_image_processing_error_does_not_shadow_signature_or_model_errors() {
+        assert_eq!(
+            UpstreamClassification::classify(400, "Invalid signature in thinking block", None),
+            UpstreamClassification::ThoughtSignatureError
+        );
+        assert_eq!(
+            UpstreamClassification::classify(404, "models/foo is not found", None),
+            UpstreamClassification::ModelNotFound
+        );
     }
 }

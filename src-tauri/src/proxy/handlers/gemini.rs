@@ -183,6 +183,7 @@ pub async fn handle_generate(
     let mut failure_statuses = FailureStatusTracker::default();
     let mut used_attempts = 0;
     let mut retried_without_thinking = false;
+    let mut retried_with_image_omitted = false;
 
     let initial_mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
         &model_name,
@@ -988,6 +989,27 @@ pub async fn handle_generate(
                 tracing::warn!(
                     "[Gemini] Pipeline: Thinking signature error persisted after retry without thinking. Terminating retry loop."
                 );
+            }
+        }
+
+        // [FIX Corrupted Image] 400 "Unable to process input image": clients replay the whole
+        // history, so one undecodable image would otherwise kill every later turn. Fingerprint the
+        // images in the client body (the wrapped body was consumed by the call); the upstream
+        // client's sanitizer then swaps them for a text placeholder on the retry and on every
+        // replay. Not an account fault: no lockout, no rotation.
+        if classification.is_image_processing_error() && !retried_with_image_omitted {
+            let image_count =
+                crate::proxy::mappers::corrupted_image_guard::record_corrupted_images_in_gemini_payload(
+                    &body,
+                );
+            if image_count > 0 {
+                retried_with_image_omitted = true;
+                tracing::warn!(
+                    "[Gemini] Upstream 400 Unable to process input image. Fingerprinted {} image(s) as unprocessable; retrying on account {} with them omitted.",
+                    image_count, email
+                );
+                force_rotate = false;
+                continue;
             }
         }
 

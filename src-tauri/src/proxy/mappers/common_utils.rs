@@ -1121,6 +1121,48 @@ mod tests {
     }
 
     #[test]
+    fn task_image_rejected_by_upstream_is_omitted_when_client_replays_history() {
+        // Unique payload: the blacklist is process-global and tests run in parallel.
+        let img = "iVBORw0KGgppbWFnZS1yZWplY3RlZC1ieS11cHN0cmVhbS1lMmUtdW5pcXVl";
+        let payload = || {
+            json!({"contents": [{"role": "user", "parts": [
+                {"text": "see this"},
+                {"inlineData": {"mimeType": "image/png", "data": img}}
+            ]}]})
+        };
+
+        // Before upstream complains the image passes through untouched.
+        let mut first_turn = payload();
+        assert_eq!(sanitize_gemini_payload_inline_data(&mut first_turn), 0);
+        assert_eq!(
+            first_turn["contents"][0]["parts"][1]["inlineData"]["data"],
+            img
+        );
+
+        // Upstream answers 400 Unable to process input image: handler records what it sent.
+        assert_eq!(
+            crate::proxy::mappers::corrupted_image_guard::record_corrupted_images_in_gemini_payload(
+                &payload()
+            ),
+            1
+        );
+        assert!(validate_and_sanitize_inline_data(Some("image/png"), img).is_none());
+
+        // The client replays the same history on its next turn: the image becomes a placeholder,
+        // the surrounding text survives.
+        let mut replay = payload();
+        assert_eq!(sanitize_gemini_payload_inline_data(&mut replay), 1);
+        assert_eq!(replay["contents"][0]["parts"][0]["text"], "see this");
+        assert_eq!(
+            replay["contents"][0]["parts"][1]["text"],
+            "[Image/Data: invalid or corrupted inline payload omitted]"
+        );
+        assert!(replay["contents"][0]["parts"][1]
+            .get("inlineData")
+            .is_none());
+    }
+
+    #[test]
     fn test_sanitize_gemini_payload_inline_data() {
         let valid_png_b64 = "iVBORw0KGgo=";
         let mut payload = json!({
@@ -1387,6 +1429,18 @@ pub fn validate_and_sanitize_inline_data(
 ) -> Option<(String, String)> {
     let clean_b64 = b64_data.trim();
     if clean_b64.is_empty() {
+        return None;
+    }
+
+    // An image upstream already refused ("400 Unable to process input image") must not be sent
+    // again: clients replay the whole history, so one bad image would otherwise poison every
+    // later turn. Checked before decoding; the blacklist is empty in normal operation so this
+    // costs one lock.
+    if crate::proxy::mappers::corrupted_image_guard::is_corrupted_image(clean_b64) {
+        tracing::warn!(
+            "[Image-Defense] Omitted image already rejected by upstream (len: {})",
+            clean_b64.len()
+        );
         return None;
     }
 

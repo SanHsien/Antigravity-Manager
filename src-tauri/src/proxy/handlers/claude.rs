@@ -921,6 +921,7 @@ pub async fn handle_messages(
 
     let mut last_error = String::new();
     let mut retried_without_thinking = false;
+    let mut retried_with_image_omitted = false;
     let mut last_email: Option<String> = None;
     let mut last_mapped_model: Option<String> = None;
     // Every failed attempt is recorded here; the final status is derived from the whole history,
@@ -1334,7 +1335,9 @@ pub async fn handle_messages(
             .call_v1_internal_with_headers(
                 method,
                 &access_token,
-                gemini_body,
+                // Cloned (not moved) so an upstream "Unable to process input image" 400 can still
+                // fingerprint the images that were actually sent.
+                gemini_body.clone(),
                 query,
                 extra_headers.clone(),
                 Some(account_id.as_str()),
@@ -1812,6 +1815,27 @@ pub async fn handle_messages(
                 Json(dual_err),
             )
                 .into_response();
+        }
+
+        // [FIX Corrupted Image] 400 "Unable to process input image": clients replay the whole
+        // history, so a single undecodable image would otherwise kill every later turn.
+        // Fingerprint the images we just sent; the upstream client's sanitizer then swaps them for
+        // a text placeholder, so the retry (and every replay) goes out without them. Not an
+        // account fault: no lockout, no rotation, same account keeps its prefix cache.
+        if classification.is_image_processing_error() && !retried_with_image_omitted {
+            let image_count =
+                crate::proxy::mappers::corrupted_image_guard::record_corrupted_images_in_gemini_payload(
+                    &gemini_body,
+                );
+            if image_count > 0 {
+                retried_with_image_omitted = true;
+                tracing::warn!(
+                    "[{}] Upstream 400 Unable to process input image. Fingerprinted {} image(s) as unprocessable; retrying on account {} with them omitted.",
+                    trace_id, image_count, email
+                );
+                force_rotate = false;
+                continue;
+            }
         }
 
         if classification.should_lock_account() {

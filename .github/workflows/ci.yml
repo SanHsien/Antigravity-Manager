@@ -159,6 +159,14 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::server::save_update_settings_payload_tests::task_ -- --test-threads=1
 
+      - name: Test upstream image-processing 400 classification and fingerprint guard
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::pipeline::policy::tests::task_ -- --test-threads=1
+          cargo test --locked --lib proxy::mappers::corrupted_image_guard::tests::task_ -- --test-threads=1
+          cargo test --locked --lib proxy::mappers::common_utils::tests::task_image_rejected -- --test-threads=1
+
       - name: Test forced tool_choice thinking strip
         timeout-minutes: 6
         run: |
