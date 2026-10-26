@@ -106,13 +106,20 @@ mod tests {
     #[test]
     fn task_redact_secret_value_never_survives() {
         let secret = "AIzaSyDoNotLeak-1234567890";
-        for uri in [
+        for (index, uri) in [
             format!("/v1beta/models?key={secret}"),
             format!("/v1beta/models/m:generateContent?alt=sse&key={secret}"),
             format!("/v1beta/models?x=1&key={secret}&y=2"),
             format!("http://h/v1beta/models?key={secret}#f"),
-        ] {
-            assert!(!redact_query_secret(&uri).contains(secret), "uri {uri}");
+        ]
+        .iter()
+        .enumerate()
+        {
+            // Index only: the failure message must not echo the secret-bearing URI.
+            assert!(
+                !redact_query_secret(uri).contains(secret),
+                "secret survived redaction in case {index}"
+            );
         }
     }
 }
