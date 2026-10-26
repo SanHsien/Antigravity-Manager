@@ -94,6 +94,7 @@ where
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut final_usage: Option<super::models::OpenAIUsage> = None;
         let mut error_occurred = false;
+        let mut finish_emitted = false;
         let mut tool_call_index = 0;
         let mut thinking_acc = if let Some(ref a) = causal_anchor {
             crate::proxy::thinking_store::TurnAccumulator::with_anchor(a)
@@ -296,6 +297,7 @@ where
                                                             }]
                                                         });
                                                         if finish_reason.is_some() {
+                                                            finish_emitted = true;
                                                             if !include_usage {
                                                                 if let Some(ref usage) = final_usage {
                                                                     openai_chunk["usage"] = serde_json::to_value(usage).unwrap();
@@ -353,6 +355,28 @@ where
 
         thinking_acc.commit(&session_id);
         if !error_occurred {
+            // Upstream closed without finishReason. Usage metadata is only sent with the
+            // final frame, so seeing it proves the response completed and only the finish
+            // marker was lost; close the choice for the client. Without usage the stream
+            // really was cut short, so leave it unfinished instead of disguising it.
+            if !finish_emitted && final_usage.is_some() {
+                let reason = if emitted_tool_calls.is_empty() { "stop" } else { "tool_calls" };
+                let mut finish_chunk = json!({
+                    "id": &stream_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_ts,
+                    "model": &model,
+                    "choices": [{ "index": 0, "delta": {}, "finish_reason": reason }]
+                });
+                if !include_usage {
+                    if let Some(usage) = final_usage.take() {
+                        finish_chunk["usage"] = serde_json::to_value(usage).unwrap();
+                    }
+                }
+                yield Ok::<Bytes, String>(Bytes::from(format!("data: {}
+
+", serde_json::to_string(&finish_chunk).unwrap_or_default())));
+            }
             // [CRITICAL FIX #3455] Only emit standalone usage chunk with empty choices if client explicitly
             // requested stream_options.include_usage: true. Emitting choices: [] unconditionally causes Python
             // OpenAI SDK and autonomous agents (Hermes, etc.) to crash with `IndexError: list index out of range`!
