@@ -23,7 +23,9 @@ import json
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -32,6 +34,11 @@ UPSTREAM_REF_PREFIX = "refs/upstream-check"
 DEFAULT_DECISION_LOG = "docs/DECISIONS.md"
 TRACK_MODES = ("release", "commit")
 _SEMVER_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+# `gh pr|issue list` has no offset, only `--limit`. Start small and grow the limit until the
+# listing reaches the reviewed watermark, so a fast-moving upstream is never silently truncated.
+# If even the cap does not reach the watermark the scan is reported incomplete -- never as clean.
+TICKET_LIMIT_START = 100
+TICKET_LIMIT_CAP = 1000
 
 
 class UpstreamCheckError(RuntimeError):
@@ -197,16 +204,25 @@ def upstream_slug(repo_url: str) -> str | None:
     return f"{match['owner']}/{match['name']}" if match else None
 
 
-def collect_new_tickets(baseline: dict, kind: str) -> list[dict] | None:
-    slug = upstream_slug(str(baseline["repo"]))
-    if not slug:
-        return None
-    watermark = int(baseline.get(f"reviewed_{kind}_through", 0) or 0)
+@dataclass
+class TicketScan:
+    """Result of listing upstream PRs or issues past a watermark.
+
+    ``complete`` is False when the listing hit ``limit`` without reaching the watermark: ``items``
+    is then only the newest ``limit`` entries and older unreviewed ones may be missing.
+    """
+
+    items: list[dict]
+    complete: bool
+    limit: int
+
+
+def _list_tickets(slug: str, kind: str, limit: int) -> list[dict] | None:
     try:
         result = subprocess.run(
             [
                 "gh", kind, "list", "--repo", slug, "--state", "all",
-                "--limit", "50", "--json", "number,title",
+                "--limit", str(limit), "--json", "number,title",
             ],
             capture_output=True,
             text=True,
@@ -221,21 +237,42 @@ def collect_new_tickets(baseline: dict, kind: str) -> list[dict] | None:
         items = json.loads(result.stdout)
     except ValueError:
         return None
-    return sorted(
-        (item for item in items if item["number"] > watermark),
-        key=lambda item: item["number"],
-    )
+    return items if isinstance(items, list) else None
+
+
+def collect_new_tickets(baseline: dict, kind: str) -> TicketScan | None:
+    """List upstream items numbered above the watermark; ``None`` means "could not check"."""
+    slug = upstream_slug(str(baseline["repo"]))
+    if not slug:
+        return None
+    watermark = int(baseline.get(f"reviewed_{kind}_through", 0) or 0)
+    limit = TICKET_LIMIT_START
+    while True:
+        items = _list_tickets(slug, kind, limit)
+        if items is None:
+            return None
+        new = sorted(
+            (item for item in items if item["number"] > watermark),
+            key=lambda item: item["number"],
+        )
+        # `gh` lists newest first. The listing is complete once it ran out of items (fewer than
+        # asked for) or already contains something at or below the watermark.
+        if len(items) < limit or any(item["number"] <= watermark for item in items):
+            return TicketScan(new, True, limit)
+        if limit >= TICKET_LIMIT_CAP:
+            return TicketScan(new, False, limit)
+        limit = min(limit * 2, TICKET_LIMIT_CAP)
 
 
 def render_ticket_section(
     title: str,
     watermark: int,
-    tickets: list[dict] | None,
+    scan: TicketScan | None,
     kind: str,
     decision_log: str,
 ) -> list[str]:
     lines = [f"## {title}", "", f"Triaged through `#{watermark}`.", ""]
-    if tickets is None:
+    if scan is None:
         lines.extend(
             [
                 "Not checked: `gh` was unavailable, unauthenticated, or the baseline",
@@ -245,13 +282,24 @@ def render_ticket_section(
             ]
         )
         return lines
+    tickets = scan.items
     if not tickets:
         lines.extend(["No new items above that number.", ""])
         return lines
+    if scan.complete:
+        lines.extend([f"{len(tickets)} new item(s) to triage.", ""])
+    else:
+        lines.extend(
+            [
+                f"**INCOMPLETE:** `gh` returned its maximum of {scan.limit} items without",
+                f"reaching `#{watermark}`. The {len(tickets)} item(s) below are only the newest;",
+                "older unreviewed ones may be missing. This is NOT a full list -- triage",
+                "the rest directly on GitHub, or raise the watermark in steps.",
+                "",
+            ]
+        )
     lines.extend(
         [
-            f"{len(tickets)} new item(s) to triage.",
-            "",
             "| Item | Title |",
             "| --- | --- |",
         ]
@@ -271,7 +319,7 @@ def render_ticket_section(
 
 
 def append_ticket_sections(
-    report: str, baseline: dict, prs: list[dict] | None, issues: list[dict] | None
+    report: str, baseline: dict, prs: TicketScan | None, issues: TicketScan | None
 ) -> str:
     decision_log = baseline.get("decision_log", DEFAULT_DECISION_LOG)
     lines = [report.rstrip("\n"), ""]
@@ -361,6 +409,18 @@ def render_markdown(
     return "\n".join(lines)
 
 
+def emit(text: str, stream: TextIO | None = None) -> None:
+    """Print without depending on the console encoding.
+
+    The report holds arbitrary upstream titles; a console that cannot encode one (cp950 on
+    Traditional-Chinese Windows has no emoji) must not abort the run. Unencodable characters are
+    shown as escapes. The report file is always written as UTF-8 and stays exact.
+    """
+    stream = stream if stream is not None else sys.stdout
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    print(text.encode(encoding, errors="backslashreplace").decode(encoding), file=stream)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default="upstream-review-report.md")
@@ -374,8 +434,8 @@ def main() -> int:
 
     baseline: dict
     commits: list[dict] = []
-    prs: list[dict] | None = None
-    issues: list[dict] | None = None
+    prs: TicketScan | None = None
+    issues: TicketScan | None = None
     error: str | None = None
     release: str | None = None
     try:
@@ -418,7 +478,7 @@ def main() -> int:
         report = append_ticket_sections(report, baseline, prs, issues)
     output = Path(args.output)
     output.write_text(report, encoding="utf-8")
-    print(report)
+    emit(report)
 
     if error:
         return 2
@@ -428,13 +488,22 @@ def main() -> int:
         if value is None
     ]
     if unavailable:
-        print(
-            "ERROR: gh could not enumerate upstream "
-            + " and ".join(unavailable)
-            + "."
+        emit("ERROR: gh could not enumerate upstream " + " and ".join(unavailable) + ".")
+        return 2
+    incomplete = [
+        name
+        for name, value in (("pull requests", prs), ("issues", issues))
+        if value is not None and not value.complete
+    ]
+    if incomplete:
+        emit(
+            "ERROR: the listing of upstream "
+            + " and ".join(incomplete)
+            + f" hit gh's {TICKET_LIMIT_CAP}-item cap before reaching the reviewed watermark; "
+            "older unreviewed items may be missing."
         )
         return 2
-    if args.strict and (commits or prs or issues):
+    if args.strict and (commits or (prs and prs.items) or (issues and issues.items)):
         return 1
     return 0
 

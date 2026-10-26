@@ -34,6 +34,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python compile failed with exit code $LASTEXITCODE"
 }
 
+Write-Host "==> Testing upstream checker"
+python -m unittest discover -s tools -p "check_upstream_updates_test.py"
+if ($LASTEXITCODE -ne 0) {
+    throw "Upstream checker tests failed with exit code $LASTEXITCODE"
+}
+
 Write-Host "==> Checking fork document links"
 python tools/check_links.py
 if ($LASTEXITCODE -ne 0) {
