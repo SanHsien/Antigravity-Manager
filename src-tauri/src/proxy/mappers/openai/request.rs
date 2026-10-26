@@ -250,6 +250,40 @@ fn validate_openai_tool_values(
     Ok(())
 }
 
+/// Anthropic rejects extended thinking when `tool_choice` forces tool use.
+/// The OpenAI mapper turns `required` / object-form choices into Gemini mode `ANY`,
+/// so for Claude targets drop `thinkingConfig` in that case. Returns whether it was removed.
+fn strip_thinking_for_forced_tool_choice(inner_request: &mut Value, mapped_model: &str) -> bool {
+    if !mapped_model.to_lowercase().contains("claude") {
+        return false;
+    }
+    let mode = inner_request
+        .get("toolConfig")
+        .and_then(|tc| tc.get("functionCallingConfig"))
+        .or_else(|| {
+            inner_request
+                .get("tool_config")
+                .and_then(|tc| tc.get("function_calling_config"))
+        })
+        .and_then(|fc| fc.get("mode"))
+        .and_then(|m| m.as_str());
+    if mode != Some("ANY") {
+        return false;
+    }
+    let removed = inner_request
+        .get_mut("generationConfig")
+        .and_then(Value::as_object_mut)
+        .and_then(|gc| gc.remove("thinkingConfig"))
+        .is_some();
+    if removed {
+        tracing::warn!(
+            "[OpenAI-Request] Forced tool_choice (mode ANY) conflicts with Claude thinking: removed thinkingConfig for {}",
+            mapped_model
+        );
+    }
+    removed
+}
+
 pub fn transform_openai_request(
     request: &OpenAIRequest,
     project_id: &str,
@@ -1477,6 +1511,9 @@ pub fn transform_openai_request_with_session(
             generation
         ));
     }
+
+    // Forced tool_choice (mode ANY) and thinking cannot be combined on Claude targets.
+    strip_thinking_for_forced_tool_choice(&mut inner_request, mapped_model);
 
     // [CACHE] 重建 inner_request 字段顺序——稳定前缀在前，动态内容在后
     // [CACHE] 统一委托进站流水线进行前缀拓扑规范化与对齐（Pipeline First 核心归一）
@@ -3776,5 +3813,120 @@ mod tests {
             }]
         });
         assert!(validate_raw_openai_tool_schemas(&normal).is_ok());
+    }
+
+    fn forced_tool_choice_request(model: &str, tool_choice: Value) -> OpenAIRequest {
+        OpenAIRequest {
+            model: model.to_string(),
+            messages: vec![OpenAIMessage {
+                role: "user".to_string(),
+                content: Some(OpenAIContent::String("What is the weather?".to_string())),
+                ..Default::default()
+            }],
+            tools: Some(vec![json!({
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            })]),
+            tool_choice: Some(tool_choice),
+            thinking: Some(ThinkingConfig {
+                thinking_type: Some("enabled".to_string()),
+                budget_tokens: Some(1024),
+                effort: None,
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn task_forced_tool_choice_removes_thinking_for_claude_only() {
+        let claude_forced = json!({
+            "toolConfig": { "functionCallingConfig": { "mode": "ANY" } },
+            "generationConfig": { "thinkingConfig": { "thinkingBudget": 1024 }, "topK": 40 }
+        });
+        let mut body = claude_forced.clone();
+        assert!(strip_thinking_for_forced_tool_choice(
+            &mut body,
+            "claude-sonnet-4-6"
+        ));
+        assert!(body["generationConfig"].get("thinkingConfig").is_none());
+        assert_eq!(body["generationConfig"]["topK"], 40);
+        assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "ANY");
+
+        // Snake-case tool_config is honored too.
+        let mut snake = json!({
+            "tool_config": { "function_calling_config": { "mode": "ANY" } },
+            "generationConfig": { "thinkingConfig": { "thinkingBudget": 1024 } }
+        });
+        assert!(strip_thinking_for_forced_tool_choice(
+            &mut snake,
+            "Claude-Opus-4-6-Thinking"
+        ));
+        assert!(snake["generationConfig"].get("thinkingConfig").is_none());
+
+        // Non-Claude targets keep thinkingConfig.
+        let mut gemini = claude_forced.clone();
+        assert!(!strip_thinking_for_forced_tool_choice(
+            &mut gemini,
+            "gemini-3-pro-high"
+        ));
+        assert!(gemini["generationConfig"].get("thinkingConfig").is_some());
+
+        // Non-forcing modes keep thinkingConfig on Claude.
+        for mode in ["AUTO", "VALIDATED", "NONE"] {
+            let mut body = json!({
+                "toolConfig": { "functionCallingConfig": { "mode": mode } },
+                "generationConfig": { "thinkingConfig": { "thinkingBudget": 1024 } }
+            });
+            assert!(!strip_thinking_for_forced_tool_choice(
+                &mut body,
+                "claude-sonnet-4-6"
+            ));
+            assert!(body["generationConfig"].get("thinkingConfig").is_some());
+        }
+
+        // No toolConfig at all: untouched.
+        let mut plain =
+            json!({ "generationConfig": { "thinkingConfig": { "thinkingBudget": 1024 } } });
+        assert!(!strip_thinking_for_forced_tool_choice(
+            &mut plain,
+            "claude-sonnet-4-6"
+        ));
+        assert!(plain["generationConfig"].get("thinkingConfig").is_some());
+    }
+
+    #[test]
+    fn task_forced_tool_choice_claude_request_drops_thinking_config() {
+        // Baseline: auto tool choice (normalized to VALIDATED by the inbound pipeline) keeps
+        // the server-heuristic thinkingConfig on Claude.
+        let auto = forced_tool_choice_request("claude-sonnet-4-6", json!("auto"));
+        let (auto_body, _, _, _) =
+            transform_openai_request(&auto, "test-proj", "claude-sonnet-4-6", None);
+        assert_eq!(
+            auto_body["request"]["toolConfig"]["functionCallingConfig"]["mode"],
+            "VALIDATED"
+        );
+        assert!(auto_body["request"]["generationConfig"]
+            .get("thinkingConfig")
+            .is_some());
+
+        // `required` and object-form choices both map to ANY and must drop thinkingConfig.
+        for tool_choice in [
+            json!("required"),
+            json!({ "type": "function", "function": { "name": "get_weather" } }),
+        ] {
+            let req = forced_tool_choice_request("claude-sonnet-4-6", tool_choice);
+            let (body, _, _, _) =
+                transform_openai_request(&req, "test-proj", "claude-sonnet-4-6", None);
+            assert_eq!(
+                body["request"]["toolConfig"]["functionCallingConfig"]["mode"],
+                "ANY"
+            );
+            assert!(body["request"]["generationConfig"]
+                .get("thinkingConfig")
+                .is_none());
+        }
     }
 }
