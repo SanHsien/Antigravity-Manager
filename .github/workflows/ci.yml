@@ -141,6 +141,24 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::handlers::claude::exhausted_status_tests::task_ -- --test-threads=1
 
+      - name: Test Web-mode config hot reload
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::server::web_hot_reload_tests::task_ -- --test-threads=1
+
+      - name: Test forced tool_choice thinking strip
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::mappers::openai::request::tests::task_forced_tool_choice -- --test-threads=1
+
+      - name: Test thought snippet signature lookup
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib modules::proxy_db::thinking_sqlite_tests::task_ -- --test-threads=1
+
       - name: Test rate-limit reason classify
         timeout-minutes: 6
         run: |

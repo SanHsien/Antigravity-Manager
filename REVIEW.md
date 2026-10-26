@@ -19,6 +19,24 @@
 | Issue #3749／#3750／#3744／#3745／#3743／#3748 | 拒絕 | 全部指向 QoS、Argon、Mini 窗或託盤互動；fork 無對應程式碼。 |
 
 
+### 00.2 採用項修復紀錄（2026-10-26，皆已進 main，CI 實跑新增測試通過）
+
+| 項目 | 上游 | fork commit | 與上游差異 |
+|---|---|---|---|
+| P1 429 延遲取 max、`resets in`、掃全部 details | `7ed0f10e` 第 1 段 | `49204cba` | 不把 `QuotaFailure` 映射成配額耗盡（會把每分鐘限流誤鎖長時間）；未加 `handlers/common.rs` 的 individual quota |
+| P4 驗證封鎖到期不再永久自鎖 | `d6974bc3` | `c6d53b62` | 只在驗證封鎖到期時重探；一般 403／proxy 停用帳號不重探（上游會全部重探） |
+| P3 Gemini `?key=` 含日誌去敏 | `505deb09` | `d1611b8e` | 管理端點不接受 query key；監控日誌、IP 日誌一律去敏（含 percent-encoded 參數名） |
+| P5 會話指紋穩定 | `f86c2485` | `2a6c8ee2`、`b75f4075` | 文字錨點優先，既有文字會話 id 不變；簽名 URL 去 query；`[System` 後任何空白皆視為標籤 |
+| P10 Claude 429 外洩 | `16d31898` 僅 Claude handler | `ae762fb1` | 另修 200 header 後 peek 失敗仍回 200 的洩漏；未取 `common.rs` 多日配額快速轉移 |
+| P7 Web 模式儲存設定熱更新 | `d206e57e` | `5065411f` | 另補 `circuit_breaker`；未做 hub 指紋 |
+| P9 強制 tool_choice 移除 Claude thinkingConfig | `cae8fb9b` 第 3 項 | `2fa371d7` | 不做「400 後剝除重試」 |
+| P13 thought 片段簽名查詢 | `aa6cd5b1` 小項 | `78d7cce2` | 改為掃最近 50 筆解壓後 `contains`（區分大小寫） |
+
+**待維護者決定／延後**：P2（專屬代理故障轉移）、P6（OpenAI 串流補發 finish_reason）見報告；P8（無 quotaInfo 模型，需真實 API 資料）、P11（輕量模式黑屏，需 Windows 實機）、P12（warmup 路由，現況不觸發）延後。
+
+**既有失敗測試（base 即紅，CI 從未執行）**：`proxy::rate_limit::tests::task_preserves_explicit_long_image_quota_deadline`、`proxy::rate_limit::tests::test_server_error_does_not_accumulate_failure_count`；CI 新步驟以 `--skip` 排除前者。修正需先決定預期語意（顯式長配額期限是否僅限圖像模型）。
+
+
 ---
 
 ### 結論先行：建議採用清單（依價值排序）
