@@ -37,6 +37,22 @@
 **既有失敗測試（base 即紅，CI 從未執行）**：`proxy::rate_limit::tests::task_preserves_explicit_long_image_quota_deadline`、`proxy::rate_limit::tests::test_server_error_does_not_accumulate_failure_count`；CI 新步驟以 `--skip` 排除前者。修正需先決定預期語意（顯式長配額期限是否僅限圖像模型）。
 
 
+### 00.3 2026-10-26 新增 PR #3755 與 Issue #3752–#3754、#3756、#3757（水位：PR 3751 -> 3755／issue 3750 -> 3757）
+
+- 來源：全程唯讀（`gh pr/issue view`、`gh pr diff`、`git show upstream/beta`）。commit 軸 `0067fe04` 之後 behind 0，release 軸 v5.0.0 之後無新 release。
+- PR #3755 依 PLAYBOOK 判準八取**目前** head `752705c370cd6e7083e608882dd508cac0b07031`（單一 commit、與審查時一致、無 force-push），diff 86 行／6359 bytes；`grep -nE '\S\s{40,}\S'` 只命中縮排的 `-` 刪除行（非藏碼）、無超過 400 字元的行、無 `eval`／`new Function(`／`global.`／`require(`／長 base64／hex。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3755（已關閉未合併；CyberCockpitView 零用量假柱、hitRate 地板；同 PR 夾帶表盤指針與測速） | 不採用 | 1 檔 `src/components/token_stats/CyberCockpitView.tsx` +33/-21。fork 沒有該檔：`grep -ril "CyberCockpit\|HourlyTrendBar" src src-tauri/src` 無命中，`src/components/` 下也沒有 `token_stats/` 目錄，缺陷所在的元件不存在。上游審查者自己指出該 PR 夾帶的 `get_one_minute_load`／`get_latest_real_speed`／`run_speed_probe` 後端命令與 SVG id 皆不存在。重新開案：fork 引入 token_stats cockpit 元件時，改採零用量不補地板（`hasValue ? Math.max(8, pct) : 0`）的做法，不取 PR 的表盤與測速。 |
+| Issue #3752（已關閉；Ubuntu xrdp 斷線後程式整個消失，上游 5.0.1-beta.0 修） | 不採用 | 上游修法是新增 `linux_display_guard.rs`，覆寫行程層級的 `_exit`／掛 `XSetIOErrorHandler`。fork `grep -rli "display_guard\|XSetIOErrorHandler\|pthread_exit" src-tauri/src src-tauri/Cargo.toml` 無命中，沒有這個機制，也沒有該崩潰的程式面；本 fork 是 Windows 11 原生優先，release 不出 Linux AppImage。#3757 已證明該守衛第一版只防主執行緒，覆寫 `_exit` 這種做法本身不穩。重新開案：fork 開始出 Linux 桌面包且有人回報 XIO 崩潰；屆時採 WebKitGTK 層（關合成、`XSetIOErrorHandler` 只記錄）而不是照抄 `_exit` 覆寫。 |
+| Issue #3753（open；`gemini-4-argon` 思考約 90 秒後上游斷線） | 不採用 | 現象在 `stream_lifecycle.rs` 的 `error reading a body from connection`，是上游連線被切；維護者留言指出 Antigravity 官方客戶端也會，非閘道問題。fork 無 Argon：`grep -rli argon src-tauri/src src` 無命中。重新開案：fork 加入 `gemini-4-argon` 模型，或上游確認是閘道端 idle/keepalive 造成。 |
+| Issue #3754（open；Web/Headless 儲存更新設定回 400）；上游修復 `1f8b6082`（beta） | **採用（已移植）** | 缺陷在 fork 存在：`src/pages/Settings.tsx:640,671` 以 `invoke('save_update_settings', { settings: {...} })` 呼叫，`src/utils/request.ts` 的 Web 分支把 args 整包 `JSON.stringify` 成 `{"settings":{...}}` 送到 `/api/system/updates/save`，而 `proxy/server.rs` 的 `admin_save_update_settings` 把整個 body 直接反序列化成 `UpdateSettings`，缺頂層 `auto_check` 必然回 400；並且落盤用 `let _ =` 吞錯。fork 修法：body 改為 untagged `Wrapped { settings } / Flat`，兩種形狀都收；落盤失敗回 500。**沒照抄的部分**：上游把 `UpdateSettings` 改成局部補丁（`UpdateSettingsPatch`）並新增 `update_channel`，fork 沒有更新通道欄位，不引入；前端 `last_check_time: 0` 的硬編碼（每次儲存都重置檢查時間）屬另一個行為，Tauri 命令同樣如此，本輪不動，重新開案條件是有人回報儲存設定後立即重新檢查更新。測試 `proxy::server::save_update_settings_payload_tests::task_*` 4 筆，CI 新增對應步驟。 |
+| Issue #3756（open；5.0.0 生圖 15 秒端點超時，上游 200 後仍回 502 `No images generated`） | 不採用（監看） | 前半（短 header 看門狗）fork 不存在：`grep -rn "calculate_endpoint_watchdog_secs\|calculate_total_upstream_budget_secs" src-tauri/src` 無命中，`upstream/client.rs` 只有 `connect_timeout(20s)`／整體 `timeout(600s)`。後半（200 但取不到圖時只回通用 502、缺 finishReason／promptFeedback 診斷）fork 同樣存在（`handlers/openai.rs:5599`、`6068`），但這是診斷增強需求，上游尚無修復也無維護者回覆，且提報者自述未做 4.9.8/5.0.0 對照。重新開案：上游合併無圖診斷，或本機實測重現 200 無圖。 |
+| Issue #3757（open；#3752 修復後數小時再度退出，指 `linux_display_guard.rs` 只擋主執行緒） | 不採用 | 依附於 #3752 的 Linux 守衛，fork 無該檔（同上 grep）。重新開案條件同 #3752。 |
+
+> 水位推進：`reviewed_pr_through` 3751 -> 3755、`reviewed_issue_through` 3750 -> 3757。除 #3754 外皆為已讀治理結論，**不表示 Argon 串流斷線、無圖診斷或 Linux 守衛已在 fork 處理**。
+
 ---
 
 ### 結論先行：建議採用清單（依價值排序）

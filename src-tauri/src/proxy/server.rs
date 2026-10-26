@@ -2846,15 +2846,44 @@ async fn admin_update_last_check_time(
     Ok(StatusCode::OK)
 }
 
-async fn admin_save_update_settings(Json(settings): Json<serde_json::Value>) -> impl IntoResponse {
-    if let Ok(s) =
-        serde_json::from_value::<crate::modules::update_checker::UpdateSettings>(settings)
-    {
-        let _ = crate::modules::update_checker::save_update_settings(&s);
-        StatusCode::OK
-    } else {
-        StatusCode::BAD_REQUEST
+/// Web 模式請求體（Issue lbjlaq/Antigravity-Manager#3754）：
+/// - `Wrapped`：前端 `invoke('save_update_settings', { settings })` 經 `request.ts` 映射後，
+///   原樣送出的 `{"settings": { ... }}`（與 Tauri 命令的參數名一致）；
+/// - `Flat`：Headless/CLI 直接平鋪的欄位（保留既有呼叫方式）。
+///
+/// 兩種形狀互斥（`UpdateSettings` 的必填欄位 `auto_check`／`last_check_time`
+/// 不會出現在包裝體頂層），untagged 解析不會誤判。
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum SaveUpdateSettingsPayload {
+    Wrapped {
+        settings: crate::modules::update_checker::UpdateSettings,
+    },
+    Flat(crate::modules::update_checker::UpdateSettings),
+}
+
+impl SaveUpdateSettingsPayload {
+    fn into_settings(self) -> crate::modules::update_checker::UpdateSettings {
+        match self {
+            Self::Wrapped { settings } => settings,
+            Self::Flat(settings) => settings,
+        }
     }
+}
+
+async fn admin_save_update_settings(
+    Json(payload): Json<SaveUpdateSettingsPayload>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    // 落盤失敗如實回 500，不再把「沒寫進去」當成功。
+    crate::modules::update_checker::save_update_settings(&payload.into_settings()).map_err(
+        |e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+        },
+    )?;
+    Ok(StatusCode::OK)
 }
 
 async fn admin_is_auto_launch_enabled() -> impl IntoResponse {
@@ -4865,5 +4894,64 @@ mod web_hot_reload_tests {
         assert_eq!(hot.user_agent_override, None);
         assert!(!hot.capture_health_logs);
         assert!(!hot.upstream_proxy.enabled);
+    }
+}
+
+#[cfg(test)]
+mod save_update_settings_payload_tests {
+    use super::SaveUpdateSettingsPayload;
+
+    #[test]
+    fn task_update_settings_accepts_wrapped_web_invoke_body() {
+        // Web 模式前端實際送出的形狀（Settings.tsx 的 invoke 參數名 `settings`）。
+        // 修復前整包被當成 UpdateSettings 反序列化，缺 auto_check 而回 400。
+        let payload: SaveUpdateSettingsPayload = serde_json::from_value(serde_json::json!({
+            "settings": { "auto_check": false, "last_check_time": 0, "check_interval_hours": 12 }
+        }))
+        .expect("wrapped web body must deserialize");
+
+        let settings = payload.into_settings();
+        assert!(!settings.auto_check);
+        assert_eq!(settings.last_check_time, 0);
+        assert_eq!(settings.check_interval_hours, 12);
+    }
+
+    #[test]
+    fn task_update_settings_accepts_flat_headless_body() {
+        let payload: SaveUpdateSettingsPayload = serde_json::from_value(serde_json::json!({
+            "auto_check": true, "last_check_time": 7, "check_interval_hours": 48
+        }))
+        .expect("flat headless body must deserialize");
+
+        let settings = payload.into_settings();
+        assert!(settings.auto_check);
+        assert_eq!(settings.last_check_time, 7);
+        assert_eq!(settings.check_interval_hours, 48);
+    }
+
+    #[test]
+    fn task_update_settings_wrapped_body_without_interval_uses_default() {
+        let payload: SaveUpdateSettingsPayload = serde_json::from_value(serde_json::json!({
+            "settings": { "auto_check": true, "last_check_time": 0 }
+        }))
+        .expect("interval is optional");
+        assert!(payload.into_settings().check_interval_hours > 0);
+    }
+
+    #[test]
+    fn task_update_settings_rejects_body_missing_required_fields() {
+        // 兩種形狀都不符時必須是解析錯誤（axum 回 4xx），不能被當成預設值靜默寫入。
+        assert!(
+            serde_json::from_value::<SaveUpdateSettingsPayload>(serde_json::json!({
+                "unknown": 1
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<SaveUpdateSettingsPayload>(serde_json::json!({
+                "settings": { "check_interval_hours": 24 }
+            }))
+            .is_err()
+        );
     }
 }
