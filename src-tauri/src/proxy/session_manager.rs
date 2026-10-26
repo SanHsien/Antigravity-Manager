@@ -32,14 +32,18 @@ pub fn sanitize_user_text_for_fingerprint(raw: &str) -> String {
     }
 
     // 3. 移除 [System: ...] 或 [System ...]
-    //    只有 "[System" 後緊接 ':'、空白或 ']' 才視為系統標籤；找不到收尾 ']' 時
+    //    只有 "[System" 後緊接 ':'、任何空白字元（含換行、Tab）或 ']' 才視為系統標籤；
+    //    找不到收尾 ']' 時
     //    不截斷（避免吃掉整段使用者正文），也不誤刪 `[System.out.println(...)]` 這類程式碼。
     const SYSTEM_TAG: &str = "[System";
     let mut search_from = 0;
     while let Some(rel) = s[search_from..].find(SYSTEM_TAG) {
         let start = search_from + rel;
         let after = start + SYSTEM_TAG.len();
-        let looks_like_tag = matches!(s[after..].chars().next(), Some(':' | ' ' | ']'));
+        let looks_like_tag = s[after..]
+            .chars()
+            .next()
+            .is_some_and(|c| c == ':' || c == ']' || c.is_whitespace());
         if looks_like_tag {
             if let Some(end_rel) = s[after..].find(']') {
                 s.replace_range(start..after + end_rel + 1, "");
@@ -795,6 +799,32 @@ mod tests {
         assert_eq!(
             sanitize_user_text_for_fingerprint("你好 [System] 世界 [System"),
             "你好  世界 [System"
+        );
+    }
+
+    #[test]
+    fn task_system_tag_accepts_any_whitespace_after_marker() {
+        assert_eq!(
+            sanitize_user_text_for_fingerprint("A [System\nclock tick at 12:00] B"),
+            "A  B"
+        );
+        assert_eq!(
+            sanitize_user_text_for_fingerprint("A [System\tnote: dynamic] B"),
+            "A  B"
+        );
+        assert_eq!(
+            sanitize_user_text_for_fingerprint("A [System\r\nnote] B"),
+            "A  B"
+        );
+        // Whitespace after the marker without a closing bracket is still kept as user text.
+        assert_eq!(
+            sanitize_user_text_for_fingerprint("A [System\n still the user's text"),
+            "A [System\n still the user's text"
+        );
+        // Identifier-like continuations are not tags.
+        assert_eq!(
+            sanitize_user_text_for_fingerprint("A [Systematic\nreview] B"),
+            "A [Systematic\nreview] B"
         );
     }
 
