@@ -953,22 +953,46 @@ pub fn lookup_latest_thinking_signature(session_id: &str) -> Option<String> {
     .ok()
 }
 
+/// Number of most recent signed thinking records scanned by
+/// `lookup_signature_by_thought_snippet`.
+const SNIPPET_LOOKUP_SCAN_LIMIT: usize = 50;
+
 /// 为 UI 展示层兜底提供：按思考内容片段模糊查找权威签名
+///
+/// Thoughts at or above `MIN_GZIP_THOUGHT` are stored as gzip BLOBs (and short ones carry a
+/// magic prefix), so a SQL `LIKE` on the column can never match their plain text. Scan the
+/// newest signed records and match on the unpacked text instead.
 pub fn lookup_signature_by_thought_snippet(snippet: &str) -> Option<String> {
     let clean = snippet.trim();
     if clean.is_empty() {
         return None;
     }
     let conn = thinking_db().ok()?;
-    let pattern = format!("%{}%", clean);
-    conn.query_row(
-        "SELECT signature FROM thinking_records 
-         WHERE thought LIKE ?1 AND signature IS NOT NULL 
-         ORDER BY id DESC LIMIT 1",
-        rusqlite::params![pattern],
-        |r| r.get(0),
-    )
-    .ok()
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT thought, signature FROM thinking_records
+             WHERE signature IS NOT NULL
+             ORDER BY id DESC LIMIT ?1",
+        )
+        .ok()?;
+    let rows = stmt
+        .query_map(rusqlite::params![SNIPPET_LOOKUP_SCAN_LIMIT as i64], |r| {
+            // Legacy rows may still hold TEXT; accept both TEXT and BLOB.
+            let thought = match r.get_ref(0)? {
+                rusqlite::types::ValueRef::Blob(b) => unpack_thought(b),
+                rusqlite::types::ValueRef::Text(t) => unpack_thought(t),
+                _ => String::new(),
+            };
+            let signature: String = r.get(1)?;
+            Ok((thought, signature))
+        })
+        .ok()?;
+    for (thought, signature) in rows.flatten() {
+        if thought.contains(clean) {
+            return Some(signature);
+        }
+    }
+    None
 }
 
 /// 根据 fingerprint 精准穿透点查纯文本历史思考（利用 idx_thinking_rec_fp 索引）
@@ -1778,6 +1802,56 @@ mod thinking_sqlite_tests {
         let loaded_text = load_thinking_by_fingerprint(session_key, text_fp).unwrap();
         assert!(loaded_text.is_some());
         assert_eq!(loaded_text.unwrap().thought, "Pure text reasoning");
+    }
+
+    #[test]
+    fn task_lookup_signature_by_thought_snippet_matches_gzip_thought() {
+        let _dir = TestDataDir::new();
+
+        let sig_long = "g".repeat(60);
+        let sig_short = "r".repeat(60);
+        let long_thought = format!(
+            "Start of long thought. {} unique marker: needle_in_compressed_thought. {} End.",
+            "A".repeat(300),
+            "B".repeat(300)
+        );
+        assert!(long_thought.len() >= MIN_GZIP_THOUGHT);
+        assert!(pack_thought(&long_thought).starts_with(THOUGHT_GZIP_MAGIC));
+
+        save_thinking_record(
+            "sess-gzip-snippet",
+            "fp_gzip_snippet",
+            &long_thought,
+            Some(&sig_long),
+            &[],
+            &[],
+            "visible",
+        )
+        .unwrap();
+        save_thinking_record(
+            "sess-raw-snippet",
+            "fp_raw_snippet",
+            "short thought with raw_marker_value inside",
+            Some(&sig_short),
+            &[],
+            &[],
+            "visible",
+        )
+        .unwrap();
+
+        assert_eq!(
+            lookup_signature_by_thought_snippet("needle_in_compressed_thought"),
+            Some(sig_long)
+        );
+        assert_eq!(
+            lookup_signature_by_thought_snippet("  raw_marker_value  "),
+            Some(sig_short)
+        );
+        assert_eq!(
+            lookup_signature_by_thought_snippet("non_existent_snippet_xyz"),
+            None
+        );
+        assert_eq!(lookup_signature_by_thought_snippet("   "), None);
     }
 }
 
