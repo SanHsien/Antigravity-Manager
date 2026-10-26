@@ -95,6 +95,7 @@ where
         let mut final_usage: Option<super::models::OpenAIUsage> = None;
         let mut error_occurred = false;
         let mut finish_emitted = false;
+        let mut last_frame_has_usage = false;
         let mut tool_call_index = 0;
         let mut thinking_acc = if let Some(ref a) = causal_anchor {
             crate::proxy::thinking_store::TurnAccumulator::with_anchor(a)
@@ -121,6 +122,7 @@ where
                                         if json_part == "[DONE]" { continue; }
                                         if let Ok(mut json) = serde_json::from_str::<Value>(json_part) {
                                             let actual_data = if let Some(inner) = json.get_mut("response").map(|v| v.take()) { inner } else { json };
+                                            last_frame_has_usage = actual_data.get("usageMetadata").is_some();
                                             if let Some(u) = actual_data.get("usageMetadata") {
                                                 final_usage = extract_usage_metadata(u);
                                             }
@@ -355,11 +357,12 @@ where
 
         thinking_acc.commit(&session_id);
         if !error_occurred {
-            // Upstream closed without finishReason. Usage metadata is only sent with the
-            // final frame, so seeing it proves the response completed and only the finish
-            // marker was lost; close the choice for the client. Without usage the stream
-            // really was cut short, so leave it unfinished instead of disguising it.
-            if !finish_emitted && final_usage.is_some() {
+            // Upstream closed without finishReason. Heuristic: the last data frame carried
+            // usageMetadata, which Gemini attaches when a response completes, so only the
+            // finish marker was lost; close the choice for the client. If the last frame had
+            // no usage the stream was probably cut short, so leave it unfinished instead of
+            // disguising it as a normal end. Single-choice only (synthesized index is 0).
+            if !finish_emitted && last_frame_has_usage && final_usage.is_some() {
                 let reason = if emitted_tool_calls.is_empty() { "stop" } else { "tool_calls" };
                 let mut finish_chunk = json!({
                     "id": &stream_id,
@@ -373,9 +376,7 @@ where
                         finish_chunk["usage"] = serde_json::to_value(usage).unwrap();
                     }
                 }
-                yield Ok::<Bytes, String>(Bytes::from(format!("data: {}
-
-", serde_json::to_string(&finish_chunk).unwrap_or_default())));
+                yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&finish_chunk).unwrap_or_default())));
             }
             // [CRITICAL FIX #3455] Only emit standalone usage chunk with empty choices if client explicitly
             // requested stream_options.include_usage: true. Emitting choices: [] unconditionally causes Python
@@ -1866,6 +1867,16 @@ mod tests {
         });
         let (chunks, _) = collect_chat_chunks(vec![payload], false).await;
         assert_eq!(finish_reasons(&chunks), vec!["tool_calls".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn task_eof_after_usage_on_an_earlier_frame_stays_unfinished() {
+        // Usage seen on an early frame only: the stream may have been cut afterwards.
+        let early = usage_only_tail();
+        let later = json!({ "candidates": [{ "content": { "parts": [{ "text": " more" }] } }] });
+        let (chunks, done) = collect_chat_chunks(vec![early, later], false).await;
+        assert!(done);
+        assert!(finish_reasons(&chunks).is_empty());
     }
 
     #[tokio::test]
