@@ -1162,15 +1162,29 @@ mod tests {
     }
 
     #[test]
-    fn test_server_error_does_not_accumulate_failure_count() {
+    fn task_plain_5xx_never_enters_the_cooldown_pool() {
+        let tracker = RateLimitTracker::new();
+        for status in [500u16, 502, 503, 504] {
+            assert!(
+                tracker
+                    .parse_from_error("acc-5xx", status, None, "Service Unavailable", None, &[60])
+                    .is_none(),
+                "status {status} must not cool the account down"
+            );
+        }
+        assert!(!tracker.is_rate_limited("acc-5xx", None));
+    }
+
+    #[test]
+    fn task_server_error_does_not_accumulate_failure_count() {
         let tracker = RateLimitTracker::new();
         let backoff_steps = vec![60, 300, 1800, 7200];
 
-        // 模拟连续 5 次 5xx 错误
+        // 模拟连续 5 次 529 过载（唯一会走 ServerError 的状态码；500/503 不进冷却池）
         for i in 1..=5 {
             let info = tracker.parse_from_error(
                 "acc1",
-                503,
+                529,
                 None,
                 "Service Unavailable",
                 None,
