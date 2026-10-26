@@ -32,7 +32,7 @@
 | P9 強制 tool_choice 移除 Claude thinkingConfig | `cae8fb9b` 第 3 項 | `2fa371d7` | 不做「400 後剝除重試」 |
 | P13 thought 片段簽名查詢 | `aa6cd5b1` 小項 | `78d7cce2` | 改為掃最近 50 筆解壓後 `contains`（區分大小寫） |
 
-**待維護者決定／延後**：P2（專屬代理故障轉移）、P6（OpenAI 串流補發 finish_reason）見報告；P8（無 quotaInfo 模型，需真實 API 資料）、P11（輕量模式黑屏，需 Windows 實機）、P12（warmup 路由，現況不觸發）延後。
+**已決（2026-10-26，維護者授權代決）**：P2 不採用（維持現行行為，見 P2「決定」）；P6 採保守版（僅在已收到 usageMetadata 時補 finish_reason，見 P6「決定」）。**延後**：P8（無 quotaInfo 模型，需真實 API 資料）、P11（輕量模式黑屏，需 Windows 實機）、P12（warmup 路由，現況不觸發）延後。
 
 **既有失敗測試（base 即紅，CI 從未執行）**：`proxy::rate_limit::tests::task_preserves_explicit_long_image_quota_deadline`、`proxy::rate_limit::tests::test_server_error_does_not_accumulate_failure_count`；CI 新步驟以 `--skip` 排除前者。修正需先決定預期語意（顯式長配額期限是否僅限圖像模型）。
 
@@ -166,6 +166,7 @@
   - 可選：把 URL 解析抽成 `pub fn parse_and_clean_proxy_url(raw) -> (String, Option<(String,String)>)` 以利單測；`set_password`／`set_username` 的順序先不動，需在 CI 用測試證明差異才改。
   - 另注意：`upstream/client.rs:253-292` 對 `Err` 與 `build_client_with_proxy` 失敗仍回預設 client；若要真正封閉洩漏，專屬綁定帳號在這兩種情況應回錯誤而非直連。這是上游也沒處理的延伸缺口，建議另開 packet。
   - 決策點：不健康時改走公用池會讓專屬帳號換出口 IP；若希望「專屬帳號絕不換 IP」，則步驟 2 應省略，直接用綁定代理（較嚴格，但無容錯）。
+- **決定（2026-10-26）：不採用，維持現行行為，不改程式。** 現行 `get_bound_proxy` 的兩種設定都不會讓專屬帳號靜默換 IP：`auto_failover` 關閉時，不論健康與否一律用綁定代理（不換 IP、不直連）；`auto_failover` 開啟時，使用者已明示接受容錯，不健康才改走公用池（`select_proxy_from_pool` 已排除所有被綁定的代理，不會借用別帳號的專屬 IP）。上游改法會讓「關閉故障轉移」的帳號也換 IP，與設定語意相反。已知殘留缺口：`auto_failover` 開啟、綁定代理不健康且公用池為空時，`Ok(None)` 會讓 `upstream/client.rs` 回預設 client（直連）；這是使用者開啟容錯後的邊緣情況，且上游也未處理。觸發重開：維護者要求「專屬帳號絕不直連」，屆時於 `upstream/client.rs` 對綁定帳號的 `Ok(None)`／`Err` 回錯誤而非直連，並移植上游 4 個測試。
 - 測試（CI）：上游 4 個測試可直接移植（`bound_account_prevents_direct_leak_when_unhealthy`、`bound_account_fails_over_to_healthy_pool_proxy`、`build_proxy_config_blocks_ciphertext_when_no_url_auth`、URL 清洗兩個）；fork 現有 `test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure`（`proxy_pool.rs:~705`）要保持綠燈。
 - 本機可測：否。
 
@@ -195,6 +196,8 @@
 - 本機可測：否。
 
 #### P6  `073d6a97`：OpenAI Chat 串流終態 finish_reason
+
+- **決定（2026-10-26）：採保守版，已實作。** 串流收尾時若未曾送出 finish_reason 且已收到 usageMetadata（Gemini 只在最後一幀附 usage，代表回應其實完成、只是結束標記遺失），補一個 finish_reason chunk：有工具呼叫為 `tool_calls`，否則 `stop`。沒有 usage 則不補，維持未完成，不把中斷偽裝成正常結束（與 Responses 串流的 `upstream_interrupted` 一致）。未採用上游的「一律補」與 `has_content` 條件。測試：`streaming.rs` 的 `task_eof_*` 五個，CI 步驟「Test OpenAI stream EOF finish_reason」。
 
 - 檔案：`src-tauri/src/proxy/mappers/openai/streaming.rs`，函式 `create_openai_sse_stream_with_anchor`（`:73-376`）。
 - 改法：
