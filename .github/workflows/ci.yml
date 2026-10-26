@@ -103,7 +103,7 @@ jobs:
         timeout-minutes: 6
         run: |
           cd src-tauri
-          cargo test --locked --lib proxy::rate_limit::tests::task_baseline proxy::rate_limit::tests::task_current_retry proxy::rate_limit::tests::task_parse_rate_limit_reason -- --test-threads=1
+          cargo test --locked --lib proxy::rate_limit::tests::task_ -- --test-threads=1 --skip task_preserves_explicit_long_image_quota_deadline
 
       - name: Test account batch-refresh skip
         timeout-minutes: 6
