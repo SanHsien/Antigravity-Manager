@@ -40,6 +40,29 @@ fn is_retryable_claude_upstream_error(error: &str) -> bool {
     !crate::proxy::common::json_schema::is_tool_schema_client_error(error)
 }
 
+/// Status recorded for an upstream call that failed before any HTTP response arrived.
+/// Timeouts map to 504, every other transport failure to 502; never to 429.
+fn upstream_transport_error_status(error: &str) -> StatusCode {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout") || lower.contains("deadline") {
+        StatusCode::GATEWAY_TIMEOUT
+    } else {
+        StatusCode::BAD_GATEWAY
+    }
+}
+
+/// HTTP status returned once every attempt has failed.
+///
+/// The tracker yields 429 only when every recorded failure was a 429; any timeout or other
+/// upstream failure wins, so clients do not enter a minutes-long rate-limit backoff.
+/// 403 is reported as 503 so Claude Code does not drop back to its login screen.
+fn exhausted_response_status(failures: &super::common::FailureStatusTracker) -> StatusCode {
+    match failures.final_status() {
+        StatusCode::FORBIDDEN => StatusCode::SERVICE_UNAVAILABLE,
+        other => other,
+    }
+}
+
 // ===== Task #6: OpenCode variants thinking config mapping =====
 // Helper structs for parsing thinking hints from raw JSON
 #[derive(Debug, Clone)]
@@ -900,7 +923,9 @@ pub async fn handle_messages(
     let mut retried_without_thinking = false;
     let mut last_email: Option<String> = None;
     let mut last_mapped_model: Option<String> = None;
-    let mut last_status = StatusCode::SERVICE_UNAVAILABLE; // Default to 503 if no response reached
+    // Every failed attempt is recorded here; the final status is derived from the whole history,
+    // so a 429 from an early account cannot mask a later timeout / upstream failure.
+    let mut failure_statuses = super::common::FailureStatusTracker::default();
     let mut force_rotate = false;
 
     // [Stage Timing] 阶段耗时度量变量 (毫秒，保留微秒级浮点精度)
@@ -1334,6 +1359,7 @@ pub async fn handle_messages(
                         .into_response();
                 }
                 last_error = e.clone();
+                failure_statuses.record(upstream_transport_error_status(&e));
                 debug!(
                     "Request failed on attempt {}/{}: {}",
                     attempt + 1,
@@ -1380,7 +1406,6 @@ pub async fn handle_messages(
         // [NEW] 提取实际请求的上游端点 URL，用于日志记录和排查
         let upstream_url = response.url().to_string();
         let status = response.status();
-        last_status = status;
 
         // 成功
         if status.is_success() {
@@ -1475,6 +1500,7 @@ pub async fn handle_messages(
                                 e
                             );
                             last_error = format!("Stream error during peek: {}", e);
+                            failure_statuses.record(StatusCode::BAD_GATEWAY);
                             retry_this_account = true;
                             break;
                         }
@@ -1484,6 +1510,7 @@ pub async fn handle_messages(
                                 trace_id
                             );
                             last_error = "Empty response stream during peek".to_string();
+                            failure_statuses.record(StatusCode::BAD_GATEWAY);
                             retry_this_account = true;
                             break;
                         }
@@ -1493,6 +1520,7 @@ pub async fn handle_messages(
                                 trace_id
                             );
                             last_error = "Timeout waiting for first data".to_string();
+                            failure_statuses.record(StatusCode::GATEWAY_TIMEOUT);
                             retry_this_account = true;
                             break;
                         }
@@ -1608,6 +1636,7 @@ pub async fn handle_messages(
                             trace_id
                         );
                         last_error = "Empty response stream (None)".to_string();
+                        failure_statuses.record(StatusCode::BAD_GATEWAY);
                         continue;
                     }
                 }
@@ -1719,7 +1748,7 @@ pub async fn handle_messages(
 
         // 1. 立即提取状态码和 headers（防止 response 被 move）
         let status_code = status.as_u16();
-        last_status = status;
+        failure_statuses.record(status);
         let retry_after = response
             .headers()
             .get("Retry-After")
@@ -2036,7 +2065,7 @@ pub async fn handle_messages(
             }
         }
 
-        let error_type = match last_status.as_u16() {
+        let error_type = match failure_statuses.final_status().as_u16() {
             400 => "invalid_request_error",
             401 => "authentication_error",
             403 => "permission_error",
@@ -2046,11 +2075,7 @@ pub async fn handle_messages(
         };
 
         // [FIX] 403 时返回 503，避免 Claude Code 客户端退出到登录页
-        let response_status = if last_status.as_u16() == 403 {
-            StatusCode::SERVICE_UNAVAILABLE
-        } else {
-            last_status
-        };
+        let response_status = exhausted_response_status(&failure_statuses);
 
         if let Some(sec) = crate::proxy::handlers::common::extract_retry_after_seconds(&last_error)
         {
@@ -2083,7 +2108,7 @@ pub async fn handle_messages(
             }
         }
 
-        let error_type = match last_status.as_u16() {
+        let error_type = match failure_statuses.final_status().as_u16() {
             400 => "invalid_request_error",
             401 => "authentication_error",
             403 => "permission_error",
@@ -2093,11 +2118,7 @@ pub async fn handle_messages(
         };
 
         // [FIX] 403 时返回 503，避免 Claude Code 客户端退出到登录页
-        let response_status = if last_status.as_u16() == 403 {
-            StatusCode::SERVICE_UNAVAILABLE
-        } else {
-            last_status
-        };
+        let response_status = exhausted_response_status(&failure_statuses);
 
         let model_str = last_mapped_model.as_deref().unwrap_or("unknown");
         let dual_err = crate::proxy::handlers::common::build_dual_track_error(
@@ -2780,5 +2801,83 @@ mod warmup_tests {
             quality: None,
         };
         assert!(!is_warmup_request(&tool_error_req));
+    }
+}
+
+#[cfg(test)]
+mod exhausted_status_tests {
+    use super::*;
+    use crate::proxy::handlers::common::FailureStatusTracker;
+
+    fn tracker(statuses: &[StatusCode]) -> FailureStatusTracker {
+        let mut t = FailureStatusTracker::default();
+        for s in statuses {
+            t.record(*s);
+        }
+        t
+    }
+
+    #[test]
+    fn task_timeout_after_rate_limit_is_not_reported_as_429() {
+        // 429 from the first account, timeout on the next one: the client must see 504.
+        let t = tracker(&[StatusCode::TOO_MANY_REQUESTS, StatusCode::GATEWAY_TIMEOUT]);
+        assert_eq!(exhausted_response_status(&t), StatusCode::GATEWAY_TIMEOUT);
+
+        // Order must not matter: a trailing 429 does not override the earlier failure.
+        let t = tracker(&[StatusCode::BAD_GATEWAY, StatusCode::TOO_MANY_REQUESTS]);
+        assert_eq!(exhausted_response_status(&t), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn task_all_rate_limited_stays_429() {
+        let t = tracker(&[StatusCode::TOO_MANY_REQUESTS, StatusCode::TOO_MANY_REQUESTS]);
+        assert_eq!(exhausted_response_status(&t), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[test]
+    fn task_forbidden_is_reported_as_service_unavailable() {
+        let t = tracker(&[StatusCode::FORBIDDEN]);
+        assert_eq!(
+            exhausted_response_status(&t),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+
+        let t = tracker(&[StatusCode::TOO_MANY_REQUESTS, StatusCode::FORBIDDEN]);
+        assert_eq!(
+            exhausted_response_status(&t),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn task_other_upstream_statuses_pass_through() {
+        let t = tracker(&[StatusCode::INTERNAL_SERVER_ERROR]);
+        assert_eq!(
+            exhausted_response_status(&t),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let t = tracker(&[StatusCode::BAD_REQUEST, StatusCode::TOO_MANY_REQUESTS]);
+        assert_eq!(exhausted_response_status(&t), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn task_transport_error_status_is_never_429() {
+        assert_eq!(
+            upstream_transport_error_status("operation timed out"),
+            StatusCode::GATEWAY_TIMEOUT
+        );
+        assert_eq!(
+            upstream_transport_error_status("Request Timeout after 60s"),
+            StatusCode::GATEWAY_TIMEOUT
+        );
+        assert_eq!(
+            upstream_transport_error_status("connection refused"),
+            StatusCode::BAD_GATEWAY
+        );
+        // A message that merely mentions rate limiting is still a transport failure.
+        assert_eq!(
+            upstream_transport_error_status("HTTP 429 rate limited while connecting"),
+            StatusCode::BAD_GATEWAY
+        );
     }
 }
