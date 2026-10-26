@@ -117,6 +117,30 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::token_manager::tests::task_expired_validation_block -- --test-threads=1
 
+      - name: Test proxy auth and query-key redaction
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::middleware::auth::tests::task_ -- --test-threads=1
+
+      - name: Test query-secret redaction
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::middleware::redact::tests::task_ -- --test-threads=1
+
+      - name: Test session fingerprint
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::session_manager::tests::task_ -- --test-threads=1
+
+      - name: Test Claude exhausted-status mapping
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::handlers::claude::exhausted_status_tests::task_ -- --test-threads=1
+
       - name: Test rate-limit reason classify
         timeout-minutes: 6
         run: |
