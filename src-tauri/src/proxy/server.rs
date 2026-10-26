@@ -1803,10 +1803,33 @@ async fn admin_save_config(
         *mapping = new_config.clone().proxy.custom_mapping;
     }
 
+    // Fields that only take effect when pushed into the live components.
+    // Kept in one place so that every setting the desktop `save_config` hot-reloads
+    // is also applied in Web / Docker mode.
+    let hot = WebHotReloadFields::from_config(&new_config);
+
     // 更新上游代理
     {
         let mut proxy = state.upstream_proxy.write().await;
-        *proxy = new_config.clone().proxy.upstream_proxy;
+        *proxy = hot.upstream_proxy.clone();
+    }
+    // Rebuild the default HTTP client and drop stale per-proxy clients
+    state
+        .upstream
+        .rebuild_default_client(Some(hot.upstream_proxy.clone()))
+        .await;
+    state.upstream.clear_client_cache();
+
+    // 更新仅暴露真实配额模型开关
+    {
+        let mut only_raw = state.only_raw_quota_models.write().await;
+        *only_raw = hot.only_raw_quota_models;
+    }
+
+    // 更新调试日志配置
+    {
+        let mut dbg = state.debug_logging.write().await;
+        *dbg = hot.debug_logging.clone();
     }
 
     // 更新安全策略
@@ -1824,8 +1847,28 @@ async fn admin_save_config(
     // 更新代理池配置（Web/Docker 保存配置时热更新）
     {
         let mut pool = state.proxy_pool_state.write().await;
-        *pool = new_config.clone().proxy.proxy_pool;
+        *pool = hot.proxy_pool.clone();
     }
+    // Re-sync account <-> proxy bindings and drop cached per-proxy clients
+    state.proxy_pool_manager.sync_bindings_from_config().await;
+    state.upstream.clear_client_cache();
+
+    // 更新 User-Agent 配置
+    state
+        .upstream
+        .set_user_agent_override(hot.user_agent_override.clone())
+        .await;
+
+    // 同步健康检查日志捕获开关
+    state
+        .monitor
+        .set_capture_health_logs(hot.capture_health_logs);
+
+    // 更新熔断配置
+    state
+        .token_manager
+        .update_circuit_breaker_config(hot.circuit_breaker.clone())
+        .await;
 
     // [FIX Web Mode] 同步全局内存配置（热更新思考预算、系统提示词、图像思考模式、压缩等级、阈值与审计策略）
     crate::proxy::update_thinking_budget_config(new_config.proxy.thinking_budget.clone());
@@ -1858,6 +1901,34 @@ async fn admin_save_config(
     );
 
     Ok(StatusCode::OK)
+}
+
+/// Settings that `admin_save_config` must push into live components after
+/// persisting. Extracted as a plain value so the list of synced fields is
+/// unit-testable without constructing a full `AppState`.
+#[derive(Debug, Clone)]
+struct WebHotReloadFields {
+    only_raw_quota_models: bool,
+    debug_logging: crate::proxy::config::DebugLoggingConfig,
+    upstream_proxy: crate::proxy::config::UpstreamProxyConfig,
+    proxy_pool: crate::proxy::config::ProxyPoolConfig,
+    user_agent_override: Option<String>,
+    capture_health_logs: bool,
+    circuit_breaker: crate::models::CircuitBreakerConfig,
+}
+
+impl WebHotReloadFields {
+    fn from_config(config: &AppConfig) -> Self {
+        Self {
+            only_raw_quota_models: config.proxy.only_raw_quota_models,
+            debug_logging: config.proxy.debug_logging.clone(),
+            upstream_proxy: config.proxy.upstream_proxy.clone(),
+            proxy_pool: config.proxy.proxy_pool.clone(),
+            user_agent_override: config.proxy.user_agent_override.clone(),
+            capture_health_logs: config.proxy.capture_health_logs,
+            circuit_breaker: config.circuit_breaker.clone(),
+        }
+    }
 }
 
 // [FIX Web Mode] Get proxy pool config
@@ -4726,5 +4797,73 @@ mod image_scheduler_tests {
         let listener_v6 = super::bind_tcp_listener("::", port)
             .expect("wildcard v6 dual-stack bind should succeed");
         drop(listener_v6);
+    }
+}
+
+#[cfg(test)]
+mod web_hot_reload_tests {
+    use super::WebHotReloadFields;
+    use crate::models::AppConfig;
+
+    #[test]
+    fn task_web_hot_reload_fields_follow_saved_config() {
+        let mut config = AppConfig::new();
+        config.proxy.only_raw_quota_models = true;
+        config.proxy.debug_logging.enabled = true;
+        config.proxy.debug_logging.output_dir = Some("debug-out".to_string());
+        config.proxy.upstream_proxy.enabled = true;
+        config.proxy.upstream_proxy.url = "http://127.0.0.1:7890".to_string();
+        config.proxy.proxy_pool.enabled = true;
+        config
+            .proxy
+            .proxy_pool
+            .account_bindings
+            .insert("acct-1".to_string(), "proxy-1".to_string());
+        config.proxy.user_agent_override = Some("custom-agent/9.9.9".to_string());
+        config.proxy.capture_health_logs = true;
+        config.circuit_breaker.enabled = !config.circuit_breaker.enabled;
+        config.circuit_breaker.backoff_steps = vec![7, 11];
+        config.circuit_breaker.lock_on_zero_quota = !config.circuit_breaker.lock_on_zero_quota;
+
+        let hot = WebHotReloadFields::from_config(&config);
+
+        assert!(hot.only_raw_quota_models);
+        assert!(hot.debug_logging.enabled);
+        assert_eq!(hot.debug_logging.output_dir.as_deref(), Some("debug-out"));
+        assert!(hot.upstream_proxy.enabled);
+        assert_eq!(hot.upstream_proxy.url, "http://127.0.0.1:7890");
+        assert!(hot.proxy_pool.enabled);
+        assert_eq!(
+            hot.proxy_pool
+                .account_bindings
+                .get("acct-1")
+                .map(String::as_str),
+            Some("proxy-1")
+        );
+        assert_eq!(
+            hot.user_agent_override.as_deref(),
+            Some("custom-agent/9.9.9")
+        );
+        assert!(hot.capture_health_logs);
+        assert_eq!(
+            serde_json::to_value(&hot.circuit_breaker).unwrap(),
+            serde_json::to_value(&config.circuit_breaker).unwrap()
+        );
+        assert_eq!(hot.circuit_breaker.backoff_steps, vec![7, 11]);
+    }
+
+    #[test]
+    fn task_web_hot_reload_fields_reflect_cleared_values() {
+        let mut config = AppConfig::new();
+        config.proxy.only_raw_quota_models = false;
+        config.proxy.user_agent_override = None;
+        config.proxy.capture_health_logs = false;
+
+        let hot = WebHotReloadFields::from_config(&config);
+
+        assert!(!hot.only_raw_quota_models);
+        assert_eq!(hot.user_agent_override, None);
+        assert!(!hot.capture_health_logs);
+        assert!(!hot.upstream_proxy.enabled);
     }
 }
