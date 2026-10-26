@@ -1756,6 +1756,111 @@ mod tests {
         assert_eq!(usage["total_tokens"], 15);
     }
 
+    async fn collect_chat_chunks(
+        payloads: Vec<Value>,
+        include_usage: bool,
+    ) -> (Vec<Value>, bool) {
+        let items: Vec<Result<Bytes, reqwest::Error>> = payloads
+            .iter()
+            .map(|p| Ok(Bytes::from(format!("data: {}
+
+", p))))
+            .collect();
+        let mut stream = create_openai_sse_stream(
+            Box::pin(stream::iter(items)),
+            "gemini-1.5-flash".to_string(),
+            "task-session".to_string(),
+            0,
+            None,
+            include_usage,
+        );
+        let mut chunks = Vec::new();
+        let mut done = false;
+        while let Some(Ok(bytes)) = stream.next().await {
+            for line in String::from_utf8_lossy(&bytes).lines() {
+                if line == "data: [DONE]" {
+                    done = true;
+                } else if let Some(body) = line.strip_prefix("data: ") {
+                    chunks.push(serde_json::from_str::<Value>(body).unwrap());
+                }
+            }
+        }
+        (chunks, done)
+    }
+
+    fn finish_reasons(chunks: &[Value]) -> Vec<String> {
+        chunks
+            .iter()
+            .filter_map(|c| c["choices"].get(0))
+            .filter_map(|choice| choice["finish_reason"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    fn usage_only_tail() -> Value {
+        json!({
+            "candidates": [{ "content": { "parts": [{ "text": "Hi" }] } }],
+            "usageMetadata": {
+                "promptTokenCount": 3, "candidatesTokenCount": 2, "totalTokenCount": 5
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn task_eof_with_usage_but_no_finish_reason_synthesizes_stop() {
+        let (chunks, done) = collect_chat_chunks(vec![usage_only_tail()], false).await;
+        assert!(done);
+        assert_eq!(finish_reasons(&chunks), vec!["stop".to_string()]);
+        // The synthesized finish chunk is the last choice-bearing chunk and carries usage.
+        let last = chunks.iter().rfind(|c| c["choices"].get(0).is_some()).unwrap();
+        assert_eq!(last["choices"][0]["finish_reason"], "stop");
+        assert_eq!(last["usage"]["total_tokens"], 5);
+    }
+
+    #[tokio::test]
+    async fn task_eof_with_usage_and_include_usage_keeps_finish_before_usage_chunk() {
+        let (chunks, _) = collect_chat_chunks(vec![usage_only_tail()], true).await;
+        assert_eq!(finish_reasons(&chunks), vec!["stop".to_string()]);
+        let last = chunks.last().unwrap();
+        assert_eq!(last["choices"], json!([]));
+        assert_eq!(last["usage"]["total_tokens"], 5);
+    }
+
+    #[tokio::test]
+    async fn task_eof_with_usage_after_tool_call_synthesizes_tool_calls() {
+        let payload = json!({
+            "candidates": [{ "content": { "parts": [
+                { "functionCall": { "name": "lookup", "args": { "q": "x" } } }
+            ] } }],
+            "usageMetadata": {
+                "promptTokenCount": 3, "candidatesTokenCount": 2, "totalTokenCount": 5
+            }
+        });
+        let (chunks, _) = collect_chat_chunks(vec![payload], false).await;
+        assert_eq!(finish_reasons(&chunks), vec!["tool_calls".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn task_eof_without_usage_or_finish_reason_stays_unfinished() {
+        // No usageMetadata means the upstream never completed: do not disguise the
+        // interruption as a normal end of stream.
+        let payload = json!({ "candidates": [{ "content": { "parts": [{ "text": "Hi" }] } }] });
+        let (chunks, done) = collect_chat_chunks(vec![payload], false).await;
+        assert!(done);
+        assert!(finish_reasons(&chunks).is_empty());
+    }
+
+    #[tokio::test]
+    async fn task_real_finish_reason_is_not_duplicated_by_the_fallback() {
+        let payload = json!({
+            "candidates": [{ "finishReason": "STOP", "content": { "parts": [{ "text": "Hi" }] } }],
+            "usageMetadata": {
+                "promptTokenCount": 3, "candidatesTokenCount": 2, "totalTokenCount": 5
+            }
+        });
+        let (chunks, _) = collect_chat_chunks(vec![payload], false).await;
+        assert_eq!(finish_reasons(&chunks), vec!["stop".to_string()]);
+    }
+
     #[tokio::test]
     async fn test_hermes_stream_without_include_usage_never_emits_empty_choices() {
         // Simulates real Gemini streaming where finishReason arrives in chunk 1,
