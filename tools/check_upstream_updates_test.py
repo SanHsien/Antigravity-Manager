@@ -40,7 +40,7 @@ def completed(stdout: str = "", returncode: int = 0, stderr: str = ""):
     return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr)
 
 
-def fake_gh(prs=(), issues=(), titles=None):
+def fake_gh(prs=(), issues=(), titles=None, created=None):
     """A ``run_gh`` replacement serving numbered corpora, newest first, honouring ``--limit``."""
     corpora = {"pr": sorted(prs, reverse=True), "issue": sorted(issues, reverse=True)}
     calls: list[list[str]] = []
@@ -49,7 +49,11 @@ def fake_gh(prs=(), issues=(), titles=None):
         calls.append(args)
         limit = int(args[args.index("--limit") + 1])
         rows = [
-            {"number": n, "title": (titles or {}).get(n, f"item {n}")}
+            {
+                "number": n,
+                "title": (titles or {}).get(n, f"item {n}"),
+                **({"createdAt": created[n]} if created and n in created else {}),
+            }
             for n in corpora[args[0]][:limit]
         ]
         return completed(json.dumps(rows))
@@ -68,8 +72,9 @@ def baseline_for(sha: str, **extra) -> dict:
     }
 
 
-def git(cwd: Path, *args: str) -> str:
+def git(cwd: Path, *args: str, when: str | None = None) -> str:
     env = {
+        **({"GIT_COMMITTER_DATE": when, "GIT_AUTHOR_DATE": when} if when else {}),
         "GIT_AUTHOR_NAME": "t",
         "GIT_AUTHOR_EMAIL": "t@example.invalid",
         "GIT_COMMITTER_NAME": "t",
@@ -235,6 +240,8 @@ class SupportedPythons(unittest.TestCase):
         source = CHECKER.read_text(encoding="utf-8")
         ast.parse(source, feature_version=(3, 9))
         self.assertNotRegex(source, r"isinstance\([^\n]*\|")
+        # `datetime.UTC` / `from datetime import UTC` arrived in 3.11.
+        self.assertNotRegex(source, r"import[^\n]*\bUTC\b|datetime\.UTC")
 
 
 class TagParsing(unittest.TestCase):
@@ -249,6 +256,20 @@ class TagParsing(unittest.TestCase):
             f"{'3' * 40}\trefs/tags/v1.10.0^{{}}\n"
         )
         self.assertEqual(check.parse_tag_refs(raw)[-1][1:], ("v1.10.0", "3" * 40))
+
+
+class PrefixedTags(unittest.TestCase):
+    def test_a_prefix_selects_the_release_line_and_ignores_other_tags(self):
+        """rea's upstream tags `rea-agents-6.8.0` next to unrelated tags."""
+        raw = (
+            f"{'1' * 40}\trefs/tags/rea-agents-6.8.0\n{'2' * 40}\trefs/tags/v9.9.9\n"
+            f"{'3' * 40}\trefs/tags/rea-agents-6.10.0\n"
+        )
+        dotted = check.parse_tag_refs(raw.replace("rea-agents-", "rea.agents-"), "rea-agents-")
+        self.assertEqual(dotted, [])  # the dots in a prefix are literal, not wildcards
+        newest = check.parse_tag_refs(raw, "rea-agents-")[-1]
+        self.assertEqual(newest[1:], ("rea-agents-6.10.0", "3" * 40))
+        self.assertEqual([t[1] for t in check.parse_tag_refs(raw)], ["v9.9.9"])
 
 
 class RunnerEdges(unittest.TestCase):
@@ -445,6 +466,110 @@ class EndToEnd(PatchedCase):
         self.write()
         self.assertEqual(self.run_check("--strict"), 0)
         self.assertEqual(git(self.fork, "tag", "--list", "v9.9.9"), "")
+
+    def _release_world(self, **extra):
+        git(self.upstream, "tag", "app-1.0.0", self.first)
+        self.write(
+            track="release",
+            release_tag_prefix="app-",
+            ticket_cutoff="release",
+            reviewed_pr_through=0,
+            **extra,
+        )
+
+    def test_tickets_opened_after_the_newest_release_are_deferred_not_lost(self):
+        self._release_world()
+        created = {1: "2000-01-01T00:00:00Z", 2: "2999-01-01T00:00:00Z"}
+        self.set_gh(fake_gh(prs=[1, 2], created=created))
+        self.assertEqual(self.run_check("--strict"), 1)
+        text = self.report_text()
+        self.assertIn("| #1 |", text)
+        self.assertNotIn("| #2 |", text)
+        self.assertIn("deferred", text)
+
+    def test_when_everything_is_after_the_release_the_check_is_clean(self):
+        self._release_world()
+        self.set_gh(fake_gh(prs=[2], created={2: "2999-01-01T00:00:00Z"}))
+        self.assertEqual(self.run_check("--strict"), 0)
+
+    def test_deferral_on_an_unreadable_timestamp_is_unchecked_not_hidden(self):
+        self._release_world()
+        self.set_gh(fake_gh(prs=[1]))  # no createdAt in the answer
+        self.assertEqual(self.run_check("--strict"), 2)
+
+    def test_without_ticket_cutoff_nothing_is_deferred(self):
+        git(self.upstream, "tag", "app-1.0.0", self.first)
+        self.write(track="release", release_tag_prefix="app-", reviewed_pr_through=0)
+        self.set_gh(fake_gh(prs=[2], created={2: "2999-01-01T00:00:00Z"}))
+        self.assertEqual(self.run_check("--strict"), 1)
+
+    def _dated_commit(self, name, when):
+        (self.upstream / name).write_text(name, encoding="utf-8")
+        git(self.upstream, "add", name)
+        git(self.upstream, "commit", "-q", "-m", name, when=when)
+        return git(self.upstream, "rev-parse", "HEAD")
+
+    def test_cutoff_is_the_date_of_the_newly_fetched_release(self):
+        """Tickets between the old and the new release belong to the new release's review."""
+        git(self.upstream, "tag", "app-1.0.0", self.first)
+        new = self._dated_commit("rel.txt", "2099-06-01T00:00:00 +0000")
+        git(self.upstream, "tag", "app-1.1.0", new)
+        self.write(
+            track="release",
+            release_tag_prefix="app-",
+            ticket_cutoff="release",
+            reviewed_pr_through=0,
+        )
+        created = {1: "2050-03-01T00:00:00Z", 2: "2099-09-01T00:00:00Z"}
+        self.set_gh(fake_gh(prs=[1, 2], created=created))
+        self.assertEqual(self.run_check("--strict"), 1)
+        text = self.report_text()
+        self.assertIn("| #1 |", text)
+        self.assertNotIn("| #2 |", text)
+
+    def test_cutoff_is_the_release_commit_not_the_branch_tip(self):
+        self._release_world()  # tags app-1.0.0 on the first commit
+        self._dated_commit("tip.txt", "2099-12-01T00:00:00 +0000")  # untagged, newer
+        self.set_gh(fake_gh(prs=[1], created={1: "2050-06-01T00:00:00Z"}))
+        self.assertEqual(self.run_check("--strict"), 0)  # opened after the release: deferred
+
+    def test_ticket_opened_exactly_at_the_cutoff_is_listed(self):
+        when = "2099-01-01T00:00:00 +0000"
+        edge = self._dated_commit("edge.txt", when)
+        git(self.upstream, "tag", "app-1.1.0", edge)
+        git(self.upstream, "tag", "app-1.0.0", self.first)
+        self.write(
+            track="release",
+            release_tag_prefix="app-",
+            ticket_cutoff="release",
+            reviewed_pr_through=0,
+        )
+        self.set_gh(fake_gh(prs=[1], created={1: "2099-01-01T00:00:00Z"}))
+        self.assertEqual(self.run_check("--strict"), 1)
+        self.assertIn("| #1 |", self.report_text())
+
+    def test_a_capped_listing_is_still_incomplete_when_a_cutoff_is_set(self):
+        self._release_world()
+        created = {n: "2000-01-01T00:00:00Z" for n in range(1, 151)}
+        self.set_gh(fake_gh(prs=range(1, 151), created=created))
+        self.assertEqual(self.run_check("--strict", "--ticket-cap", "100"), 2)
+
+    def test_report_names_the_highest_safe_watermark_when_items_are_deferred(self):
+        self._release_world()
+        created = {1: "2000-01-01T00:00:00Z", 2: "2999-01-01T00:00:00Z"}
+        self.set_gh(fake_gh(prs=[1, 2], created=created))
+        self.run_check("--strict")
+        self.assertIn("above `#1`", self.report_text())
+
+    def test_ticket_cutoff_is_rejected_unless_it_is_release_on_the_release_track(self):
+        git(self.upstream, "tag", "app-1.0.0", self.first)
+        for extra in (
+            {"ticket_cutoff": "release"},  # commit track
+            {"track": "release", "ticket_cutoff": "Release"},
+            {"track": "release", "ticket_cutoff": True},
+        ):
+            self.write(release_tag_prefix="app-", **extra)
+            self.assertEqual(self.run_check(), 2, extra)
 
     def test_unknown_track_is_rejected(self):
         self.write(track="weekly")
