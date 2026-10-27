@@ -395,6 +395,47 @@ class EndToEnd(PatchedCase):
         self.assertEqual(self.run_check("--strict"), 2)
         self.assertIn("rewrote its history", self.report_text())
 
+    def test_malformed_baselines_are_clean_check_errors(self):
+        """A bad baseline is exit 2 with a message, never a traceback or a silent pass."""
+        sha = "a" * 40
+        cases = [
+            "null",
+            "[]",
+            json.dumps(baseline_for(None)),
+            json.dumps(baseline_for("z" * 40)),  # 40 characters, not hex
+            json.dumps(baseline_for(sha, reviewed_pr_through="abc")),
+            json.dumps(baseline_for(sha, reviewed_issue_through=-1)),
+            json.dumps(baseline_for(sha, reviewed_pr_through=True)),
+            json.dumps(baseline_for(sha, reviewed_pr_through=[1])),
+        ]
+        for content in cases:
+            self.baseline_file.write_text(content, encoding="utf-8")
+            self.assertEqual(self.run_check(), 2, content)
+            self.assertIn("Check failed", self.report_text(), content)
+
+    def test_numeric_string_watermarks_still_load(self):
+        self.write(reviewed_pr_through="12")
+        self.assertEqual(self.run_check(), 0)
+
+    def test_garbled_git_log_output_is_a_check_error_not_a_crash(self):
+        self.write()
+        commit(self.upstream, "b.txt", "second")
+        real = check.run_git
+
+        def garbled(args, repo_dir):
+            return "no separators here\n" if args[:1] == ["log"] else real(args, repo_dir)
+
+        with mock.patch.object(check, "run_git", garbled):
+            self.assertEqual(self.run_check("--strict"), 2)
+        self.assertIn("unexpected `git log` line", self.report_text())
+
+    def test_checking_upstream_does_not_import_its_tags_into_the_fork(self):
+        """A local run must not pollute the maintainer's clone with the upstream's tags."""
+        git(self.upstream, "tag", "v9.9.9", self.first)
+        self.write()
+        self.assertEqual(self.run_check("--strict"), 0)
+        self.assertEqual(git(self.fork, "tag", "--list", "v9.9.9"), "")
+
     def test_unknown_track_is_rejected(self):
         self.write(track="weekly")
         self.assertEqual(self.run_check(), 2)
