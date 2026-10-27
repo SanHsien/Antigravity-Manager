@@ -227,6 +227,16 @@ class RunnerFailures(unittest.TestCase):
             check.run_git(["fetch"], Path("."))
 
 
+class SupportedPythons(unittest.TestCase):
+    def test_script_parses_as_python_3_9_and_avoids_runtime_union_types(self):
+        """Forks still test on 3.9: `isinstance(x, int | str)` is a TypeError there (3.10+)."""
+        import ast
+
+        source = CHECKER.read_text(encoding="utf-8")
+        ast.parse(source, feature_version=(3, 9))
+        self.assertNotRegex(source, r"isinstance\([^\n]*\|")
+
+
 class TagParsing(unittest.TestCase):
     def test_two_part_release_tags_are_tracked(self):
         """jev-chat-jarvis upstream tags `v1.7`; dropping it exits 2 every week."""
