@@ -103,7 +103,7 @@ jobs:
         timeout-minutes: 6
         run: |
           cd src-tauri
-          cargo test --locked --lib proxy::rate_limit::tests::task_ -- --test-threads=1 --skip task_preserves_explicit_long_image_quota_deadline
+          cargo test --locked --lib proxy::rate_limit::tests::task_ -- --test-threads=1
 
       - name: Test OpenAI stream EOF finish_reason
         timeout-minutes: 6

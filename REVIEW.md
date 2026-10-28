@@ -34,7 +34,7 @@
 
 **已決（2026-10-26，維護者授權代決）**：P2 不採用（維持現行行為，見 P2「決定」）；P6 採保守版（僅在已收到 usageMetadata 時補 finish_reason，見 P6「決定」）。**延後**：P8（無 quotaInfo 模型，需真實 API 資料）、P11（輕量模式黑屏，需 Windows 實機）、P12（warmup 路由，現況不觸發）延後。
 
-**既有失敗測試（base 即紅，CI 從未執行）**：`proxy::rate_limit::tests::task_preserves_explicit_long_image_quota_deadline`、`proxy::rate_limit::tests::test_server_error_does_not_accumulate_failure_count`；CI 新步驟以 `--skip` 排除前者。修正需先決定預期語意（顯式長配額期限是否僅限圖像模型）。
+**限流測試已解決（2026-10-28）**：上游 `101e2d68`／`b2b9e06e` 已將顯式長配額期限與樂觀重置保護擴大到文字模型。base 實跑為 19 過、1 失敗，唯一錯誤是舊測試仍要求文字模型的 72h 壓成 300 秒。現已修正並更名為 `task_preserves_explicit_long_quota_deadline_for_all_models`，補 Gemini／Claude 保留期限與樂觀重置斷言，移除 CI `--skip`，並將 11 個原 `test_` 改為 `task_`；相同 CI selector 本機實跑 20 過、0 失敗。`task_server_error_does_not_accumulate_failure_count` 在 base 與修正版均通過，不能再列為既有失敗。
 
 
 ### 00.3 2026-10-26 新增 PR #3755 與 Issue #3752–#3754、#3756、#3757（水位：PR 3751 -> 3755／issue 3750 -> 3757）
@@ -87,6 +87,18 @@
 > 水位推進：`reviewed_pr_through` 3759 -> 3771、`reviewed_issue_through` 3758 -> 3772。**不表示 IDE 2.6.0 切號或號池 429／503 已在 fork 處理**；兩者都等上游 release 或維護者回報。
 
 ---
+
+### 00.6 2026-10-28 交付檢查新增 PR #3773–#3775（水位：PR 3771 -> 3775）
+
+本輪讀取三份 PR 原文、狀態、head SHA 與檔案清單，只做候選分診；尚未逐行審查其程式 diff，也沒有採用程式碼。沿用 #3765 等上游 release 的既有判定。
+
+| 項目 | 判定 | 依據與重新開案條件 |
+| --- | --- | --- |
+| [PR #3773](https://github.com/lbjlaq/Antigravity-Manager/pull/3773)，head `38ece3deec409a72918f857e301f5a91de601ff5` | defer／追蹤替代案 #3774 | GitHub 顯示 merged；#3774 原文說明 base 回滾後以替代案重新提交。內容涵蓋簽名批次查詢、SQLite 讀池、Delete 優先級與退出 flush，依賴尚未採用的 #3765；待 release 一起審查。未另行驗證其提交是否仍在 beta。 |
+| [PR #3774](https://github.com/lbjlaq/Antigravity-Manager/pull/3774)，head `af26e989d1d243c9199e1f23918b3fdad67f8693` | defer／等 release | 開啟中；延續 #3773 的快取、並行與統計 UI 變更。重開時須逐行比對 fork 的簽名驗證、刪除一致性、讀池生命週期、容量／TTL 與退出持久化，並補並行、佇列滿及重啟測試。 |
+| [PR #3775](https://github.com/lbjlaq/Antigravity-Manager/pull/3775)，head `c27149f7495fcd339631055c2c8e0d2c5550e133` | defer／draft、DO NOT MERGE | 草稿跨四協定的請求期限、重送預算、QoS、遙測與 12 語系 UI；作者列出 Rust 測試／Clippy 未執行，且大圖片最多兩次呼叫可能影響 429 換號。待解除 draft 並發佈 release，再驗證取消、逾時、重送上限與圖片換號；不直接覆蓋本 fork 的配額／錯誤處理。 |
+
+PR 水位推至 `#3775` 只代表已分診並記錄 defer；release／commit 基線仍為 `v5.0.0`／`0067fe0`，issue 水位仍為 `#3772`。
 
 ### 結論先行：建議採用清單（依價值排序）
 

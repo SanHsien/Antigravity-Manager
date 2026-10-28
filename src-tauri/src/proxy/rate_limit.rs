@@ -969,7 +969,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_retry_time_minutes_seconds() {
+    fn task_parse_retry_time_minutes_seconds() {
         let tracker = RateLimitTracker::new();
         let body = "Rate limit exceeded. Try again in 2m 30s";
         let time = tracker.parse_retry_time_from_body(body);
@@ -977,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_google_json_delay() {
+    fn task_parse_google_json_delay() {
         let tracker = RateLimitTracker::new();
         let body = r#"{
             "error": {
@@ -995,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_retry_after_ignore_case() {
+    fn task_parse_retry_after_ignore_case() {
         let tracker = RateLimitTracker::new();
         let body = "Quota limit hit. Retry After 99 Seconds";
         let time = tracker.parse_retry_time_from_body(body);
@@ -1003,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_remaining_wait() {
+    fn task_get_remaining_wait() {
         let tracker = RateLimitTracker::new();
         tracker.parse_from_error("acc1", 429, Some("30"), "", None, &[]);
         let wait = tracker.get_remaining_wait("acc1", None);
@@ -1011,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn test_safety_buffer() {
+    fn task_safety_buffer() {
         let tracker = RateLimitTracker::new();
         // 如果 API 返回 1s，我们强制设为 2s
         tracker.parse_from_error("acc1", 429, Some("1"), "", None, &[]);
@@ -1021,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    fn task_preserves_explicit_long_image_quota_deadline() {
+    fn task_preserves_explicit_long_quota_deadline_for_all_models() {
         let tracker = RateLimitTracker::new();
         let body = r#"{
             "error": {
@@ -1068,17 +1068,25 @@ mod tests {
             .unwrap();
         assert_eq!(inferred.retry_after_sec, 300);
 
-        let text_model = tracker
-            .parse_from_error(
-                "acc-text",
-                429,
-                Some("72h"),
-                r#"{"error":{"details":[{"reason":"QUOTA_EXHAUSTED"}]}}"#,
-                Some("gemini-2.5-pro".to_string()),
-                &[60, 300],
-            )
-            .unwrap();
-        assert_eq!(text_model.retry_after_sec, 300);
+        // 上游已將顯式長配額期限與樂觀重置保護擴大到所有模型。
+        for (account_id, model) in [
+            ("acc-text", "gemini-2.5-pro"),
+            ("acc-claude", "claude-sonnet-4-6"),
+        ] {
+            let text_model = tracker
+                .parse_from_error(
+                    account_id,
+                    429,
+                    Some("72h"),
+                    r#"{"error":{"details":[{"reason":"QUOTA_EXHAUSTED"}]}}"#,
+                    Some(model.to_string()),
+                    &[60, 300],
+                )
+                .unwrap();
+            assert_eq!(text_model.retry_after_sec, 72 * 3600, "{model}");
+            tracker.clear_for_optimistic_reset();
+            assert!(tracker.is_rate_limited(account_id, Some(model)), "{model}");
+        }
 
         let broad_quota = tracker
             .parse_from_error(
@@ -1138,7 +1146,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tpm_exhausted_is_rate_limit_exceeded() {
+    fn task_tpm_exhausted_is_rate_limit_exceeded() {
         let tracker = RateLimitTracker::new();
         // 模拟真实世界的 TPM 错误，同时包含 "Resource exhausted" 和 "per minute"
         let body = "Resource has been exhausted (e.g. check quota). Quota limit 'Tokens per minute' exceeded.";
@@ -1148,7 +1156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_generic_resource_exhausted_is_short_rate_limit() {
+    fn task_generic_resource_exhausted_is_short_rate_limit() {
         let tracker = RateLimitTracker::new();
         let body = r#"{
             "error": {
@@ -1210,7 +1218,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quota_exhausted_does_accumulate_failure_count() {
+    fn task_quota_exhausted_does_accumulate_failure_count() {
         let tracker = RateLimitTracker::new();
         let backoff_steps = vec![60, 300, 1800, 7200];
         let quota_body = r#"{"error":{"details":[{"reason":"QUOTA_EXHAUSTED"}]}}"#;
@@ -1233,7 +1241,7 @@ mod tests {
     }
 
     #[test]
-    fn test_set_lockout_until_with_cap() {
+    fn task_set_lockout_until_with_cap() {
         let tracker = RateLimitTracker::new();
         let target_time = SystemTime::now() + Duration::from_secs(5 * 3600); // 5 hours
 
@@ -1261,7 +1269,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reconcile_quota_recovery_clears_quota_exhausted_but_keeps_rate_limit_exceeded() {
+    fn task_reconcile_quota_recovery_clears_quota_exhausted_but_keeps_rate_limit_exceeded() {
         let tracker = RateLimitTracker::new();
         let target_time = SystemTime::now() + Duration::from_secs(3600);
 
@@ -1295,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    fn test_restore_persisted_long_limit_supports_text_models() {
+    fn task_restore_persisted_long_limit_supports_text_models() {
         let tracker = RateLimitTracker::new();
         let now = SystemTime::now();
         let detected_at = now - Duration::from_secs(60);
