@@ -66,6 +66,26 @@
 >
 > 水位推進：`reviewed_pr_through` 3755 -> 3759、`reviewed_issue_through` 3757 -> 3758。**不表示 #3759 已在上游合併**；它仍是 open PR，若上游之後 force-push 換內容，這裡的審查結論只對 head `c4763cb1` 有效。
 
+
+### 00.5 2026-10-28 新增 PR #3761、#3765–#3767、#3769、#3771 與 Issue #3760、#3762–#3764、#3768、#3770、#3772（水位：PR 3759 -> 3771／issue 3758 -> 3772）
+
+- 來源：全程唯讀（`gh pr view`／`gh pr diff`／`gh issue view`）。release 軸 v5.0.0 之後無新 release；`upstream/main` 仍是 `0067fe04`。下列已合併的 PR 都合進上游 `beta`（`7947ca6`、`6202c7a`、`d22d2ed` 皆不是 v5.0.0 的祖先），本 fork 追 release，beta 的內容等 v5.0.1 發版再整批審。
+- PR #3771 依判準八取目前 head `ea379ca0ef2e5e9e81c4bb0d52d6ccb7881db8a7`（單一 commit，`updated_at` 2026-10-28T03:35:11Z）。藏碼掃描：`\S\s{40,}\S` 無命中、無超長行、無 `eval`／base64。其他 PR 只讀標題、檔案清單與相關 diff 段落。
+- 本機 `cargo` 全包建置仍被 `boring-sys2` 缺 NASM／cmake 擋住，Rust 改動只能靠 CI 驗證；本輪不移植任何 beta 程式碼。
+
+| 項目 | 判定 | 實際差異、fork 對照與重新開案條件 |
+|---|---|---|
+| PR #3771（Antigravity IDE 2.6.0 凭证結構與 `agy` 行程；base `main`，之後以 `26f34ede` 併入上游 `beta`）＋ Issue #3762、#3770（IDE 2.6.0 切換帳號後仍是未登入、對話區黑屏） | 不採用（等 release） | `integration.rs` 的 `KeyringPayload` 與檔案凭证都加 `id_token_email` 與固定 `expires_in: 3599`；`process.rs` 的 `is_language_server_process` 與 `sweep_orphan_language_servers` 把 `agy`／`agy.exe` 當成語言服務。**fork 這兩檔與 v5.0.0 相同**（`git diff --stat v5.0.0 HEAD` 無差異），所以若 IDE 2.6.0 真的強制要這兩個欄位，fork 一樣受影響。不提前移植的理由：(1) 欄位需求只有提交者單方實測，無法在本機驗證；(2) 新的 `is_language_server_process` 只看名稱就命中 `agy`／`agy.exe`。熱切換的 `kill_language_server_subprocesses` 只檢查目標 Antigravity 非 helper 主行程的子孫（`language_server_subprocess_pids`，`process.rs:566-628`），孤兒清理還要求路徑含 `antigravity` 或 `gemini`，所以維護者另裝在 `AppData\Local\agy\bin` 的 `agy` CLI 平常不會被砍；會被誤殺的是從目標 IDE 行程樹裡啟動的 `agy`（例如 IDE 內建終端機裡跑的 CLI），以及安裝路徑剛好含 `antigravity`／`gemini` 的 `agy`；(3) `expires_in` 寫死 3599 不反映實際到期時間。重新開案：上游發佈含此修正的 release；或維護者回報 IDE 2.6.0 切號失效——屆時移植欄位補齊，並把 `agy` 判定收窄到 `.gemini\bin` 或 Antigravity 安裝目錄底下。 |
+| Issue #3768、#3772（新版之後頻繁 503 rate limit／「小黑屋」，冷卻後仍失敗） | 不採用（等 release，**維護者須知**） | #3772 沒有維護者回覆，錯誤是 `gemini-4-argon-medium` 多輪工具呼叫後 503，與 #3768 **推定**同因。上游維護者在 #3768 回覆：內部遺留的 `gemini-2.5-pro` 硬寫，Google 近日關閉該模型，導致整個號池 429／503；修正在 beta `e2c89ff8`（入站模型門禁與懲罰鏈豁免，15 檔 +1262／−264，`token_manager.rs` +412）與 `8ce78b2f`（同一修正的借用錯誤）。`e2c89ff8` 說明的機制是：閘道不檢查入站模型，請求已下線模型拿到 429 後帳號進 7200 秒冷卻，sticky session 再擴散成全池 503。v5.0.0 沒有 `model_gate.rs`，fork 寫給客戶端的模型目錄仍列 `gemini-2.5-pro`（`proxy/cli_sync.rs:1353`、`proxy/opencode_sync.rs:267`；對應表 `proxy/common/model_mapping.rs:57`），所以觸發路徑**很可能存在於 fork**，但 429 後的帳號標記（`rate_limit.rs`／`token_manager.rs`）未逐一追完；修正量大且依賴 beta 的懲罰鏈結構，無法在本機編譯，不盲目移植。重新開案：上游發佈 v5.0.1；或維護者遇到整個號池同時 429／503——那時優先移植 `e2c89ff8`／`8ce78b2f` 的做法。 |
+| PR #3769（closed 未合併；提示詞多軌分治＋IDE 2.6.0 切號）＋ Issue #3764（closed；提示詞清洗把使用者正文裡的 Anthropic／DeepSeek 等字換掉） | 不採用 | #3769 被關閉，內容拆進 beta 的 `fix/3764-prompt-sanitizer-scope`（`96729b4d`）與 `fix/3762-ide-process-identity`（`21f25efe`）。fork 的 `proxy/mappers/prompt_sanitizer.rs` 有 `sanitize_parts_core(parts, system_scope)`（第 309 行），回報者在 5.0.1 beta3 遇到、beta5 確認修好，屬 beta 才有的範圍擴張是否存在於 v5.0.0 未驗證。重新開案：v5.0.1 發佈，或維護者回報正文被改寫。 |
+| PR #3761（已併入 beta；DeepSeek Harness 一鍵設定） | 不採用（等 release） | 新功能，+1046／−178，含版本號與 `Cargo.lock`。隨 release 審。 |
+| PR #3765（已併入 beta；工具簽名快取的 SQLite 同步寫入放大） | 不採用（等 release） | 效能修正，`proxy_db.rs`、`signature_cache.rs`、`thinking_store.rs` +1228／−135。fork 未見對應回報。隨 release 審。 |
+| PR #3767（已併入 beta；大檔上傳分階段逾時，Fixes #3763）＋ Issue #3763 | 不採用（等 release） | 35 檔 +3060／−1029。根因是上傳與等待回應標頭共用短看門狗；fork 沒有那個短看門狗（00.3 #3756 已查：`upstream/client.rs` 只有 `connect_timeout(20s)` 與整體 `timeout(600s)`）。隨 release 審。 |
+| PR #3766（open，base `beta`；介面與字體縮放） | 不採用 | 新功能，未合併。 |
+| Issue #3760（批量 403 風控） | 不採用 | 沒有可重現資訊，留言只是分類建議。 |
+
+> 水位推進：`reviewed_pr_through` 3759 -> 3771、`reviewed_issue_through` 3758 -> 3772。**不表示 IDE 2.6.0 切號或號池 429／503 已在 fork 處理**；兩者都等上游 release 或維護者回報。
+
 ---
 
 ### 結論先行：建議採用清單（依價值排序）
