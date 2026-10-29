@@ -7,6 +7,8 @@
 `lbjlaq/Antigravity-Manager` 的 Windows 原生維護 fork（Tauri v2 + React + Rust 的帳號切換與協定代理），追上游 release 軸，已審到 `v5.0.0`（`tools/upstream_baseline.json`）；本 fork 最新 release 是 `v5.0.0`（2026-10-16），之後 `main` 已累積 83 個 commit（含 8 組上游移植與 #3754、#3758 修正，見 [`REVIEW.md`](REVIEW.md) 00.2–00.4）但未發版。
 2026-10-29 查：open PR 1 筆（#56，Dependabot `rustls` 0.23.45 → 0.23.46）、Dependabot open alert 4 筆（low 3、medium 1，全是 `rustls`）、code scanning 0；CI／CodeQL／Upstream check 最近一次 success；issues 已停用，open issue 數「未查到」。上游已出到 `v5.0.1-beta.7`，尚無 v5.0.1 正式版（查法：`gh pr list -R SanHsien/Antigravity-Manager`、`gh api repos/SanHsien/Antigravity-Manager/dependabot/alerts?state=open`、`gh release list -R lbjlaq/Antigravity-Manager`）。
 
+2026-10-29 本輪完成指定大檔的 fork 差異審查：限流測試已在 `624ae2b6` 全數進 CI；本輪另修工具 schema 的 `parameters_json_schema` 別名漏檢，先紅燈再以現有 CI selector 本機實跑 37 過／0 失敗。審查來源、範圍與上游原有問題見 [`DECISIONS.md`](DECISIONS.md)。
+
 ## 近期：可以直接動手
 | 項目 | 為什麼 | 驗收方式 | 建議執行者 | 證據 |
 | --- | --- | --- | --- | --- |
@@ -24,6 +26,7 @@
 | 提前移植 Antigravity IDE 2.6.0 切號修正（#3771） | 維護者回報 IDE 2.6.0 切號後仍未登入或黑屏 | 補 `id_token_email` 等欄位，`agy` 行程判定（只偵測行程，不經 `agy` 呼叫任何服務）收窄到 `.gemini\bin` 或 Antigravity 安裝目錄（不採上游只看名稱的判定）；CI 綠；維護者實機切號成功 | Claude Sonnet | [`REVIEW.md`](REVIEW.md) 00.5 #3771、#3762、#3770；`src-tauri/src/modules/process.rs:566-628` |
 | 無 quotaInfo 的模型被丟棄（P8a／P8b） | 帳號的模型清單出現 `gemini-3.1-pro-high/low` 但沒有 `gemini-pro-agent`，或日誌出現 `No accounts available ... gemini-pro-agent` | 先依 [`REVIEW.md`](REVIEW.md) P8 用 debug 日誌在維護者帳號實測；成立後抽出 `build_model_quotas` 純函式並補 P8 列的五種測試，加白名單避免內部遺留模型混入 | Claude Sonnet | [`REVIEW.md`](REVIEW.md) P8；`src-tauri/src/modules/quota.rs:388` |
 | 前端 major 依賴遷移（Vite 8＋`@vitejs/plugin-react` 6、antd 6＋icons 6、i18next 26＋react-i18next 17 等成組升級） | 該組的延後條目被新版本推過期（新鮮度檢查轉紅），或有安全告警只能靠 major 修 | 每組一次遷移：乾淨安裝、`npm run build`、`tools\dev_check.ps1` 綠，並在 `.github/dependency-deferrals.json` 刪除該組條目 | Codex | `.github/dependency-deferrals.json`（各條目的 `reason` 寫明要成組升級） |
+| 觀察 Claude count_tokens 的上游占位回應 | 維護者另外要求修正計數，或確認客戶端因零值誤判上下文用量 | 先對非空訊息補會失敗的計數測試，再獨立評估上游估算實作；本輪僅記錄，不實作 | 待指派 | [`DECISIONS.md`](DECISIONS.md) `UPSTREAM-OBS-001` |
 
 ## 刻意不做
 | 不做什麼 | 理由 | 什麼情況下重新考慮 |
@@ -34,4 +37,4 @@
 | 對上游開 PR 或推 `upstream` | 對外只打 `SanHsien/Antigravity-Manager`（`AGENTS.md` 對外邊界硬閘門、`.cursor/rules/no-upstream-pr.mdc`） | 維護者在當次對話明確同意回貢某一筆修正 |
 
 ## 維護方式
-上游：追 release 軸，`Upstream check` 每週跑；beta 內容等上游正式版再整批審，只有維護者實際遇到時才提前移植（見中期表）。PR／issue 逐筆讀 diff 後記進 [`REVIEW.md`](REVIEW.md) 並推進水位。依賴：Dependabot PR 先讀 diff 再合併；major 延後寫進 `.github/dependency-deferrals.json`。Rust 改動本機只能 `cargo fmt`／部分建置，測試以 CI 的 `task_` 步驟為準。
+上游：追 release 軸，`Upstream check` 每週跑；beta 內容等上游正式版再整批審，只有維護者實際遇到時才提前移植（見中期表）。PR／issue 逐筆讀 diff 後記進 [`REVIEW.md`](REVIEW.md) 並推進水位。依賴：Dependabot PR 先讀 diff 再合併；major 延後寫進 `.github/dependency-deferrals.json`。Rust 改動先載入已驗證的 Windows 工具鏈，做本機目標測試與 fmt／Clippy，再確認 CI 的 `task_`／`tool_schema` 步驟；不能只以編譯通過宣稱測試通過。

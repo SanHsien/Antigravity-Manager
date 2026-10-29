@@ -626,7 +626,11 @@ impl InboundThinkingPipeline {
                     continue;
                 };
                 for declaration in declarations {
-                    for schema_key in ["parametersJsonSchema", "parameters"] {
+                    for schema_key in [
+                        "parametersJsonSchema",
+                        "parameters_json_schema",
+                        "parameters",
+                    ] {
                         let Some(schema) = declaration.get(schema_key) else {
                             continue;
                         };
@@ -658,7 +662,11 @@ impl InboundThinkingPipeline {
                     continue;
                 };
                 for declaration in declarations {
-                    for schema_key in ["parametersJsonSchema", "parameters"] {
+                    for schema_key in [
+                        "parametersJsonSchema",
+                        "parameters_json_schema",
+                        "parameters",
+                    ] {
                         if let Some(schema) = declaration.get_mut(schema_key) {
                             crate::proxy::common::json_schema::clean_tool_schema(schema)?;
                         }
@@ -1438,6 +1446,53 @@ mod tests {
             });
         }
         schema
+    }
+
+    #[test]
+    fn tool_schema_proto_json_parameter_alias_rejects_before_mutation() {
+        for declarations_key in ["functionDeclarations", "function_declarations"] {
+            for with_camel_alias in [false, true] {
+                let mut declaration = json!({
+                    "name": "proto_json",
+                    "parameters_json_schema": tool_schema_deep_google_parameter()
+                });
+                if with_camel_alias {
+                    declaration["parametersJsonSchema"] = json!({ "type": "object" });
+                }
+                let mut request = json!({ "tools": [{}] });
+                request["tools"][0][declarations_key] = json!([declaration]);
+                let original = request.clone();
+
+                assert!(
+                    InboundThinkingPipeline::validate_google_request_tool_schemas(&request)
+                        .is_err()
+                );
+                assert!(
+                    InboundThinkingPipeline::clean_google_request_tool_schemas(&mut request)
+                        .is_err()
+                );
+                assert_eq!(request, original, "invalid aliases must remain unmodified");
+            }
+        }
+    }
+
+    #[test]
+    fn tool_schema_proto_json_parameter_alias_is_cleaned() {
+        let mut request = json!({
+            "tools": [{ "functionDeclarations": [{
+                "name": "normal",
+                "parameters_json_schema": {
+                    "type": "object",
+                    "properties": { "value": { "const": 7 } }
+                }
+            }] }]
+        });
+        InboundThinkingPipeline::clean_google_request_tool_schemas(&mut request).unwrap();
+        let property = &request["tools"][0]["functionDeclarations"][0]["parameters_json_schema"]
+            ["properties"]["value"];
+        // 沿用既有 Google Schema 清理器的 enum 字串化規則。
+        assert_eq!(property["enum"], json!(["7"]));
+        assert!(property.get("const").is_none());
     }
 
     #[test]

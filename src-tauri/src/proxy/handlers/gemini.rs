@@ -1369,4 +1369,36 @@ mod schema_gate_tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(state_factory_calls.load(Ordering::SeqCst), 0);
     }
+
+    #[tokio::test]
+    async fn tool_schema_proto_json_count_tokens_rejects_before_state() {
+        for declarations_key in ["functionDeclarations", "function_declarations"] {
+            let mut body = deep_gemini_tool_body();
+            let mut declarations = body["tools"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("functionDeclarations")
+                .unwrap();
+            let schema = declarations[0]
+                .as_object_mut()
+                .unwrap()
+                .remove("parameters")
+                .unwrap();
+            declarations[0]["parameters_json_schema"] = schema;
+            body["tools"][0][declarations_key] = declarations;
+            let state_factory_calls = AtomicUsize::new(0);
+            let response = execute_count_tokens(
+                || {
+                    state_factory_calls.fetch_add(1, Ordering::SeqCst);
+                    panic!("deep proto JSON tool schemas must be rejected before state access")
+                },
+                "gemini-test".to_string(),
+                body,
+            )
+            .await;
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(state_factory_calls.load(Ordering::SeqCst), 0);
+        }
+    }
 }

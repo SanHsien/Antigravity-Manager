@@ -100,6 +100,28 @@
 
 PR 水位推至 `#3775` 只代表已分診並記錄 defer；release／commit 基線仍為 `v5.0.0`／`0067fe0`，issue 水位仍為 `#3772`。
 
+### 00.7 2026-10-29 交付檢查新增 PR #3776、#3777（水位：PR 3775 -> 3777）
+
+本輪讀取兩份 PR 原文、狀態、head SHA 與檔案清單，只做候選分診，未逐行審查其程式 diff，也未採用測試、註解或 ignore 標記。release／commit 基線仍為 `v5.0.0`／`0067fe0`，issue 水位仍為 `#3772`。
+
+| 項目 | 判定 | 依據與重新開案條件 |
+| --- | --- | --- |
+| [PR #3776](https://github.com/lbjlaq/Antigravity-Manager/pull/3776)，head `523b172c8e3287dbfed7247de54c30b5456bf167` | defer／追蹤承接案 #3777 | 已關閉的 draft；原文以 #3775 分支為基線，#3777 說明前案因基線分支刪除而關閉。涉及簽名哨兵、並行簽名及測試鎖中毒，等待承接案隨 release 一起評估。 |
+| [PR #3777](https://github.com/lbjlaq/Antigravity-Manager/pull/3777)，head `fb3cb6c0c7d68582c5a87e61893f45f71aeb7d9a` | defer／等 release | 已合併；原文以 beta 行為為準改寫 13 檔的思考簽名、預算、圖片與模型表斷言，並新增環境／效能測試 ignore。這些行為與 fork 的歷史快照及選擇性移植不同，不能直接把其預期套入 fork。作者宣稱的 1307 過／3 ignored 未在 fork 重現；待 release 後逐項核對 API 語意與 fork 決策，再判斷哪些測試可採。 |
+
+### 00.8 2026-10-29 檢查期間新增 PR #3780 與 Issue #3778、#3779、#3781
+
+依 API 原文、留言需求摘要、狀態與 PR 檔案清單分診；本輪未逐行審 PR diff，沒有移植程式或提示詞清理規則。
+
+| 項目 | 判定 | 依據與重新開案條件 |
+| --- | --- | --- |
+| [PR #3780](https://github.com/lbjlaq/Antigravity-Manager/pull/3780)，head `6cf9a6bc6b865a2c91117827ac4f5db94b3f0697` | defer／等 release | 開啟中；原文以 beta 為基線，修改 `integration.rs`、`process.rs` 的 Keyring／檔案憑證雙寫與 agy 行程判定。延續 #3771 的候選追蹤，待 release 後另審憑證一致性、失敗回退與行程路徑邊界，並做 Windows IDE 2.6.0+ 驗收。 |
+| [Issue #3778](https://github.com/lbjlaq/Antigravity-Manager/issues/3778) | defer／追蹤 #3780 | 回報更新後仍使用舊帳號，只有文字與截圖；本 fork 未做實機重現，不將上游回報當作已確認的 fork 缺陷。 |
+| [Issue #3779](https://github.com/lbjlaq/Antigravity-Manager/issues/3779) | defer／上游行為觀察 | 原文聲稱官方只下發思考等級、覆蓋預算；沒有可供本 fork 重現的完整請求／回應證據。待 release 與實際欄位契約確認後再評估，不據單一回報改寫預算。 |
+| [Issue #3781](https://github.com/lbjlaq/Antigravity-Manager/issues/3781) | defer／獨立產品需求 | 要求清除 system 中的特定安全／CTF 提示詞，留言提供正則建議。這會改變使用者訊息語意，尚無主人需求或保留邊界；需另訂適用訊息、保留內容及誤刪測試，本輪不實作。 |
+
+PR／issue 水位推至 `#3780`／`#3781`，僅表示已分診；release／commit 基線維持 `v5.0.0`／`0067fe0`。
+
 ### 結論先行：建議採用清單（依價值排序）
 
 | 序 | SHA | 做法（一句話） | 價值 | 本機可測 |
