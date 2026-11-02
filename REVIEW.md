@@ -1318,3 +1318,41 @@ issue 水位提升至 `#3683`；PR 水位仍為 `#3680`，release／commit 基�
    - PR #41 於 2026-10-16 順利合併入 `main`。
    - 遠端分支 `security/internal-warmup-loopback-20261015` 與其餘 7 個已整併分支全數清理完畢，`origin` 僅保留單一主分支 `main` 與標籤/發布。
 
+### 26. 上游 PR #3782–#3814／Issue #3783–#3816 積壓審查（2026-11-02）
+
+本輪逐一讀取下列 13 個 PR 的 metadata 與完整 diff（用 `gh pr diff` 取目前版本，對 diff 掃描空白夾內容、`eval(`、`new Function(`、`globalThis`、200 字元以上 base64 形字串，唯一命中是 #3796 的測試 mock `(globalThis as any).localStorage = {`，無害），以及 22 個 issue 的 metadata 與必要原文。release 軸沒有新版本（upstream `main` tip 仍是 `0067fe0`／v5.0.0，`check_upstream_updates.py` 報 behind 0），所以這些已合併 PR 全在上游 `beta`（#3808 目標 `main`、已關閉未合併），依 ROADMAP 維護方式「beta 內容等上游正式版再整批審」處理。沒有採用上游程式碼，沒有改產品、manifest、workflow 或 checker。release／commit 基線不變。
+
+| 項目 | 判定 | 實際 delta、fork 對照與後續 |
+| --- | --- | --- |
+| [PR #3782](https://github.com/lbjlaq/Antigravity-Manager/pull/3782) | not-applicable | 已合併 beta，`AccountCard.tsx`／`AccountTable.tsx` 兩檔 `+10/-2`，解除 QoS 小黑屋後重拉帳號列表。fork 沒有 QoS 元件：`grep -ril qos src-tauri/src` 只命中 `lib.rs` 的 Windows EcoQoS 電源節流 FFI。ROADMAP「刻意不做」已列 QoS。 |
+| [PR #3784](https://github.com/lbjlaq/Antigravity-Manager/pull/3784) | not-applicable | 已合併 beta，7 檔 `+271/-61`，核心是 `pipeline/qos.rs`、`qos_guardian.rs`（fork 無此二檔，`src-tauri/src/proxy/pipeline/` 只有 inbound／policy／usage）。其餘 `handlers/*` 與 `upstream/client.rs` 的變更是 QoS 重放與思考模型小黑屋誤封，缺陷元件在 fork 不存在。 |
+| [PR #3787](https://github.com/lbjlaq/Antigravity-Manager/pull/3787) | defer（併入 v5.0.1 整批） | 已合併 beta，13 檔 `+604/-145`，新增 `common/model_gate.rs`、改 `model_mapping.rs`／`variant_mapping.rs`／`model_specs.rs`／`server.rs` 與前端。fork 沒有 `model_gate.rs`（`ls src-tauri/src/proxy/common/` 無此檔），是入站門禁與映射的產品契約變更，須有隔離 request／response fixture；等 release 後與 `e2c89ff8`／`8ce78b2f` 一起評估。 |
+| [PR #3792](https://github.com/lbjlaq/Antigravity-Manager/pull/3792) | reject | 已合併 beta，14 檔 `+47/-11`，Web／Docker 模式「記住登入憑據」，改 `AdminAuthGuard.tsx`、`utils/request.ts` 與 12 個 locale。fork 的 `AdminAuthGuard.tsx:24-25` 同時從 `sessionStorage` 與 `localStorage` 清除 `abv_admin_api_key`；持久化管理金鑰到 `localStorage` 是安全面倒退，且 v5.0.0 起 fork 為 Windows 原生桌面，沒有 Docker 發行（ROADMAP「刻意不做」）。 |
+| [PR #3794](https://github.com/lbjlaq/Antigravity-Manager/pull/3794) | not-applicable | 已合併 beta，7 檔 `+763/-23`，核心是新增 `pipeline/stream_lifecycle.rs` 並改三套 streaming mapper。`stream_lifecycle` 家族在 fork 不存在（ROADMAP「刻意不做」已列），照抄會引入整套新串流生命週期。Issue #3813 是其後續，同判定。 |
+| [PR #3796](https://github.com/lbjlaq/Antigravity-Manager/pull/3796) | reject | 已合併 beta，8 檔 `+871/-0`，全新「蹬額度模式」（`stores/usePedalModeStore.ts`、`components/pedal/*`、`Layout.tsx`）。純新功能、無 fork 驗收需求；fork 無 pedal 相關檔。 |
+| [PR #3800](https://github.com/lbjlaq/Antigravity-Manager/pull/3800) | defer（併入 v5.0.1 整批） | 已合併 beta，27 檔 `+1808/-137`，改 `constants.rs`（User-Agent 指紋）、`handlers/common.rs`、`handlers/warmup.rs`、`upstream/client.rs`、i18n 與多個除錯 UI。混合指紋、診斷 UI 與設定儲存，不可片段採用；UA 指紋變更屬 provider 相容性，無 runtime 驗證前不動。 |
+| [PR #3803](https://github.com/lbjlaq/Antigravity-Manager/pull/3803) | reject | 已於 2026-11-01 關閉未合併，4 檔 `+283/-51`（`oauth.rs`、`oauth_server.rs`、`server.rs`、`AddAccountDialog.tsx`），被 #3805 取代；對應 Web／Docker 公網回調，fork 無此發行形態。 |
+| [PR #3805](https://github.com/lbjlaq/Antigravity-Manager/pull/3805) | defer（併入 v5.0.1 整批） | 已合併 beta，3 檔 `+45/-3`：換碼失敗時清掉 Flow 髒狀態、手動回填補 CSRF 雙向驗證。fork 的 `oauth_server.rs` 已有 state 比對（`submit_oauth_code` 約 482-484 行：`provided_state != state.state` 回 `OAuth state mismatch (CSRF protection)`），所以 CSRF 面已在；換碼失敗後 Flow 髒狀態是否殘留尚未以測試確認，不以讀碼代替失敗測試。重新開案條件：維護者遇到手動貼碼失敗後無法重試。 |
+| [PR #3807](https://github.com/lbjlaq/Antigravity-Manager/pull/3807) | defer（升 ROADMAP 條件列） | 已合併 beta，3 檔 `+182/-36`（`modules/account.rs`、`proxy/server.rs`、`proxy/token_manager.rs`）：清理不在索引的孤兒憑據檔，並在調度池載入時以 `accounts.json` 索引做白名單。fork 對照：`token_manager.rs:271-309` `load_accounts` 直接 `read_dir(accounts)` 並載入每個 `*.json`，沒有索引白名單；`account.rs:1433-1467` `delete_account` 只在索引移除後 `remove_file`。缺陷路徑存在（索引外的殘留檔會進調度池），但觸發前提是檔案刪除失敗或外部寫入，且改動在號池主流程，需 Rust 測試與帳號池時序 fixture，超出本輪範圍；已寫進 ROADMAP 中期表。 |
+| [PR #3808](https://github.com/lbjlaq/Antigravity-Manager/pull/3808) | defer（與 #3807 同案） | 已關閉未合併，目標 `main`，2 檔 `+87/-61`（`account.rs`、`token_manager.rs`），與 #3807 同一缺陷的社群版本；diff 已掃描無隱藏內容。上游採用的是 #3807，併入同一 ROADMAP 列。 |
+| [PR #3812](https://github.com/lbjlaq/Antigravity-Manager/pull/3812) | defer（併入 v5.0.1 整批） | 已合併 beta，7 檔 `+308/-16`（`models/account.rs`、`modules/quota.rs`、`token_manager.rs`、Dashboard），3P 模型（Claude／GPT）無授權時配額留空而非顯示滿額。對應 Google 2026-11-02 停止部分方案第三方模型存取（見 Issue #3811）。是真實使用者可見行為，但動配額模型與帳號資料結構；等 release 後整批審，維護者實際看到假滿額再提前移植。 |
+| [PR #3814](https://github.com/lbjlaq/Antigravity-Manager/pull/3814) | reject | 已合併 beta，2 檔 `+2/-2`，只把自動刷新配額預設間隔 15 分改 10 分。fork 的 `models/config.rs:196` 為 `refresh_interval: 15`，是預設值取捨不是缺陷，不改。 |
+| [Issue #3783](https://github.com/lbjlaq/Antigravity-Manager/issues/3783) | not-applicable | 要求加「自動關進小黑屋」開關，QoS 功能，fork 無 QoS。 |
+| [Issue #3785](https://github.com/lbjlaq/Antigravity-Manager/issues/3785) | reject | 要求像 cockpit-tools 多開客戶端；功能請求，無 fork 驗收需求。 |
+| [Issue #3786](https://github.com/lbjlaq/Antigravity-Manager/issues/3786) | defer | IDE 2.6 以 tool 切號失敗；ROADMAP 中期表已有「提前移植 Antigravity IDE 2.6.0 切號修正（#3771）」，觸發條件不變。 |
+| [Issue #3788](https://github.com/lbjlaq/Antigravity-Manager/issues/3788)、[#3798](https://github.com/lbjlaq/Antigravity-Manager/issues/3798)、[#3810](https://github.com/lbjlaq/Antigravity-Manager/issues/3810) | reject | #3788 詢問發版時程與 Gemini 4 模型（已 COMPLETED 關閉）；#3798 與專案無關的閒聊；#3810 是 token 統計邏輯的提問，無可重現缺陷。 |
+| [Issue #3789](https://github.com/lbjlaq/Antigravity-Manager/issues/3789)、[#3790](https://github.com/lbjlaq/Antigravity-Manager/issues/3790) | reject | 功能請求（依 API-Key 的黏性路由、代理雙向字串替換脫敏）；改動排程公平性與請求內容，須產品決策，無 fork 驗收需求。 |
+| [Issue #3791](https://github.com/lbjlaq/Antigravity-Manager/issues/3791) | reject | 對應 #3792，同判定。 |
+| [Issue #3793](https://github.com/lbjlaq/Antigravity-Manager/issues/3793) | reject | Antigravity CLI 強制手機掃碼驗證；留言指向第三方工具，不是本專案缺陷，也不引入第三方繞過驗證的工具。 |
+| [Issue #3795](https://github.com/lbjlaq/Antigravity-Manager/issues/3795) | reject | 對應 #3796，同判定。 |
+| [Issue #3797](https://github.com/lbjlaq/Antigravity-Manager/issues/3797)、[#3816](https://github.com/lbjlaq/Antigravity-Manager/issues/3816) | not-applicable | 遠端 Docker 部署反代 Argon 503／504；Argon 模型與 Docker 部署在 fork 都不存在（ROADMAP「刻意不做」）。 |
+| [Issue #3799](https://github.com/lbjlaq/Antigravity-Manager/issues/3799) | not-applicable | 已以 DUPLICATE 關閉；v5.0.0 並發串流加 QoS Guardian 觸發限流時 Worker 死鎖，缺陷元件 QoS Guardian 在 fork 不存在。 |
+| [Issue #3801](https://github.com/lbjlaq/Antigravity-Manager/issues/3801) | not-applicable | Web／Docker 模式 batch-import 回 422；`grep -rn "batch-import\|batch_import" src-tauri/src` 在 fork 無命中。 |
+| [Issue #3802](https://github.com/lbjlaq/Antigravity-Manager/issues/3802)、[#3804](https://github.com/lbjlaq/Antigravity-Manager/issues/3804) | not-applicable | Web／Docker 模式 OAuth 回調落 localhost、`redirect_uri_mismatch`；fork 為 Windows 原生桌面，本機回調。手動貼碼失敗後的 Flow 狀態殘留已併入 PR #3805 的重新開案條件。 |
+| [Issue #3806](https://github.com/lbjlaq/Antigravity-Manager/issues/3806) | defer（同 PR #3807） | 刪帳號後憑據殘留成孤兒檔，反代仍派發已刪帳號回 503；fork 對照與 ROADMAP 列同 PR #3807。 |
+| [Issue #3809](https://github.com/lbjlaq/Antigravity-Manager/issues/3809) | defer（同 PR #3812） | Claude 配額問題，上游以 #3812／#3814 回應；#3812 併入 v5.0.1 整批，#3814 不採用。 |
+| [Issue #3811](https://github.com/lbjlaq/Antigravity-Manager/issues/3811) | defer（觀察） | 公告：Google 自 2026-11-02 起部分方案第三方模型（Claude／GPT）存取停止。純通知，無可修補 delta；影響面是配額顯示，見 PR #3812。重新開案條件：維護者的帳號出現 3P 模型假滿額或報錯。 |
+| [Issue #3813](https://github.com/lbjlaq/Antigravity-Manager/issues/3813) | not-applicable | #3794 後續（Gemini 原生流中斷原因遺失），`stream_lifecycle` 家族在 fork 不存在，同 PR #3794。 |
+| [Issue #3815](https://github.com/lbjlaq/Antigravity-Manager/issues/3815) | not-applicable | `ModelGate` 前置攔截使 `custom_mapping` 失效；fork 沒有 `ModelGate`（`grep -rn "ModelGate\|model_gate" src-tauri/src` 無命中）。若日後移植 #3787，須把本 issue 的情境納入測試。 |
+
+PR 水位提升至 `#3814`，issue 水位提升至 `#3816`，release／commit 基線不變（仍 `v5.0.0`／`0067fe0`）。水位只表示上述範圍已讀取並有明確結論，**不表示任何 beta 內容已採用、已修復或通過 provider runtime 驗證；defer 項目的處理都在 ROADMAP 中期表。**
