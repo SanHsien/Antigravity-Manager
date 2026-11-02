@@ -766,6 +766,16 @@ class Website(unittest.TestCase):
             info = check.check_upstream_website(self.base)
         self.assertFalse(check.pending(check.Findings(self.base, [], website=info)))
 
+    def test_payload_without_a_usable_version_is_not_read_as_a_version(self):
+        # `{}` against an empty reviewed version compared equal: "not readable" read as "unchanged".
+        base = dict(self.base, reviewed_website_version="")
+        for body in (b"{}", b'{"version": 2}', b'{"version": "  "}', b"[]"):
+            patch = mock.patch.object(check.urllib.request, "urlopen", return_value=_Response(body))
+            with self.subTest(body=body), patch:
+                info = check.check_upstream_website(base)
+                self.assertIn("error", info)
+                self.assertIn("Not checked", "\n".join(check.render_website_section(info)))
+
     def test_unreachable_site_is_reported_not_checked(self):
         with mock.patch.object(check.urllib.request, "urlopen", side_effect=OSError("down")):
             info = check.check_upstream_website(self.base)
