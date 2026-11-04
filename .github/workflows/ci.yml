@@ -93,6 +93,11 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::middleware::internal::tests
 
+      - name: Test payload audit redaction
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::payload_audit::tests
+
       - name: Test retry delay
         timeout-minutes: 6
         run: |
