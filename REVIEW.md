@@ -28,6 +28,8 @@
 | P3 Gemini `?key=` 含日誌去敏 | `505deb09` | `d1611b8e` | 管理端點不接受 query key；監控日誌、IP 日誌一律去敏（含 percent-encoded 參數名） |
 | P5 會話指紋穩定 | `f86c2485` | `2a6c8ee2`、`b75f4075` | 文字錨點優先，既有文字會話 id 不變；簽名 URL 去 query；`[System` 後任何空白皆視為標籤 |
 | P10 Claude 429 外洩 | `16d31898` 僅 Claude handler | `ae762fb1` | 另修 200 header 後 peek 失敗仍回 200 的洩漏；未取 `common.rs` 多日配額快速轉移 |
+| P2 密文護欄（`ag_enc_` 解密失敗且 URL 無帳密不送 basic auth） | `47a0f182` 部分 | `7b725dd2`（2026-11-05；CI run 41864445385 實跑兩個 `proxy_pool` 新舊測試通過） | 只取護欄，故障轉移改法不採用 |
+| P11 輕量模式重建主視窗黑屏 | `e18d31fc` | `7b725dd2`（2026-11-05；CI 編譯與前端回歸 3/3 通過） | 另加 3 秒後端保底；Windows 實機視覺驗收仍待維護者（ROADMAP 近期列） |
 | P7 Web 模式儲存設定熱更新 | `d206e57e` | `5065411f` | 另補 `circuit_breaker`；未做 hub 指紋 |
 | P9 強制 tool_choice 移除 Claude thinkingConfig | `cae8fb9b` 第 3 項 | `2fa371d7` | 不做「400 後剝除重試」 |
 | P13 thought 片段簽名查詢 | `aa6cd5b1` 小項 | `78d7cce2` | 改為掃最近 50 筆解壓後 `contains`（區分大小寫） |
@@ -251,7 +253,7 @@ PR／issue 水位推至 `#3780`／`#3781`，僅表示已分診；release／commi
   - 決策點：不健康時改走公用池會讓專屬帳號換出口 IP；若希望「專屬帳號絕不換 IP」，則步驟 2 應省略，直接用綁定代理（較嚴格，但無容錯）。
 - **決定（2026-10-26）：不採用，維持現行行為，不改程式。** 現行 `get_bound_proxy` 對「啟用中的綁定代理」不會靜默換 IP：`auto_failover` 關閉時，不論健康與否一律用綁定代理；`auto_failover` 開啟時，使用者已明示接受容錯，不健康才改走公用池（`select_proxy_from_pool` 已排除所有被綁定的代理，不會借用別帳號的專屬 IP）。上游改法會讓「關閉故障轉移」的帳號也換 IP，與設定語意相反。已知殘留缺口（皆會直連，上游也未處理）：①綁定代理本身被停用（`enabled == false`）或綁定指向已刪除的代理條目時 `get_bound_proxy` 回 `Ok(None)`，改走公用池，池空則直連；②`build_proxy_config` 回 `Err` 時，`upstream/client.rs` `get_client` 回預設 client（直連）；③`build_client_with_proxy` 失敗同樣回預設 client；④`auto_failover` 開啟、綁定代理不健康且公用池為空。觸發重開：維護者要求「專屬帳號絕不直連」，屆時於 `upstream/client.rs` 對綁定帳號的 `Ok(None)`／`Err` 回錯誤而非直連，並移植上游 4 個測試。
 - 測試（CI）：上游 4 個測試可直接移植（`bound_account_prevents_direct_leak_when_unhealthy`、`bound_account_fails_over_to_healthy_pool_proxy`、`build_proxy_config_blocks_ciphertext_when_no_url_auth`、URL 清洗兩個）；fork 現有 `test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure`（`proxy_pool.rs:~705`）要保持綠燈。
-- **密文護欄修復**：上述不採用決定僅適用於故障轉移；`build_proxy_config` 對 `ag_enc_` 獨立判斷，有 URL 憑證就回退，沒有就略過 `basic_auth`，不外送密文。修復定位：`proxy_pool.rs` 的 `task_build_proxy_config_blocks_ciphertext_when_no_url_auth`；以回送位址假代理檢查實際 `Proxy-Authorization` 缺席，既有 `test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure` 同樣檢查實際 URL 認證標頭。CI 的 `proxy::proxy_pool::tests::` 步驟涵蓋兩者與原有建構測試。
+- **密文護欄修復**（`7b725dd2`，2026-11-05）：上述不採用決定僅適用於故障轉移；`build_proxy_config` 對 `ag_enc_` 獨立判斷，有 URL 憑證就回退，沒有就略過 `basic_auth`，不外送密文。修復定位：`proxy_pool.rs` 的 `task_build_proxy_config_blocks_ciphertext_when_no_url_auth`；以回送位址假代理檢查實際 `Proxy-Authorization` 缺席，既有 `test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure` 同樣檢查實際 URL 認證標頭。CI 的 `proxy::proxy_pool::tests::` 步驟涵蓋兩者與原有建構測試。
 - 本機可測：Rust 測試需要 NASM 與原生編譯工具鏈。
 
 #### P3  `505deb09`：Gemini `?key=`（含日誌去敏）
@@ -340,7 +342,7 @@ PR／issue 水位推至 `#3780`／`#3781`，僅表示已分診；release／commi
   1. `exit_lightweight_mode`（`lightweight.rs:67`）在 `ensure_main_window` 前記 `let already_running = app.get_webview_window("main").is_some();`，只有 `already_running` 時才 `show()/unminimize()/set_focus()`；新建視窗保持 `visible:false`，由前端在首幀後顯示。
   2. `ThemeManager.tsx:17`（`await getCurrentWindow().show()` 之後）補 `await win.unminimize().catch(()=>{}); await win.setFocus().catch(()=>{});`（fork 無 `mini` 標籤，不需要上游的 `win.label !== 'mini'` 判斷）。
   3. 風險：若前端載入失敗，新建視窗永遠不顯示。加保底：Rust 端對新建視窗啟動 `tokio::time::sleep(3s)` 後仍未 visible 則強制 `show()`。
-- **實作**：`exit_lightweight_mode` 僅立即顯示既有視窗；新建視窗由前端延後顯示並解除最小化／聚焦，後端以 3 秒計時器對仍隱藏的同一視窗保底恢復。銷毀或已顯示的視窗不由計時器再次顯示。`tools/check_lightweight_window.test.mjs` 執行實際元件初始化流程，驗證顯示順序、解除最小化失敗後仍聚焦，以及 Web 模式隔離；接入本機門禁與前端 CI。
+- **實作**（`7b725dd2`，2026-11-05）：`exit_lightweight_mode` 僅立即顯示既有視窗；新建視窗由前端延後顯示並解除最小化／聚焦，後端以 3 秒計時器對仍隱藏的同一視窗保底恢復。銷毀或已顯示的視窗不由計時器再次顯示。`tools/check_lightweight_window.test.mjs` 執行實際元件初始化流程，驗證顯示順序、解除最小化失敗後仍聚焦，以及 Web 模式隔離；接入本機門禁與前端 CI。
 - 驗證：TSX 部分 `npm run build` 可本機；視覺需實機（切到輕量模式再從托盤叫出，Windows 11）。Rust 部分 CI。
 
 #### P12  `bec5c554`：warmup 先解析路由
