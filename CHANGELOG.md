@@ -3,6 +3,16 @@
 > 完整版本历史记录。返回项目主页请查看 [README.md](README.md) | [English Changelog](CHANGELOG_EN.md)。
 
 *   **版本演进**:
+    *   **Unreleased（尚未發版，發版時併入新版本節）**:
+        -   **[本機帳號切換 API] 預設關閉的本機 HTTP API（`127.0.0.1:19527`）接上啟動流程，供本機腳本列帳號／額度並觸發切換**:
+            -   **預設關閉**: `local_account_api.json` 不存在或缺 `enabled` 欄位時一律視為關閉；設定頁「進階」分頁新增開關與埠號（1024–65535），儲存後須重新啟動應用才生效，並明寫「開啟後本機任何程式都能列出帳號並切換」。
+            -   **啟動接線**: 此前 `http_api::spawn_server` 在整個專案沒有任何呼叫處，這個 API 從未運作。現在應用啟動時只在 `enabled` 為 true 且埠號合法時啟動，只綁 `127.0.0.1`；設定檔無法解析時不啟動。
+            -   **擋下瀏覽器跨站請求**: 移除原本 `allow_origin(Any)` 的 CORS；帶 `Origin` 標頭、或 `Host` 不是回送位址（DNS rebinding）的請求回 `403`，本機腳本（curl、Python、PowerShell）不受影響。
+            -   **切換槽原子化**: `POST /accounts/switch` 原本「先讀鎖檢查、再寫鎖設旗標」，兩個同時進來的請求可能都通過而重啟 Desktop 兩次，改為單一寫鎖內檢查並設定；進行中回 `409`。
+            -   **修正**: 管理 API `GET /api/system/http-api/settings` 原本寫死回傳 `{"enabled":true,"port":8045}`，改為回傳實際設定；`POST` 同時接受設定頁送出的 `{"settings":{…}}` 與平鋪欄位，形狀不符回 4xx 而不是存成預設值；`POST /accounts/:id/bind-device` 原以 axum 0.8 的 `{id}` 語法註冊，在本專案使用的 axum 0.7 只會比對字面字串，改為 `:id`。
+            -   **文件**: 新增 [`docs/LOCAL_ACCOUNT_API.md`](docs/LOCAL_ACCOUNT_API.md)（請求格式、`202`／`409` 語意、切換如何套用到 Desktop）。
+            -   **測試**: 新增 `modules::http_api::tests::task_` 與 `proxy::server::http_api_settings_tests::task_`，CI 新增對應步驟。
+
     *   **v5.0.0 (2026-10-16)**:
         -   **[重大架構變更與安全淨化] 全面移除中國資本中轉站服務與非 Windows 跨平台支援**:
             -   **中轉站與特定上游服務物理拔除**: 徹底刪除 APIKEY.FUN 專屬頁面、導航項目、OpenCode 同步與關聯測試；拔除 z.ai (GLM) 轉發適配器、模型動態拉取端點及專屬 MCP 工具集（Search / Reader / Vision）。

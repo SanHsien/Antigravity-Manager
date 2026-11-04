@@ -8,6 +8,7 @@ import ModalDialog from '../components/common/ModalDialog';
 import { showToast } from '../components/common/ToastContainer';
 import QuotaProtection from '../components/settings/QuotaProtection';
 import SmartWarmup from '../components/settings/SmartWarmup';
+import LocalAccountApi from '../components/settings/LocalAccountApi';
 import PinnedQuotaModels from '../components/settings/PinnedQuotaModels';
 import { useDebugConsole } from '../stores/useDebugConsole';
 
@@ -1320,6 +1321,11 @@ function Settings() {
                                             </>
                                         )}
                                     </div>
+                                </div>
+
+                                {/* 本机账号切换 API（默认关闭） */}
+                                <div className="border-t border-gray-200 dark:border-base-200 pt-4">
+                                    <LocalAccountApi />
                                 </div>
 
                             </div>

@@ -396,7 +396,11 @@ pub fn run() {
             modules::scheduler::start_scheduler(Some(app.handle().clone()), scheduler_state.inner().clone());
             info!("Smart scheduler (7-Day Weekly Reset Warmup) initialized.");
 
-            // [PHASE 1] 已整合至 Axum 端口 (8045)，不再单独启动 19527 端口
+            // 本机账号切换 API（127.0.0.1:19527，无凭证）：默认关闭，
+            // 仅当 local_account_api.json 的 enabled 为 true 时启动。
+            modules::http_api::spawn_server_if_enabled(
+                crate::modules::integration::SystemManager::Desktop(app.handle().clone()),
+            );
             info!("Management API integrated into main proxy server (port 8045)");
 
             Ok(())

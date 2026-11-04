@@ -268,7 +268,7 @@ impl axum::extract::FromRef<AppState> for Arc<RwLock<crate::proxy::ProxySecurity
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: String,
 }
@@ -2897,8 +2897,59 @@ async fn admin_toggle_auto_launch(Json(_payload): Json<serde_json::Value>) -> im
     StatusCode::NOT_IMPLEMENTED
 }
 
-async fn admin_get_http_api_settings() -> impl IntoResponse {
-    Json(serde_json::json!({ "enabled": true, "port": 8045 }))
+/// What the settings page shows: the saved `local_account_api.json` (default: disabled), not a
+/// hard-coded value. A load failure is an error, never silently "enabled" or "disabled".
+fn http_api_settings_response(
+    loaded: Result<crate::modules::http_api::HttpApiSettings, String>,
+) -> Result<Json<crate::modules::http_api::HttpApiSettings>, (StatusCode, Json<ErrorResponse>)> {
+    loaded.map(Json).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e }),
+        )
+    })
+}
+
+async fn admin_get_http_api_settings(
+) -> Result<Json<crate::modules::http_api::HttpApiSettings>, (StatusCode, Json<ErrorResponse>)> {
+    http_api_settings_response(crate::modules::http_api::load_settings())
+}
+
+fn default_http_api_port() -> u16 {
+    crate::modules::http_api::DEFAULT_PORT
+}
+
+/// Flat (headless/CLI) body: `enabled` is required so that a body of the wrong shape can never
+/// be saved as "defaults".
+#[derive(Debug, Deserialize)]
+struct HttpApiSettingsFlat {
+    enabled: bool,
+    #[serde(default = "default_http_api_port")]
+    port: u16,
+}
+
+/// Web-mode request body for saving HTTP API settings, same two shapes as
+/// `SaveUpdateSettingsPayload`: the settings page sends `{"settings": {...}}` (the Tauri command
+/// argument name, forwarded as-is by `request.ts`); headless callers may send the flat fields.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum SaveHttpApiSettingsPayload {
+    Wrapped {
+        settings: crate::modules::http_api::HttpApiSettings,
+    },
+    Flat(HttpApiSettingsFlat),
+}
+
+impl SaveHttpApiSettingsPayload {
+    fn into_settings(self) -> crate::modules::http_api::HttpApiSettings {
+        match self {
+            Self::Wrapped { settings } => settings,
+            Self::Flat(flat) => crate::modules::http_api::HttpApiSettings {
+                enabled: flat.enabled,
+                port: flat.port,
+            },
+        }
+    }
 }
 
 // [整合清理] 冗餘導入已移除
@@ -3039,9 +3090,13 @@ async fn admin_warm_up_account(
 }
 
 async fn admin_save_http_api_settings(
-    Json(payload): Json<crate::modules::http_api::HttpApiSettings>,
+    Json(payload): Json<SaveHttpApiSettingsPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    crate::modules::http_api::save_settings(&payload).map_err(|e| {
+    let settings = payload.into_settings();
+    settings
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))?;
+    crate::modules::http_api::save_settings(&settings).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse { error: e }),
@@ -4894,6 +4949,85 @@ mod web_hot_reload_tests {
         assert_eq!(hot.user_agent_override, None);
         assert!(!hot.capture_health_logs);
         assert!(!hot.upstream_proxy.enabled);
+    }
+}
+
+#[cfg(test)]
+mod http_api_settings_tests {
+    use super::{http_api_settings_response, SaveHttpApiSettingsPayload};
+    use crate::modules::http_api::{load_settings_from, save_settings_to, HttpApiSettings};
+    use axum::http::StatusCode;
+
+    #[test]
+    fn task_admin_get_returns_the_saved_settings_not_a_hardcoded_value() {
+        // Before the fix the route answered {"enabled":true,"port":8045} whatever was saved.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("local_account_api.json");
+        save_settings_to(
+            &path,
+            &HttpApiSettings {
+                enabled: true,
+                port: 23456,
+            },
+        )
+        .unwrap();
+
+        let body = http_api_settings_response(load_settings_from(&path)).unwrap();
+        assert_eq!(
+            serde_json::to_value(&body.0).unwrap(),
+            serde_json::json!({ "enabled": true, "port": 23456 })
+        );
+    }
+
+    #[test]
+    fn task_admin_get_reports_disabled_when_nothing_was_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("local_account_api.json");
+        let body = http_api_settings_response(load_settings_from(&path)).unwrap();
+        assert!(!body.0.enabled);
+        assert_ne!(
+            body.0.port, 8045,
+            "8045 is the management port, not this API"
+        );
+    }
+
+    #[test]
+    fn task_admin_get_surfaces_load_failure_as_error() {
+        let err = http_api_settings_response(Err("boom".to_string())).unwrap_err();
+        assert_eq!(err.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn task_admin_save_accepts_wrapped_and_flat_bodies() {
+        let wrapped: SaveHttpApiSettingsPayload = serde_json::from_value(serde_json::json!({
+            "settings": { "enabled": true, "port": 20001 }
+        }))
+        .expect("wrapped web body must deserialize");
+        assert_eq!(
+            wrapped.into_settings(),
+            HttpApiSettings {
+                enabled: true,
+                port: 20001
+            }
+        );
+
+        let flat: SaveHttpApiSettingsPayload =
+            serde_json::from_value(serde_json::json!({ "enabled": true }))
+                .expect("flat body must deserialize");
+        let flat = flat.into_settings();
+        assert!(flat.enabled);
+        assert_eq!(flat.port, crate::modules::http_api::DEFAULT_PORT);
+    }
+
+    #[test]
+    fn task_admin_save_rejects_body_that_is_neither_shape() {
+        // A wrong-shaped body must be a parse error, never saved as "defaults".
+        assert!(
+            serde_json::from_value::<SaveHttpApiSettingsPayload>(serde_json::json!({
+                "unknown": 1
+            }))
+            .is_err()
+        );
     }
 }
 

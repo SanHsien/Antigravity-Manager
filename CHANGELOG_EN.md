@@ -3,6 +3,16 @@
 > Complete version history for Antigravity Tools. Return to project home at [README_EN.md](README_EN.md).
 
 *   **Version History**:
+    *   **Unreleased (not yet released; fold into the new version section when releasing)**:
+        -   **[Local Account Switch API] The local HTTP API (`127.0.0.1:19527`), OFF by default, is now wired into startup so local scripts can list accounts/quotas and trigger a switch**:
+            -   **Off by default**: a missing `local_account_api.json`, or one without `enabled`, means disabled. Settings > Advanced gets a toggle and port (1024-65535); saving requires an app restart, and the page states that once enabled any local program can list accounts and switch.
+            -   **Startup wiring**: `http_api::spawn_server` previously had no caller anywhere, so this API never ran. The app now starts it only when `enabled` is true and the port is valid, bound to `127.0.0.1` only; unreadable settings leave it off.
+            -   **Cross-site browser requests blocked**: removed the `allow_origin(Any)` CORS layer; requests carrying an `Origin` header, or a non-loopback `Host` (DNS rebinding), get `403`. Local scripts (curl, Python, PowerShell) are unaffected.
+            -   **Atomic switch slot**: `POST /accounts/switch` used to check under a read lock and set the flag under a separate write lock, so two simultaneous requests could both pass and restart the desktop app twice. The check and set now happen under one write lock; a switch in progress returns `409`.
+            -   **Fixes**: the admin API `GET /api/system/http-api/settings` returned a hard-coded `{"enabled":true,"port":8045}`; it now returns the saved settings. `POST` accepts both the settings page's `{"settings":{...}}` and flat fields, and a wrongly shaped body is a 4xx instead of being saved as defaults. `POST /accounts/:id/bind-device` was registered with axum 0.8's `{id}` syntax, which axum 0.7 (used here) treats as a literal string; changed to `:id`.
+            -   **Docs**: new [`docs/LOCAL_ACCOUNT_API.md`](docs/LOCAL_ACCOUNT_API.md) (request format, `202`/`409` semantics, how a switch is applied to the Desktop app).
+            -   **Tests**: added `modules::http_api::tests::task_` and `proxy::server::http_api_settings_tests::task_`, with matching CI steps.
+
     *   **v5.0.0 (2026-10-16)**:
         -   **[Refactoring & Sanitization] Remove Chinese Relay Services & Streamline to Pure Windows**:
             -   **Complete Relay Service Removal**: Deleted APIKEY.FUN dedicated view, navigation entries, OpenCode profile synchronization, and associated test scripts; removed z.ai (GLM) forward proxy handler, dynamic model lookup endpoint, and dedicated MCP toolset (Search / Reader / Vision).
