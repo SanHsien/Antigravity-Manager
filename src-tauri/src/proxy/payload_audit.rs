@@ -246,17 +246,59 @@ fn simplify_message(msg: &Value) -> Value {
 fn simplify_responses_input_item(item: &Value) -> Value {
     let mut out = simplify_message(item);
     if let Some(obj) = out.as_object_mut() {
-        for key in ["type", "role", "call_id", "arguments", "output"] {
+        for key in ["type", "role", "call_id", "arguments"] {
             if let Some(v) = item.get(key) {
                 obj.insert(key.to_string(), v.clone());
             }
+        }
+        // `output`（function_call_output）可能是纯文本、data URL 字符串，或带 input_image 的内容数组。
+        if let Some(output) = item.get("output") {
+            obj.insert("output".to_string(), simplify_content(output));
         }
     }
     out
 }
 
+/// 整个字符串就是 `data:` URL 时脱敏为 `<header>,[base64 image: N bytes]`；普通文本原样返回。
+fn redact_data_url(url_str: &str) -> String {
+    if url_str.starts_with("data:") {
+        let comma_pos = url_str.find(',').unwrap_or(0);
+        let header = &url_str[..comma_pos];
+        let len = url_str.len() - comma_pos;
+        format!("{},[base64 image: {} bytes]", header, len)
+    } else {
+        url_str.to_string()
+    }
+}
+
+/// 裸字符串只有在形如 `data:<mime>;base64,...` 时才当作图片；`data: {...}` 这类 SSE 文本不动。
+fn is_base64_data_url(s: &str) -> bool {
+    s.starts_with("data:")
+        && s.find(',').map_or(false, |p| {
+            !s[..p].contains(char::is_whitespace) && s[..p].ends_with(";base64")
+        })
+}
+
+/// `image_url` 两种形态：字符串（Responses `input_image`）与 `{url: ...}` 对象（Chat Completions）。
+fn simplify_image_url_value(img_url: &Value) -> Value {
+    if let Some(url_str) = img_url.as_str() {
+        return Value::String(redact_data_url(url_str));
+    }
+    if let Some(obj) = img_url.as_object() {
+        if let Some(url_str) = obj.get("url").and_then(|u| u.as_str()) {
+            if url_str.starts_with("data:") {
+                let mut cloned = obj.clone();
+                cloned.insert("url".into(), Value::String(redact_data_url(url_str)));
+                return Value::Object(cloned);
+            }
+        }
+    }
+    img_url.clone()
+}
+
 fn simplify_content(content: &Value) -> Value {
     match content {
+        Value::String(s) if is_base64_data_url(s) => Value::String(redact_data_url(s)),
         Value::String(s) => Value::String(s.clone()),
         Value::Array(arr) => Value::Array(
             arr.iter()
@@ -321,20 +363,7 @@ fn simplify_content(content: &Value) -> Value {
                             }
                         }
                         if let Some(img_url) = obj.get("image_url") {
-                            if let Some(url_str) = img_url.get("url").and_then(|u| u.as_str()) {
-                                if url_str.starts_with("data:") {
-                                    let comma_pos = url_str.find(',').unwrap_or(0);
-                                    let header = &url_str[..comma_pos];
-                                    let len = url_str.len() - comma_pos;
-                                    slim.insert("image_url".into(), json!({
-                                        "url": format!("{},[base64 image: {} bytes]", header, len)
-                                    }));
-                                } else {
-                                    slim.insert("image_url".into(), img_url.clone());
-                                }
-                            } else {
-                                slim.insert("image_url".into(), img_url.clone());
-                            }
+                            slim.insert("image_url".into(), simplify_image_url_value(img_url));
                         }
                         if slim.is_empty() {
                             Value::Object(obj.clone())
@@ -889,5 +918,107 @@ mod tests {
         assert_eq!(cand[1]["functionCall"]["name"], "search_code");
         assert_eq!(cand[1]["functionCall"]["args"]["query"], "struct Token");
         assert_eq!(simplified["usageMetadata"]["promptTokenCount"], 1500);
+    }
+
+    #[test]
+    fn test_string_form_image_url_is_redacted() {
+        let b64 = "A".repeat(5000);
+        let content = json!([
+            {"type": "input_image", "image_url": format!("data:image/png;base64,{b64}")},
+            {"type": "input_image", "image_url": "https://example.com/a.png"}
+        ]);
+        let out = simplify_content(&content);
+        let s = out.to_string();
+        assert!(!s.contains(&b64), "base64 leaked: string-form image_url");
+        assert_eq!(
+            out[0]["image_url"],
+            format!(
+                "data:image/png;base64,[base64 image: {} bytes]",
+                b64.len() + 1
+            )
+        );
+        assert_eq!(out[1]["image_url"], "https://example.com/a.png");
+    }
+
+    #[test]
+    fn test_object_form_image_url_still_redacted() {
+        let b64 = "B".repeat(3000);
+        let content = json!([
+            {"type": "image_url", "image_url": {"url": format!("data:image/jpeg;base64,{b64}"), "detail": "high"}}
+        ]);
+        let out = simplify_content(&content);
+        assert!(
+            !out.to_string().contains(&b64),
+            "base64 leaked: object-form image_url"
+        );
+        assert_eq!(
+            out[0]["image_url"]["url"],
+            format!(
+                "data:image/jpeg;base64,[base64 image: {} bytes]",
+                b64.len() + 1
+            )
+        );
+        assert_eq!(out[0]["image_url"]["detail"], "high");
+    }
+
+    #[test]
+    fn test_responses_function_call_output_images_are_redacted() {
+        let b64 = "C".repeat(4000);
+        let item = json!({
+            "type": "function_call_output",
+            "call_id": "call_123",
+            "output": [
+                {"type": "input_text", "text": "screenshot"},
+                {"type": "input_image", "image_url": format!("data:image/png;base64,{b64}")}
+            ]
+        });
+        let out = simplify_responses_input_item(&item);
+        assert!(
+            !out.to_string().contains(&b64),
+            "base64 leaked: function_call_output array"
+        );
+        assert_eq!(out["call_id"], "call_123");
+        assert_eq!(out["type"], "function_call_output");
+        assert_eq!(out["output"][0]["text"], "screenshot");
+        assert_eq!(
+            out["output"][1]["image_url"],
+            format!(
+                "data:image/png;base64,[base64 image: {} bytes]",
+                b64.len() + 1
+            )
+        );
+
+        let item_str = json!({
+            "type": "function_call_output",
+            "call_id": "call_456",
+            "output": format!("data:image/png;base64,{b64}")
+        });
+        let out_str = simplify_responses_input_item(&item_str);
+        assert!(
+            !out_str.to_string().contains(&b64),
+            "base64 leaked: string output"
+        );
+        assert_eq!(out_str["call_id"], "call_456");
+    }
+
+    #[test]
+    fn test_sse_like_text_is_not_treated_as_image() {
+        let text = json!("data: {\"a\":1,\"b\":2}");
+        assert_eq!(simplify_content(&text), text);
+    }
+
+    #[test]
+    fn test_responses_plain_text_output_untouched() {
+        let item = json!({
+            "type": "function_call_output",
+            "call_id": "call_789",
+            "output": "exit code 0: see data:image mention inside text"
+        });
+        let out = simplify_responses_input_item(&item);
+        assert_eq!(
+            out["output"],
+            "exit code 0: see data:image mention inside text"
+        );
+        assert_eq!(out["call_id"], "call_789");
     }
 }
