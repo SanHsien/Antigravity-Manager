@@ -67,7 +67,9 @@ libc = "0.2"
 tracing-appender = "0.2.4"
 tracing-log = "0.2.0"
 tauri-plugin-autostart = "2.5.1"
-tauri-plugin-updater = "2"
+# Windows 發版只有 NSIS setup.exe（updater.json 指向 exe，createUpdaterArtifacts 為 v2 格式），用不到 zip 封裝的更新檔；
+# 關掉預設的 "zip" feature 就不會拉入 zip crate（GHSA-m665-v7pm-7grj、GHSA-q7v9-x93c-xqv3、GHSA-8hxf-qr8p-62x4）。
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 # Unify features for reqwest 0.13 used by tauri-plugin-updater to support SOCKS5 upstream proxy
 reqwest_0_13 = { package = "reqwest", version = "0.13", default-features = false, features = ["socks"] }
 tauri-plugin-process = "2"
