@@ -28,6 +28,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "Tailwind CSS regressions failed with exit code $LASTEXITCODE"
 }
 
+Write-Host "==> Testing lightweight window restoration"
+node --test tools/check_lightweight_window.test.mjs
+if ($LASTEXITCODE -ne 0) {
+    throw "Lightweight window regressions failed with exit code $LASTEXITCODE"
+}
+
 Write-Host "==> Compiling Python tools"
 python -m compileall -q tools
 if ($LASTEXITCODE -ne 0) {

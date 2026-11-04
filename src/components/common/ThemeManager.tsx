@@ -15,7 +15,10 @@ export default function ThemeManager() {
             // Show window after a short delay to ensure React has painted
             setTimeout(async () => {
                 if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-                    await getCurrentWindow().show();
+                    const win = getCurrentWindow();
+                    await win.show();
+                    await win.unminimize().catch(() => {});
+                    await win.setFocus().catch(() => {});
                 }
             }, 100);
         };

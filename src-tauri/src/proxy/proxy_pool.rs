@@ -379,12 +379,17 @@ impl ProxyPoolManager {
         // 优先使用结构化 auth，兜底使用从 URL 内嵌解析出的 auth
         if let Some(auth) = &entry.auth {
             if !auth.username.is_empty() {
-                if auth.password.starts_with("ag_enc_") && parsed_auth.is_some() {
-                    tracing::warn!(
-                        "[ProxyPool] Proxy password decryption failed (retains ag_enc_ prefix); falling back to credentials embedded in URL"
-                    );
-                    let (user, pass) = parsed_auth.as_ref().unwrap();
-                    proxy = proxy.basic_auth(user, pass);
+                if auth.password.starts_with("ag_enc_") {
+                    if let Some((user, pass)) = &parsed_auth {
+                        tracing::warn!(
+                            "[ProxyPool] Proxy password decryption failed (retains ag_enc_ prefix); falling back to credentials embedded in URL"
+                        );
+                        proxy = proxy.basic_auth(user, pass);
+                    } else {
+                        tracing::warn!(
+                            "[ProxyPool] Proxy password decryption failed; skipping proxy authentication to avoid sending ciphertext"
+                        );
+                    }
                 } else {
                     proxy = proxy.basic_auth(&auth.username, &auth.password);
                 }
@@ -659,6 +664,60 @@ mod tests {
     use super::*;
     use crate::proxy::config::ProxyAuth;
 
+    async fn assert_proxy_authorization(
+        mut entry: ProxyEntry,
+        url_auth: bool,
+        expected: Option<&str>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        entry.url = if url_auth {
+            format!("http://url_user:url_pass@{address}")
+        } else {
+            format!("http://{address}")
+        };
+        let pool = ProxyPoolManager::new(Arc::new(RwLock::new(ProxyPoolConfig::default())));
+        let proxy = pool.build_proxy_config(&entry).unwrap().proxy;
+        let client = Client::builder()
+            .no_proxy()
+            .proxy(proxy)
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+
+        let capture = async {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                assert!(
+                    request.len() < 16384,
+                    "Proxy request headers exceeded limit"
+                );
+                let byte = socket.read_u8().await.unwrap();
+                request.push(byte);
+            }
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            String::from_utf8(request).unwrap()
+        };
+        let (request, response) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(capture, client.get("http://example.invalid/").send())
+        })
+        .await
+        .expect("Loopback proxy capture timed out");
+        assert!(response.unwrap().status().is_success());
+        let authorization = request.lines().find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("proxy-authorization")
+                .then(|| value.trim())
+        });
+        assert_eq!(authorization, expected);
+    }
+
     #[test]
     fn test_build_proxy_config_with_explicit_auth() {
         let pool = ProxyPoolManager::new(Arc::new(RwLock::new(ProxyPoolConfig::default())));
@@ -708,8 +767,8 @@ mod tests {
         assert_eq!(res.unwrap().entry_id, "p2");
     }
 
-    #[test]
-    fn test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure() {
+    #[tokio::test]
+    async fn test_build_proxy_config_fallback_to_url_auth_on_decrypt_failure() {
         let pool = ProxyPoolManager::new(Arc::new(RwLock::new(ProxyPoolConfig::default())));
         let entry = ProxyEntry {
             id: "p3".to_string(),
@@ -732,5 +791,28 @@ mod tests {
         let res = pool.build_proxy_config(&entry);
         assert!(res.is_ok());
         assert_eq!(res.unwrap().entry_id, "p3");
+        assert_proxy_authorization(entry, true, Some("Basic dXJsX3VzZXI6dXJsX3Bhc3M=")).await;
+    }
+
+    #[tokio::test]
+    async fn task_build_proxy_config_blocks_ciphertext_when_no_url_auth() {
+        let entry = ProxyEntry {
+            id: "p_cipher".to_string(),
+            name: "test_cipher".to_string(),
+            url: "http://127.0.0.1:10080".to_string(),
+            auth: Some(ProxyAuth {
+                username: "struct_user".to_string(),
+                password: "ag_enc_v2_broken_key_payload".to_string(),
+            }),
+            enabled: true,
+            priority: 1,
+            tags: vec![],
+            max_accounts: None,
+            health_check_url: None,
+            last_check_time: None,
+            is_healthy: true,
+            latency: None,
+        };
+        assert_proxy_authorization(entry, false, None).await;
     }
 }

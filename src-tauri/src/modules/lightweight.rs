@@ -65,11 +65,25 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 
 /// 退出轻量模式：确保主窗口存在，并将其显示、聚焦
 pub fn exit_lightweight_mode(app: &AppHandle) -> Result<WebviewWindow, String> {
+    let already_running = app.get_webview_window("main").is_some();
     let window = ensure_main_window(app)?;
 
-    let _ = window.show();
-    let _ = window.unminimize();
-    let _ = window.set_focus();
+    if already_running {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    } else {
+        // 新窗口由前端绘制后显示；加载失败时保底恢复，避免窗口永久隐藏。
+        let fallback_window = window.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            if matches!(fallback_window.is_visible(), Ok(false)) {
+                let _ = fallback_window.show();
+                let _ = fallback_window.unminimize();
+                let _ = fallback_window.set_focus();
+            }
+        });
+    }
 
     #[cfg(target_os = "macos")]
     {

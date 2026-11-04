@@ -45,6 +45,9 @@ jobs:
       - name: Tailwind CSS regressions
         run: npm run test:tailwind-regressions
 
+      - name: Test lightweight window restoration
+        run: node --test tools/check_lightweight_window.test.mjs
+
   # Rust 代码检查
   check-rust:
     name: Check Rust Code
@@ -87,6 +90,12 @@ jobs:
         run: |
           cd src-tauri
           cargo test --locked --lib tool_schema
+
+      - name: Test proxy pool task_ciphertext guard and URL auth fallback
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::proxy_pool::tests:: -- --test-threads=1
 
       - name: Test internal warmup loopback guard
         run: |

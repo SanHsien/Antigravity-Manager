@@ -4,6 +4,8 @@
 
 *   **Version History**:
     *   **Unreleased (not yet released; fold into the new version section when releasing)**:
+        -   **[Proxy authentication] Failed-to-decrypt `ag_enc_` ciphertext is no longer sent as Basic Auth. Credentials embedded in the URL remain the fallback; failover settings keep their existing semantics.**
+        -   **[Lightweight mode] Rebuilt main windows are shown, unminimized, and focused by the frontend after rendering, with a backend fallback after 3 seconds if still hidden.**
         -   **[Local Account Switch API] The local HTTP API (`127.0.0.1:19527`), OFF by default, is now wired into startup so local scripts can list accounts/quotas and trigger a switch**:
             -   **Off by default**: a missing `local_account_api.json`, or one without `enabled`, means disabled. Settings > Advanced gets a toggle and port (1024-65535); saving requires an app restart, and the page states that once enabled any local program can list accounts and switch.
             -   **Startup wiring**: `http_api::spawn_server` previously had no caller anywhere, so this API never ran. The app now starts it only when `enabled` is true and the port is valid, bound to `127.0.0.1` only; unreadable settings leave it off.
