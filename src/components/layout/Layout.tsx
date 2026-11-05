@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Navbar from '../navbar/Navbar';
 import BackgroundTaskRunner from '../common/BackgroundTaskRunner';

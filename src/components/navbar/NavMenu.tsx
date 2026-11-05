@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router';
 import { NavigationDropdown } from './NavDropdowns';
 import { isActive, getCurrentNavItem, type NavItem } from './constants';
 import { useConfigStore } from '../../stores/useConfigStore';

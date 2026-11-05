@@ -12,7 +12,8 @@ const expectedCss = [
   [/\.shadow-xs\{--tw-shadow:0 1px 2px 0 /, 'v3 shadow-sm dimensions'],
   [/--radius-xs:\.125rem/, 'v3 rounded-sm radius token'],
   [/\.rounded-xs\{border-radius:var\(--radius-xs\)/, 'v3 rounded-sm compatibility utility'],
-  [/\.outline-hidden\{--tw-outline-style:none;outline-style:none\}@media\(forced-colors:active\)\{\.outline-hidden\{outline-offset:2px;outline:2px solid #0000\}\}/, 'v3 outline-none forced-colors behavior'],
+  // The space after @media is optional: Vite 8 minifies with lightningcss, Vite 7 with esbuild.
+  [/\.outline-hidden\{--tw-outline-style:none;outline-style:none\}@media ?\(forced-colors:active\)\{\.outline-hidden\{outline-offset:2px;outline:2px solid #0000\}\}/, 'v3 outline-none forced-colors behavior'],
   [/\.dark\\:bg-base-100\b/, 'class-based dark variant'],
   [/\[data-theme=light\]/, 'light daisyUI theme'],
   [/\[data-theme=dark\]/, 'dark daisyUI theme'],

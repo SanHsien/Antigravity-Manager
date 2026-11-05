@@ -301,6 +301,15 @@ response = client.chat.completions.create(
 
 ## 📝 更新日誌
 
+### v5.0.1（發版說明草案；尚未發佈）
+
+- 修正 429 延遲、驗證封鎖恢復、Gemini `?key=` 認證與日誌去敏、會話指紋、Claude 工具呼叫與 OpenAI Chat 串流收尾（REVIEW 00.2）。
+- 修正 Web 模式設定儲存與熱更新、壞圖 400 自癒（正常圖片也可能被一併省略，詳見 CHANGELOG；REVIEW 00.3–00.4）。
+- 加強帳號／模型路徑與工具 schema 邊界、Base64 日誌去敏；代理憑證解密失敗不外送密文；輕量模式重建加入繪製後顯示與 3 秒保底（REVIEW 00.2、25、27）。
+- 本機帳號切換 API 預設關閉，僅綁 `127.0.0.1:19527`；啟用後本機程式可列出帳號並切換，設定儲存後須重啟。見 [使用說明](docs/LOCAL_ACCOUNT_API.md)。
+
+各項 fork commit 與限制見 [完整發版說明](CHANGELOG.md)。此節只涵蓋已合併至 main 的變更；輕量模式視覺與帳號切換的 Windows 實機驗收仍見 [ROADMAP](ROADMAP.md)。
+
 > 最新版本 **v5.0.0**（2026-10-16）：重大架構變更與安全淨化。全面移除中國資本中轉站服務（APIKEY.FUN、z.ai/GLM 轉發與專屬 MCP 工具）與非 Windows 跨平台支援；完全淨化 11 國語系檔殘留鍵值；建置與發布管線全面收斂至 Windows 原生（`windows-2025`、NSIS/MSI），更新端點遷移至 SanHsien 倉庫。
 
 👉 **[檢視完整更新日誌 CHANGELOG.md →](CHANGELOG.md)**

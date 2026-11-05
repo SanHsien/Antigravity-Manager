@@ -3,7 +3,16 @@
 > 完整版本历史记录。返回项目主页请查看 [README.md](README.md) | [English Changelog](CHANGELOG_EN.md)。
 
 *   **版本演进**:
-    *   **Unreleased（尚未發版，發版時併入新版本節）**:
+    *   **v5.0.1（發版說明草案；尚未發佈）**:
+        -   **[429 重試與帳號恢復]** 重試延遲取 `Retry-After` 與回應本文的較大值，支援 `resets in` 與多筆 details；驗證封鎖到期後可重新整理額度，手動停用帳號仍保持停用（`49204cba`、`c6d53b62`；REVIEW 00.2 P1／P4）。
+        -   **[Gemini 認證與隱私]** 代理路由接受 `?key=`，管理端點仍要求標頭認證；監控與 IP 日誌移除 query key，包含編碼後的參數名稱（`d1611b8e`；REVIEW 00.2 P3）。
+        -   **[會話與工具相容性]** 短文字、圖片與含 `[System` 的訊息維持穩定會話指紋；強制 Claude 工具呼叫時移除衝突的 thinkingConfig；thought 簽名查詢改為比對解壓後文字，UTF-8 摘要不再切斷字元（`2a6c8ee2`、`b75f4075`、`2fa371d7`、`78d7cce2`、`10b40189`；REVIEW 00.2 P5／P9／P13）。
+        -   **[錯誤與串流收尾]** Claude 最後一次失敗為其他錯誤時不再誤報 429；OpenAI Chat 串流僅在已收到 usage、但缺 finishReason 時補齊終態（`ae762fb1`、`f7509ad9`、`fe3313ea`；REVIEW 00.2 P10、P6）。
+        -   **[Web 模式設定]** 儲存代理設定立即熱更新其餘執行中設定；更新設定同時接受設定頁包裝與平鋪格式，落盤失敗回報 500（`5065411f`、`2a5a73fa`；REVIEW 00.2 P7、00.3 #3754）。
+        -   **[壞圖自癒]** 上游回 400 `Unable to process input image` 時，記錄該請求圖片指紋並在同帳號重試一次；後續重送省略命中的圖片，不鎖號或換號。上游未指出哪張圖損壞時，同請求的正常圖片也可能被省略，直到行程重啟或指紋淘汰（`704e9fd9`；REVIEW 00.4 #3758／#3759）。
+        -   **[輸入與日誌安全]** 帳號／模型檔案讀取限定管理目錄內的一般檔案；工具 schema 在複製與派發前限制大小、深度並檢查 `parameters_json_schema` 別名；簡要 payload 日誌遮蔽 Responses 圖片與工具輸出中的 Base64（`415dbb2a`、`c6bbb01c`、`4326c102`、`9228683c`、`e5e9d941`、`6ef03b3d`；REVIEW 25、27；DECISIONS schema 覆核）。
+        -   **[安全依賴]** 更新 DOMPurify、Vite、rustls 與 decode-uri-component；停用 Windows 更新器不使用的 zip feature，移除其漏洞依賴鏈（`f3a6b7da`、`e90f714d`、`2b7bba1e`、`0efa1e3d`、`daf2d638`）。
+        -   **[依賴與建置]** 前端升級 antd 6、@lobehub/ui／icons 6、antd-style 4、react-router 8（`react-router-dom` 併入 `react-router`）、Vite 8＋@vitejs/plugin-react 6、framer-motion 14、i18next 26＋react-i18next 17、lucide-react 1（品牌圖示移除，設定頁 GitHub 圖示改用 @lobehub/icons）；Rust 升級 rusqlite 0.41（啟用 `fallible_uint` 以維持 `u64`／`usize` 欄位讀寫）、toml 1.2、toml_edit 0.25。從原始碼建置需要 Node.js 22.22.0+，CI 與發版改用 Node.js 24；sysinfo 0.40 因 `System::new()` 改回傳 `Result` 而延後，見 `.github/dependency-deferrals.json`。已安裝的使用者不受影響，但請在 Windows 實機確認各頁面版面、語言切換與設定儲存正常。
         -   **[代理認證] 解密失敗的 `ag_enc_` 密文不再當作 Basic Auth 外送；URL 有帳密時仍使用 URL 憑證回退，故障轉移設定語意維持不變。**
         -   **[輕量模式] 重建主視窗由前端繪製後顯示、解除最小化並聚焦；前端未顯示時，3 秒後由後端保底恢復視窗。**
         -   **[本機帳號切換 API] 預設關閉的本機 HTTP API（`127.0.0.1:19527`）接上啟動流程，供本機腳本列帳號／額度並觸發切換**:

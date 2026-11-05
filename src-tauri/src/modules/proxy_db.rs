@@ -1671,7 +1671,7 @@ mod tool_signature_tests {
         {
             let db = TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap();
             let conn = &db.as_ref().unwrap().1;
-            assert!(conn.is_readonly(rusqlite::DatabaseName::Main).unwrap());
+            assert!(conn.is_readonly("main").unwrap());
             // A connection-local setting detects accidental reopening on a miss.
             conn.pragma_update(None, "cache_size", -1234).unwrap();
         }

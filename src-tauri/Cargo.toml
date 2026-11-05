@@ -30,7 +30,7 @@ dirs = "5.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "socks", "blocking", "rustls-tls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled", "fallible_uint"] }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 base64 = "0.22"
 sysinfo = "0.31"
@@ -74,8 +74,8 @@ tauri-plugin-updater = { version = "2", default-features = false, features = ["r
 reqwest_0_13 = { package = "reqwest", version = "0.13", default-features = false, features = ["socks"] }
 tauri-plugin-process = "2"
 sha2 = "0.10"
-toml = "0.8"
-toml_edit = "0.22"
+toml = "1.2.0"
+toml_edit = "0.25.18"
 tauri-plugin-window-state = "2"
 parking_lot = "0.12.5"
 tokio-util = "0.7.18"

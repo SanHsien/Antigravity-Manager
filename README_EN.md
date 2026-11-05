@@ -303,6 +303,15 @@ In clients that support OpenAI protocol (e.g., Cherry Studio), you can configure
 
 ## 📝 Changelog
 
+### v5.0.1 (release notes draft; not yet published)
+
+- Fix 429 delays, expired validation blocks, Gemini `?key=` authentication and log redaction, session fingerprints, Claude tool calls and OpenAI Chat terminal frames (REVIEW 00.2).
+- Fix Web settings persistence/hot reload and corrupted-image 400 recovery (good images may also be omitted; see CHANGELOG; REVIEW 00.3–00.4).
+- Strengthen account/model paths and tool-schema boundaries, redact Base64 logs, prevent encrypted proxy credentials from being sent on decryption failure, and show rebuilt lightweight windows after rendering with a 3-second fallback (REVIEW 00.2, 25, 27).
+- The local account switch API is off by default and binds only to `127.0.0.1:19527`. Once enabled, local programs can list accounts and switch; saving settings requires a restart. See the [API guide](docs/LOCAL_ACCOUNT_API.md).
+
+See the [full release notes](CHANGELOG_EN.md) for fork commits and limitations. This section covers changes already merged into main; Windows visual/account-switch acceptance remains tracked in [ROADMAP](ROADMAP.md).
+
 > Latest version **v5.0.0** (2026-10-16): Major architecture refactoring and security sanitization. Completely removed Chinese relay services (APIKEY.FUN, z.ai/GLM proxy & dedicated MCP tools) and non-Windows platform support; sanitized all 11 locale files; streamlined CI and Release pipelines to pure Windows-native (`windows-2025`, NSIS/MSI), and re-pointed update endpoints to the SanHsien repository.
 
 👉 **[View Full Changelog → CHANGELOG_EN.md](CHANGELOG_EN.md)**

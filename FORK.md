@@ -100,7 +100,7 @@ gh repo set-default --view                         # 必須顯示 SanHsien/Antig
 
 ## 本機開發與日常驗收
 
-本專案需要 Node.js 20+（目前環境 Node 26+）與 Python 3.10+。
+本專案需要 Node.js 22.22.0+ 與 Python 3.10+；CI／發版使用 Node.js 24 LTS。
 
 ```powershell
 # 執行 Windows 一鍵式驗證門禁
