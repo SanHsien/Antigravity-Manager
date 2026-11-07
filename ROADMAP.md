@@ -5,6 +5,7 @@
 
 ## 現況
 `lbjlaq/Antigravity-Manager` 的 Windows 原生維護 fork（Tauri v2 + React + Rust 的帳號切換與協定代理），追上游 release 軸，已審到 `v5.0.0`（`tools/upstream_baseline.json`）；本 fork 最新 release 是 `v5.0.0`（2026-10-16），之後 `main` 已累積 83 個 commit（含 8 組上游移植與 #3754、#3758 修正，見 [`REVIEW.md`](REVIEW.md) 00.2–00.4）但未發版。
+2026-11-08 重查（`main` `a10644c4`）：open PR 0、Dependabot open alert 0、code scanning open 0；CI、CodeQL success，`Upstream check` failure，因為上游正式版已出到 `v5.0.3`（2026-11-06），另有 `v5.0.4-beta.1`，所以中期表第一列「整批審上游 v5.0.1」的觸發條件已經成立。下面是 11-04 的舊快照，數字以這段為準。
 2026-11-04 查：open PR 1 筆（#57，Dependabot `decode-uri-component` 0.5.0 → 0.5.1；`rustls` #56 已於 `2b7bba1eb` 合併、其告警已關）、Dependabot open alert 4 筆（`zip` 3、`decode-uri-component` 1；`zip` 的修補是關掉 `tauri-plugin-updater` 的 `zip` feature，`decode-uri-component` 鎖到 0.5.1，兩者在工作樹待 CI 與推送，推送後重查告警數）、code scanning 0；CI 最近一次（`eb2a4617`）success；issues 已停用，open issue 數「未查到」。上游已出到 `v5.0.1-beta.7`，尚無 v5.0.1 正式版（查法：`gh pr list -R SanHsien/Antigravity-Manager`、`gh api repos/SanHsien/Antigravity-Manager/dependabot/alerts?state=open`、`gh release list -R lbjlaq/Antigravity-Manager`）。
 
 2026-10-29 本輪完成指定大檔的 fork 差異審查：限流測試已在 `624ae2b6` 全數進 CI；本輪另修工具 schema 的 `parameters_json_schema` 別名漏檢，先紅燈再以現有 CI selector 本機實跑 37 過／0 失敗。審查來源、範圍與上游原有問題見 [`DECISIONS.md`](DECISIONS.md)。
