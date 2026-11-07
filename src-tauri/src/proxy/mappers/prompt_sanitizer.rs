@@ -1004,4 +1004,34 @@ mod tests {
         );
         assert_eq!(payload["request"]["contents"][0]["parts"][0]["text"], jeik);
     }
+
+    #[test]
+    fn test_competitor_names_in_user_assistant_tool_and_system_body_round_trip_unchanged() {
+        // Issue #3764（上游 v5.0.1 beta 的回歸）：清洗不得改寫使用者正文、模型輸出或工具結果裡的
+        // 廠牌名稱。user / model / functionResponse 走內容軌（只做 Header 軌），
+        // systemInstruction 的非身份宣告正文同樣逐字保留。
+        let user_text = "Compare Anthropic Claude, DeepSeek, OpenAI GPT and Qwen pricing for me.";
+        let model_text = "DeepSeek and Anthropic both publish API pricing; OpenAI and Qwen do too.";
+        let tool_result = json!({
+            "functionResponse": {
+                "name": "search",
+                "response": { "result": "Anthropic, DeepSeek, OpenAI, Qwen, ByteDance, Tencent" }
+            }
+        });
+
+        let mut contents = vec![
+            json!({ "text": user_text }),
+            json!({ "text": model_text }),
+            tool_result.clone(),
+        ];
+        let before = contents.clone();
+        assert_eq!(PromptSanitizer::sanitize_parts(&mut contents), 0);
+        assert_eq!(contents, before);
+
+        let system_body =
+            "Project notes: compare Anthropic and DeepSeek pricing before choosing a vendor.";
+        let mut system_parts = vec![json!({ "text": system_body })];
+        assert_eq!(PromptSanitizer::sanitize_system_parts(&mut system_parts), 0);
+        assert_eq!(system_parts[0]["text"], system_body);
+    }
 }

@@ -119,6 +119,12 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::tests::retry_strategy_tests::test_adaptive_retry_explicit_hard_quota -- --test-threads=1
 
+      - name: Test sanitizer keeps competitor names
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::mappers::prompt_sanitizer::tests::test_competitor_names -- --test-threads=1
+
       - name: Test rate-limit parsing
         timeout-minutes: 6
         run: |
