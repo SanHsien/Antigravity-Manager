@@ -5,6 +5,7 @@
 *   **Version History**:
     *   **v5.0.1 (release notes draft; not yet published)**:
         -   **[429 retries and account recovery]** Use the larger delay from `Retry-After` and the response body, including `resets in` and multiple details entries. Expired validation blocks can refresh quotas again; manually disabled accounts stay disabled (`49204cba`, `c6d53b62`; REVIEW 00.2 P1/P4).
+        -   **[Hard-quota retries]** Once every account in the pool has answered "quota exhausted", the second round now backs off linearly instead of retrying every 50 ms (ports the `attempt < pool_size` guard from upstream `4e00a667`; REVIEW section 29, 4-b).
         -   **[Gemini authentication and privacy]** Proxy routes accept `?key=`; admin endpoints still require header credentials. Monitor and IP logs redact query keys, including encoded parameter names (`d1611b8e`; REVIEW 00.2 P3).
         -   **[Session and tool compatibility]** Stabilize fingerprints for short text, images and `[System` content; remove conflicting thinkingConfig for forced Claude tool calls; look up thought signatures in decompressed text and slice UTF-8 snippets at character boundaries (`2a6c8ee2`, `b75f4075`, `2fa371d7`, `78d7cce2`, `10b40189`; REVIEW 00.2 P5/P9/P13).
         -   **[Errors and stream completion]** Claude no longer reports 429 when a later attempt fails differently. OpenAI Chat adds a terminal frame only when usage has arrived but finishReason is missing (`ae762fb1`, `f7509ad9`, `fe3313ea`; REVIEW 00.2 P10, P6).

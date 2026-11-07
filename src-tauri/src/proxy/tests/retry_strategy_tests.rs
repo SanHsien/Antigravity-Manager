@@ -212,3 +212,62 @@ fn test_adaptive_retry_multi_account_round_2_large_gap_rotates_if_more_than_two_
         other => panic!("Expected FixedDelay(50ms), got {:?}", other),
     }
 }
+
+#[test]
+fn test_adaptive_retry_explicit_hard_quota_rotates_full_pool_and_backs_off() {
+    use crate::proxy::handlers::common::determine_retry_strategy_adaptive;
+    // 明确的账号级硬配额耗尽返回（包含确切的配额耗尽关键字，且没有 quotaResetDelay）
+    let hard_quota_429 = r#"{"error":{"code":429,"message":"You have exceeded your current quota. Please check your plan and billing details."}}"#;
+
+    let pool_size = 3;
+    // Round 1 (attempt 0, 1, 2): 账号级额度枯竭，全池快切寻找有额度账号 (50ms)
+    for attempt in 0..pool_size {
+        let s = determine_retry_strategy_adaptive(
+            429,
+            hard_quota_429,
+            None,
+            false,
+            true,
+            attempt,
+            pool_size,
+        );
+        match s {
+            RetryStrategy::FixedDelay(d) => assert_eq!(
+                d,
+                Duration::from_millis(50),
+                "Attempt {} should fast rotate in round 1",
+                attempt
+            ),
+            other => panic!(
+                "Attempt {} expected FixedDelay(50ms), got {:?}",
+                attempt, other
+            ),
+        }
+    }
+
+    // Round 2 (attempt 3, 4, 5): 全池账号均已耗尽，必须进入第二轮线性温和退避 (2s/4s/5s 封顶)，
+    // 不能继续每次 50ms 空转刷死整个池
+    for (attempt, expected_ms) in [(3usize, 2000u64), (4, 4000), (5, 5000)] {
+        let s = determine_retry_strategy_adaptive(
+            429,
+            hard_quota_429,
+            None,
+            false,
+            true,
+            attempt,
+            pool_size,
+        );
+        match s {
+            RetryStrategy::FixedDelay(d) => assert_eq!(
+                d,
+                Duration::from_millis(expected_ms),
+                "Round 2 attempt {} should enter gentle linear backoff",
+                attempt
+            ),
+            other => panic!(
+                "Round 2 attempt {} expected FixedDelay({}ms), got {:?}",
+                attempt, expected_ms, other
+            ),
+        }
+    }
+}

@@ -228,7 +228,9 @@ pub fn determine_retry_strategy_adaptive(
                     || lower.contains("zero_quota")
                     || lower.contains("weekly quota"));
 
-            if is_hard_quota_exhausted {
+            // 仅第一轮 (attempt < pool_size) 对硬配额枯竭做 50ms 快切；全池已轮完仍枯竭时，
+            // 落到下面的第二轮温和退避，避免每次重试都 50ms 空转刷死整个池。
+            if is_hard_quota_exhausted && attempt < pool_size {
                 return RetryStrategy::FixedDelay(Duration::from_millis(50));
             }
 

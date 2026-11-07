@@ -113,6 +113,12 @@ jobs:
           cd src-tauri
           cargo test --locked --lib proxy::upstream::retry::tests::task_ -- --test-threads=1
 
+      - name: Test hard-quota retry rounds
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::tests::retry_strategy_tests::test_adaptive_retry_explicit_hard_quota -- --test-threads=1
+
       - name: Test rate-limit parsing
         timeout-minutes: 6
         run: |
