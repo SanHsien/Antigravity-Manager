@@ -271,3 +271,65 @@ fn test_adaptive_retry_explicit_hard_quota_rotates_full_pool_and_backs_off() {
         }
     }
 }
+
+#[test]
+fn test_per_request_grace_cap_stops_same_account_retry_loop_in_round_2() {
+    use crate::proxy::handlers::common::RequestRetryState;
+    // 429 帶 3s 的 quotaResetDelay：第二輪的小間隙分支會回 GraceRetry（原地小等後重試同帳號）。
+    let err_json = r#"{"error":{"message":"Resource has been exhausted","details":[{"quotaResetDelay":"3s"}]}}"#;
+    let pool_size = 3;
+
+    // 快取優先模式允許 Grace，但同一個帳號在同一個請求內只能 Grace 一次：
+    // 第二輪 attempt 3 原地小等；attempt 4、5 必須改走輪換／退避，不能再對同一個冷卻中的帳號原地重試。
+    let mut state = RequestRetryState::default();
+    let mut graces = 0;
+    let mut strategies = Vec::new();
+    for attempt in pool_size..(pool_size * 2) {
+        let s = state.determine_strategy_adaptive_gated(
+            "acct-a", 429, err_json, None, false, attempt, pool_size, true,
+        );
+        if matches!(s, RetryStrategy::GraceRetry(_)) {
+            graces += 1;
+        }
+        strategies.push(s);
+    }
+    assert_eq!(
+        graces, 1,
+        "same account must be grace-retried at most once per request, got {:?}",
+        strategies
+    );
+    match &strategies[1] {
+        RetryStrategy::FixedDelay(d) => assert_eq!(*d, Duration::from_millis(50)),
+        other => panic!(
+            "attempt 4 expected FixedDelay(50ms) rotation, got {:?}",
+            other
+        ),
+    }
+
+    // 排程模式不允許 Grace（Balance 多帳號／PerformanceFirst）時，一次都不能 Grace。
+    let mut gated_off = RequestRetryState::default();
+    for attempt in pool_size..(pool_size * 2) {
+        let s = gated_off.determine_strategy_adaptive_gated(
+            "acct-a", 429, err_json, None, false, attempt, pool_size, false,
+        );
+        assert!(
+            !matches!(s, RetryStrategy::GraceRetry(_)),
+            "scheduling mode forbids grace, attempt {} got {:?}",
+            attempt,
+            s
+        );
+    }
+
+    // 不同帳號各自有一次 Grace 額度。
+    let mut per_account = RequestRetryState::default();
+    for id in ["acct-a", "acct-b"] {
+        let s = per_account.determine_strategy_adaptive_gated(
+            id, 429, err_json, None, false, pool_size, pool_size, true,
+        );
+        assert!(
+            matches!(s, RetryStrategy::GraceRetry(_)),
+            "{} first grace",
+            id
+        );
+    }
+}

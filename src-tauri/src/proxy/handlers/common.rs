@@ -82,7 +82,36 @@ impl RequestRetryState {
         attempt: usize,
         pool_size: usize,
     ) -> RetryStrategy {
-        let allow_grace_retry = !self.grace_retried_accounts.contains(account_id);
+        self.determine_strategy_adaptive_gated(
+            account_id,
+            status_code,
+            error_text,
+            retry_after,
+            retried_without_thinking,
+            attempt,
+            pool_size,
+            true,
+        )
+    }
+
+    /// 同 [`Self::determine_strategy_adaptive`]，另外接受排程模式的 Grace 許可：
+    /// 排程模式不允許 Grace（Balance 多帳號、PerformanceFirst）時一律不原地重試；
+    /// 允許時，每個帳號在同一個請求內最多 Grace 一次，之後改走輪換或退避，
+    /// 避免同一個冷卻中的帳號在第二輪被反覆原地重試。
+    #[allow(clippy::too_many_arguments)]
+    pub fn determine_strategy_adaptive_gated(
+        &mut self,
+        account_id: &str,
+        status_code: u16,
+        error_text: &str,
+        retry_after: Option<&str>,
+        retried_without_thinking: bool,
+        attempt: usize,
+        pool_size: usize,
+        mode_allows_grace: bool,
+    ) -> RetryStrategy {
+        let allow_grace_retry =
+            mode_allows_grace && !self.grace_retried_accounts.contains(account_id);
         let strategy = determine_retry_strategy_adaptive(
             status_code,
             error_text,

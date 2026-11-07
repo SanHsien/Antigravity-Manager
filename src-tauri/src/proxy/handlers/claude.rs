@@ -928,7 +928,7 @@ pub async fn handle_messages(
     // so a 429 from an early account cannot mask a later timeout / upstream failure.
     let mut failure_statuses = super::common::FailureStatusTracker::default();
     let mut force_rotate = false;
-
+    let mut retry_state = super::common::RequestRetryState::default();
     // [Stage Timing] 阶段耗时度量变量 (毫秒，保留微秒级浮点精度)
     let clean_micros = clean_start.elapsed().as_micros() as u64;
     let clean_ms: f64 = clean_micros as f64 / 1000.0;
@@ -2019,16 +2019,16 @@ pub async fn handle_messages(
             crate::proxy::sticky_config::SchedulingMode::CacheFirst => true,
             crate::proxy::sticky_config::SchedulingMode::PerformanceFirst => false,
         };
-
-        // 确定重试策略：传入当前 attempt 与 pool_size，执行智能自适应裁决
-        let retry_strategy = super::common::determine_retry_strategy_adaptive(
+        // 确定重试策略（retry_state：同一帳號每個請求最多 Grace 一次）：传入当前 attempt 与 pool_size
+        let retry_strategy = retry_state.determine_strategy_adaptive_gated(
+            &account_id,
             status_code,
             &error_text,
             retry_after.as_deref(),
             retried_without_thinking,
-            allow_grace,
             attempt,
             pool_size,
+            allow_grace,
         );
 
         // 执行退避

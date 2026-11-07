@@ -3,8 +3,8 @@
   "branch": "main",
   "track": "release",
   "reviewed_release": "v5.0.0",
-  "reviewed_through": "26f34edec37fe9bc0737b0050f16fc94c3af8890",
-  "reviewed_date": "2026-11-07",
+  "reviewed_through": "e922c9432a6a98d56ce65d2b1d053bd99bb43cf2",
+  "reviewed_date": "2026-11-08",
   "reviewed_pr_through": 3840,
   "reviewed_issue_through": 3841,
   "decision_log": "REVIEW.md"
