@@ -97,6 +97,12 @@ jobs:
           cd src-tauri
           cargo test --locked --lib -- --test-threads=1 proxy::common::json_schema::tests::test_discriminated_object_union_merged proxy::common::json_schema::tests::test_object_union_merge_never_narrows_free_field proxy::common::json_schema::tests::test_issue_3327_const_normalization
 
+      - name: Test whole json_schema module
+        timeout-minutes: 6
+        run: |
+          cd src-tauri
+          cargo test --locked --lib proxy::common::json_schema:: -- --test-threads=1
+
       - name: Test proxy pool task_ciphertext guard and URL auth fallback
         timeout-minutes: 6
         run: |
