@@ -351,8 +351,8 @@ mod integration_tests {
 #[cfg(test)]
 mod stress_tests {
     use crate::modules::security_db::{
-        add_to_blacklist, clear_ip_access_logs, get_blacklist, init_db, is_ip_in_blacklist,
-        remove_from_blacklist, save_ip_access_log, IpAccessLog,
+        add_to_blacklist, clear_ip_access_logs, get_blacklist, get_ip_access_logs_count, init_db,
+        is_ip_in_blacklist, remove_from_blacklist, save_ip_access_log, IpAccessLog,
     };
     use std::thread;
     use std::time::{Duration, Instant};
@@ -378,34 +378,38 @@ mod stress_tests {
         // 批量添加
         let start = Instant::now();
         for i in 0..count {
-            let _ = add_to_blacklist(
+            add_to_blacklist(
                 &format!("stress.{}.{}.{}.{}", i / 256, (i / 16) % 16, i % 16, i),
                 None,
                 None,
                 "stress",
-            );
+            )
+            .expect("adding a blacklist entry must succeed");
         }
         let add_duration = start.elapsed();
         println!("Added {} entries in {:?}", count, add_duration);
 
-        // 随机查找测试
+        // 查找测试：每个已加入的条目都必须命中，没加入的不能命中。
+        // 不再对墙钟时间下断言：每次查找都会开一次 SQLite 連線並寫入清理過期條目，耗時取決於
+        // runner 的磁碟速度，門檻值在 CI 上會隨機失敗；耗時只印出來供人工比對。
         let start = Instant::now();
         for i in 0..100 {
-            let _ = is_ip_in_blacklist(&format!(
-                "stress.{}.{}.{}.{}",
-                i / 256,
-                (i / 16) % 16,
-                i % 16,
-                i
-            ));
+            let ip = format!("stress.{}.{}.{}.{}", i / 256, (i / 16) % 16, i % 16, i);
+            assert!(
+                is_ip_in_blacklist(&ip).expect("lookup must succeed"),
+                "{ip} was added and must be found in a {count}-entry blacklist"
+            );
         }
         let lookup_duration = start.elapsed();
         println!("100 lookups in large blacklist took {:?}", lookup_duration);
-
-        // 验证性能合理
         assert!(
-            lookup_duration < Duration::from_secs(1),
-            "Lookups should be reasonably fast even with large blacklist"
+            !is_ip_in_blacklist("stress.absent.0.0.0").expect("lookup must succeed"),
+            "an address that was never added must not match"
+        );
+        assert_eq!(
+            get_blacklist().expect("list blacklist").len(),
+            count as usize,
+            "every entry must have been stored"
         );
 
         cleanup_test_data();
@@ -440,15 +444,16 @@ mod stress_tests {
                 block_reason: None,
                 username: None,
             };
-            let _ = save_ip_access_log(&log);
+            save_ip_access_log(&log).expect("writing an access log must succeed");
         }
         let write_duration = start.elapsed();
         println!("Wrote {} access logs in {:?}", count, write_duration);
 
-        // 验证写入性能合理
+        // 验证全部写入（不对墙钟时间下断言，原因同上：取决于 runner 的磁碟速度）
+        let stored = get_ip_access_logs_count(None, false).expect("count access logs");
         assert!(
-            write_duration < Duration::from_secs(10),
-            "Access log writing should be reasonably fast"
+            stored >= count as u64,
+            "expected at least {count} stored access logs, found {stored}"
         );
 
         let _ = clear_ip_access_logs();
