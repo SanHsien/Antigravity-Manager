@@ -57,7 +57,11 @@ jobs:
           out="$RUNNER_TEMP/probe"
           mkdir -p "$out"
           cd src-tauri
+          # GitHub runs `bash -eo pipefail`: without this the first failing or timed-out batch
+          # would abort the step before rc is read, taskkill runs or later batches start.
+          set +e
           cargo test --locked --lib -- --list 2>/dev/null | sed -n 's/: test$//p' > "$out/all-tests.txt"
+          [ -s "$out/all-tests.txt" ] || { echo "no tests listed"; exit 1; }
           echo "listed $(wc -l < "$out/all-tests.txt") tests"
           sed 's/::[^:]*$//' "$out/all-tests.txt" | sort -u > "$out/batches.txt"
           : > "$out/full-lib-test.log"
@@ -108,7 +112,7 @@ jobs:
               echo '```'
               echo '### TIMEOUT / non-zero batches'
               echo '```'
-              grep -v '^ok ' "$RUNNER_TEMP/probe/batch-status.txt" 2>/dev/null
+              grep -v '^ok ' "$RUNNER_TEMP/probe/batch-status.txt" 2>/dev/null || true
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           else
