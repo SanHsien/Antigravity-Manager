@@ -39,15 +39,21 @@ mod tests {
         path: PathBuf,
     }
 
+    // Two directories created within the same millisecond used to get the same name; the
+    // counter makes every TestDataDir distinct.
+    static TEST_DATA_DIR_SEQ: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
     impl TestDataDir {
         fn new() -> Self {
             let temp_path = std::env::temp_dir().join(format!(
-                "antigravity_test_{}_{}",
+                "antigravity_test_{}_{}_{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_millis()
+                    .as_millis(),
+                TEST_DATA_DIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             fs::create_dir_all(&temp_path).expect("Failed to create temp dir");
 
@@ -115,6 +121,41 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_dir_detected_when_destination_does_not_exist_yet() {
+        let outer = TestDataDir::new();
+        let outer_name = outer.path().file_name().unwrap().to_owned();
+        // Same directory as `outer/moved`, spelled through a missing sibling and `..`, so
+        // it only matches `outer` once the missing part is resolved.
+        let inner = outer
+            .path()
+            .parent()
+            .unwrap()
+            .join("antigravity_missing_sibling")
+            .join("..")
+            .join(outer_name)
+            .join("moved");
+        assert!(!inner.exists());
+        assert!(
+            is_nested_data_dir(&inner, outer.path()),
+            "a not-yet-existing destination inside the source must be seen as nested"
+        );
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_refuses_destination_inside_source() {
+        let src = TestDataDir::new();
+        fs::write(src.path().join("marker.txt"), "hello").unwrap();
+        let dst = src.path().join("moved_data");
+
+        let err = copy_dir_recursive(src.path(), &dst).expect_err("must refuse");
+        assert!(err.contains("自身内部"), "unexpected error: {err}");
+        assert!(
+            !dst.exists(),
+            "refusal must happen before anything is created"
+        );
+    }
+
+    #[test]
     fn test_migrate_data_dir_rename_and_copy() {
         let _guard = TEST_MUTEX.lock().unwrap();
 
@@ -136,8 +177,7 @@ mod tests {
 
         let dest_parent = TestDataDir::new();
         let dest = dest_parent.path().join("moved_data");
-        // 指针文件也放进临时目录（复用已存在的 dest_parent，避免多建一个
-        // 时间戳目录而可能与 src 撞名）
+        // 指针文件也放进临时目录（复用已存在的 dest_parent，避免多建一个目录）
         let pointer_path = dest_parent.path().join("location");
 
         std::env::set_var("ABV_DATA_DIR", src.path());
@@ -794,11 +834,59 @@ pub fn format_data_dir_path(path: &Path) -> String {
     normalize_data_dir_path(path).to_string_lossy().into_owned()
 }
 
+/// Drop `.` and resolve `..` textually (no filesystem access).
+fn lexically_clean(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let can_pop = matches!(out.components().next_back(), Some(Component::Normal(_)));
+                if can_pop {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Canonical form of `path`, also for paths that do not exist yet.
+///
+/// A path that does not exist cannot be canonicalized as a whole, so it used to be returned
+/// verbatim. That made "is the destination inside the source?" compare a canonical source
+/// (symlinks / Windows 8.3 short names such as `RUNNER~1` resolved) against an unresolved
+/// destination, miss the nesting, and let `copy_dir_recursive` copy a directory into itself
+/// until the stack overflowed. Here the deepest existing ancestor is canonicalized and the
+/// missing tail is appended, so both sides use the same spelling.
 fn resolve_existing_path(path: &Path) -> PathBuf {
     let normalized = normalize_data_dir_path(path);
-    match normalized.canonicalize() {
-        Ok(canon) => normalize_data_dir_path(canon),
-        Err(_) => normalized,
+    if let Ok(canon) = normalized.canonicalize() {
+        return normalize_data_dir_path(canon);
+    }
+
+    let cleaned = lexically_clean(&normalized);
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut current: &Path = cleaned.as_path();
+    loop {
+        if let Ok(canon) = current.canonicalize() {
+            let mut resolved = normalize_data_dir_path(canon);
+            for part in tail.iter().rev() {
+                resolved.push(part);
+            }
+            return resolved;
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
+                tail.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return cleaned,
+        }
     }
 }
 
@@ -857,6 +945,11 @@ fn is_default_data_dir(dir: &Path) -> bool {
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    // Copying a directory into its own subtree never terminates: every level re-lists the
+    // freshly created destination. Refuse before touching the disk.
+    if is_nested_data_dir(dst, src) {
+        return Err("不能把数据目录复制到自身内部".to_string());
+    }
     fs::create_dir_all(dst).map_err(|e| format!("创建目标数据目录失败: {}", e))?;
     for entry in fs::read_dir(src).map_err(|e| format!("读取原数据目录失败: {}", e))? {
         let entry = entry.map_err(|e| format!("读取数据目录项失败: {}", e))?;
