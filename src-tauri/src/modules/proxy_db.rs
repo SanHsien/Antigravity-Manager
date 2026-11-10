@@ -529,6 +529,17 @@ pub fn save_tool_signature(
     Ok(())
 }
 
+/// Test helper: close the cached read-only connection so the data directory it points at
+/// can be deleted (Windows cannot remove an open SQLite file).
+#[cfg(test)]
+pub(crate) fn release_tool_signature_db_for_tests() {
+    if let Some(db) = TOOL_SIGNATURE_DB.get() {
+        if let Ok(mut db) = db.lock() {
+            db.take();
+        }
+    }
+}
+
 /// Load a tool-call signature for one session. Never consults the legacy id-only
 /// `tool_signatures` table, and a blank session key never matches anything.
 pub fn load_tool_signature(session_key: &str, tool_id: &str) -> Result<Option<String>, String> {

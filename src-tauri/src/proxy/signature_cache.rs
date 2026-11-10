@@ -525,6 +525,15 @@ mod tests {
     use super::*;
     use crate::proxy::monitor::prompt_log_tests::TestDataDir;
 
+    /// Dropped before `TestDataDir`, so the cached SQLite connection is closed and the
+    /// temporary data directory can be removed on Windows.
+    struct ReleaseToolSignatureDb;
+    impl Drop for ReleaseToolSignatureDb {
+        fn drop(&mut self) {
+            crate::modules::proxy_db::release_tool_signature_db_for_tests();
+        }
+    }
+
     #[test]
     fn test_tool_signature_cache() {
         let cache = SignatureCache::new();
@@ -623,6 +632,7 @@ mod tests {
     #[test]
     fn test_tool_signature_sqlite_recovery() {
         let _dir = TestDataDir::new();
+        let _release_db = ReleaseToolSignatureDb;
         crate::modules::proxy_db::init_db().unwrap();
         let session = "tenant:sess-sqlite-recovery";
         let tool_id = "call_sig_sqlite_recovery_unique";
@@ -655,6 +665,7 @@ mod tests {
     #[test]
     fn same_tool_id_in_two_sessions_never_reads_the_other_sessions_signature() {
         let _dir = TestDataDir::new();
+        let _release_db = ReleaseToolSignatureDb;
         crate::modules::proxy_db::init_db().unwrap();
         let cache = SignatureCache::new();
         let sig_a = "A".repeat(60);
@@ -702,6 +713,7 @@ mod tests {
     #[test]
     fn same_session_gets_its_own_tool_signature_back() {
         let _dir = TestDataDir::new();
+        let _release_db = ReleaseToolSignatureDb;
         crate::modules::proxy_db::init_db().unwrap();
         let cache = SignatureCache::new();
         let first = "1".repeat(60);
@@ -724,6 +736,7 @@ mod tests {
     #[test]
     fn without_a_session_key_nothing_is_cached_or_returned() {
         let _dir = TestDataDir::new();
+        let _release_db = ReleaseToolSignatureDb;
         crate::modules::proxy_db::init_db().unwrap();
         let cache = SignatureCache::new();
         let sig = "N".repeat(60);
