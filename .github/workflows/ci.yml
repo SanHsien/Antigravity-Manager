@@ -86,162 +86,6 @@ jobs:
           cd src-tauri
           cargo check
 
-      - name: Test strict tool-schema depth rejection
-        run: |
-          cd src-tauri
-          cargo test --locked --lib tool_schema
-
-      - name: Test discriminated object-union merge in tool schemas
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib -- --test-threads=1 proxy::common::json_schema::tests::test_discriminated_object_union_merged proxy::common::json_schema::tests::test_object_union_merge_never_narrows_free_field proxy::common::json_schema::tests::test_issue_3327_const_normalization
-
-      - name: Test whole json_schema module
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::common::json_schema:: -- --test-threads=1
-
-      - name: Test proxy pool task_ciphertext guard and URL auth fallback
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::proxy_pool::tests:: -- --test-threads=1
-
-      - name: Test internal warmup loopback guard
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::middleware::internal::tests
-
-      - name: Test payload audit redaction
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::payload_audit::tests
-
-      - name: Test retry delay
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::upstream::retry::tests::task_ -- --test-threads=1
-
-      - name: Test hard-quota retry rounds
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::tests::retry_strategy_tests::test_adaptive_retry_explicit_hard_quota -- --test-threads=1
-
-      - name: Test per-request grace retry cap
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::tests::retry_strategy_tests::test_per_request_grace_cap -- --test-threads=1
-
-      - name: Test sanitizer keeps competitor names
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::mappers::prompt_sanitizer::tests::test_competitor_names -- --test-threads=1
-
-      - name: Test rate-limit parsing
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::rate_limit::tests::task_ -- --test-threads=1
-
-      - name: Test OpenAI stream EOF finish_reason
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::mappers::openai::streaming::tests::task_ -- --test-threads=1
-
-      - name: Test account batch-refresh skip
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib modules::account::tests::task_batch_refresh -- --test-threads=1
-
-      - name: Test token manager validation block
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::token_manager::tests::task_expired_validation_block -- --test-threads=1
-
-      - name: Test proxy auth and query-key redaction
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::middleware::auth::tests::task_ -- --test-threads=1
-
-      - name: Test query-secret redaction
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::middleware::redact::tests::task_ -- --test-threads=1
-
-      - name: Test session fingerprint
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::session_manager::tests::task_ -- --test-threads=1
-
-      - name: Test Claude exhausted-status mapping
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::handlers::claude::exhausted_status_tests::task_ -- --test-threads=1
-
-      - name: Test Web-mode config hot reload
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::server::web_hot_reload_tests::task_ -- --test-threads=1
-
-      - name: Test Web-mode save_update_settings payload shapes
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::server::save_update_settings_payload_tests::task_ -- --test-threads=1
-
-      - name: Test local account API default-off, browser guard and settings route
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib modules::http_api::tests::task_ -- --test-threads=1
-          cargo test --locked --lib proxy::server::http_api_settings_tests::task_ -- --test-threads=1
-
-      - name: Test upstream image-processing 400 classification and fingerprint guard
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::pipeline::policy::tests::task_ -- --test-threads=1
-          cargo test --locked --lib proxy::mappers::corrupted_image_guard::tests::task_ -- --test-threads=1
-          cargo test --locked --lib proxy::mappers::common_utils::tests::task_image_rejected -- --test-threads=1
-
-      - name: Test forced tool_choice thinking strip
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::mappers::openai::request::tests::task_forced_tool_choice -- --test-threads=1
-
-      - name: Test thought snippet signature lookup
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib modules::proxy_db::thinking_sqlite_tests::task_ -- --test-threads=1
-
-      - name: Test monitor thought snippet slicing
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib proxy::middleware::monitor::tests::task_thought_snippet -- --test-threads=1
-
-      - name: Test rate-limit reason classify
-        timeout-minutes: 6
-        run: |
-          cd src-tauri
-          cargo test --locked --lib classify_rate_limit_reason_recognizes_individual_quota_reset_text -- --test-threads=1
-
       - name: Test Gemini inert protocol padding defense (Windows loader diagnostics)
         shell: pwsh
         run: |
@@ -299,6 +143,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # Whole lib suite in one process, one test at a time: many tests share process-wide state
+      # (data dir env, config locks, SQLite files), so --test-threads=1 is required. This replaces
+      # the former hand-picked selectors, which let ~900 of the ~1000 #[test]s go unrun.
+      - name: Test whole lib
+        timeout-minutes: 30
+        run: |
+          cd src-tauri
+          cargo test --locked --lib -- --test-threads=1
+
       - name: Test Windows shortcut COM interfaces
         run: |
           cd src-tauri
@@ -314,10 +167,6 @@ jobs:
           cd src-tauri
           cargo test --test custom_db_import_path
 
-      - name: Test managed account path boundaries
-        run: |
-          cd src-tauri
-          cargo test --locked --lib path_boundary -- --test-threads=1
 
   # Tauri 构建测试（不打包）
   build-tauri:
