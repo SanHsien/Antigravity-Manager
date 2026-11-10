@@ -1,0 +1,92 @@
+# Temporary, manual-only probe: run the WHOLE `cargo test --lib` suite once on the
+# same runner/toolchain/cache as ci.yml (the Rust job) and keep the raw output, so the
+# real list of failing tests is known before ci.yml is switched from ~30 hand-picked
+# selectors to a single full run. Delete this file once ci.yml runs the full suite.
+name: Full lib test probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-lib-test:
+    name: Run whole cargo test --lib
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: "src-tauri"
+
+      - name: Ensure frontend dist directory exists
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          if (-not (Test-Path "dist/index.html")) { Set-Content -Path "dist/index.html" -Value "<html/>" }
+
+      # Compile separately so a build failure is not confused with test failures.
+      - name: Build lib test binary
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          cd src-tauri
+          cargo test --locked --lib --no-run
+
+      - name: Run whole lib test suite
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe"
+          cd src-tauri
+          set +e
+          cargo test --locked --lib -- --test-threads=1 --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/probe/full-lib-test.log"
+          code=${PIPESTATUS[0]}
+          echo "cargo test exit code: $code" | tee "$RUNNER_TEMP/probe/exit-code.txt"
+          exit "$code"
+
+      - name: Summarize failures
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/probe/full-lib-test.log"
+          if [ -f "$log" ]; then
+            grep -E '^test .* \.\.\. (FAILED|ignored)' "$log" | sort > "$RUNNER_TEMP/probe/failed-and-ignored.txt" || true
+            grep -E '^test .* \.\.\. FAILED' "$log" | sort > "$RUNNER_TEMP/probe/failed.txt" || true
+            grep -E '^test result:' "$log" > "$RUNNER_TEMP/probe/result.txt" || true
+            {
+              echo '## Full lib test probe'
+              echo
+              cat "$RUNNER_TEMP/probe/result.txt" 2>/dev/null
+              echo
+              echo '### FAILED'
+              echo '```'
+              cat "$RUNNER_TEMP/probe/failed.txt" 2>/dev/null
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No test log was produced (build or earlier step failed).' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload probe output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: full-lib-test-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/probe/
+          if-no-files-found: warn
+          retention-days: 14
