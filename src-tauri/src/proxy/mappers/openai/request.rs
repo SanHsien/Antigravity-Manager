@@ -2117,6 +2117,64 @@ mod tests {
     }
 
     #[test]
+    fn session_signature_fallback_never_crosses_sessions() {
+        // Another session's signature sits in the process-wide cache under its own key.
+        let other_session = format!("resp-other-{}", uuid::Uuid::new_v4());
+        let other_signature = valid_gemini_sig("other-session");
+        crate::proxy::SignatureCache::global().cache_session_signature(
+            &other_session,
+            other_signature.clone(),
+            1,
+        );
+
+        let own_session = format!("resp-own-{}", uuid::Uuid::new_v4());
+        let request = OpenAIRequest {
+            model: "gemini-3.7-flash-high".to_string(),
+            messages: vec![OpenAIMessage {
+                role: "assistant".to_string(),
+                tool_calls: Some(vec![ToolCall {
+                    id: format!("call-own-{}", uuid::Uuid::new_v4()),
+                    r#type: "function".to_string(),
+                    function: Some(ToolFunction {
+                        name: "test_tool".to_string(),
+                        arguments: "{}".to_string(),
+                    }),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let (body, _, _, _) = transform_openai_request_with_session(
+            &request,
+            "test-project",
+            "gemini-3.7-flash-high",
+            None,
+            &own_session,
+            None,
+            true,
+        );
+        let tool_part = body["request"]["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["parts"].as_array().into_iter().flatten())
+            .find(|part| part.get("functionCall").is_some())
+            .expect("the functionCall part must survive");
+
+        assert_ne!(
+            tool_part["thoughtSignature"], other_signature,
+            "a signature cached for a different session must never be used"
+        );
+        assert_eq!(
+            tool_part["thoughtSignature"],
+            crate::proxy::thinking_store::SENTINEL_SIGNATURE,
+            "with no signature of its own the call gets the sentinel"
+        );
+    }
+
+    #[test]
     fn test_issue_1592_gemini_3_pro_budget_capping() {
         let _lock = crate::proxy::config::TEST_CONFIG_LOCK
             .lock()
@@ -3284,9 +3342,14 @@ mod tests {
         let sid = format!("test-sess-{}", uuid::Uuid::new_v4());
         let sig_round_1 = valid_gemini_sig("round-1");
         let sig_round_2 = valid_gemini_sig("round-2");
+        // The tool-signature cache is process-wide and keyed by tool id alone, so the ids must be
+        // unique to this test: the generic ids call_1 / call_2 leaked this test's round-1
+        // signature into unrelated tests (thinking_store's signed_function_call_is_not_mistaken_...).
+        let call_1 = format!("call_1_{sid}");
+        let call_2 = format!("call_2_{sid}");
 
         // 缓存第 1 轮工具的专属签名
-        crate::proxy::SignatureCache::global().cache_tool_signature("call_1", sig_round_1.clone());
+        crate::proxy::SignatureCache::global().cache_tool_signature(&call_1, sig_round_1.clone());
 
         // 模拟第 2 轮刚完成，产生了会话级别的最新签名 sig_round_2 (通过 previous_response_id)
         let prev_resp_id = format!("resp-prev-{}", uuid::Uuid::new_v4());
@@ -3309,7 +3372,7 @@ mod tests {
                     role: "assistant".to_string(),
                     content: None,
                     tool_calls: Some(vec![ToolCall {
-                        id: "call_1".to_string(),
+                        id: call_1.clone(),
                         r#type: "function".to_string(),
                         function: Some(ToolFunction {
                             name: "run_command".to_string(),
@@ -3324,7 +3387,7 @@ mod tests {
                 },
                 OpenAIMessage {
                     role: "tool".to_string(),
-                    tool_call_id: Some("call_1".to_string()),
+                    tool_call_id: Some(call_1.clone()),
                     content: Some(OpenAIContent::String("file1.txt".to_string())),
                     ..Default::default()
                 },
@@ -3332,7 +3395,7 @@ mod tests {
                     role: "assistant".to_string(),
                     content: None,
                     tool_calls: Some(vec![ToolCall {
-                        id: "call_2".to_string(),
+                        id: call_2.clone(),
                         r#type: "function".to_string(),
                         function: Some(ToolFunction {
                             name: "run_command".to_string(),
@@ -3347,7 +3410,7 @@ mod tests {
                 },
                 OpenAIMessage {
                     role: "tool".to_string(),
-                    tool_call_id: Some("call_2".to_string()),
+                    tool_call_id: Some(call_2.clone()),
                     content: Some(OpenAIContent::String("hello world".to_string())),
                     ..Default::default()
                 },

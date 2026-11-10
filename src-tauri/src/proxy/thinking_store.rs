@@ -3540,7 +3540,7 @@ mod tests {
                 {
                     "functionCall": {
                         "name": "read_file",
-                        "id": "call_1",
+                        "id": "call_signed_fc_thinking_on",
                         "args": { "path": "a.rs" }
                     },
                     "thoughtSignature": real_sig
@@ -3563,7 +3563,7 @@ mod tests {
                 {
                     "functionCall": {
                         "name": "bash",
-                        "id": "call_9",
+                        "id": "call_signed_fc_thinking_off",
                         "args": {}
                     },
                     "thoughtSignature": real_sig
