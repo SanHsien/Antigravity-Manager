@@ -2821,14 +2821,10 @@ pub async fn handle_chat_completions(
             .await;
         }
 
-        let scheduling_mode = token_manager.get_scheduling_mode().await;
-        let allow_grace = match scheduling_mode {
-            crate::proxy::sticky_config::SchedulingMode::Balance => {
-                token_manager.tokens_count() <= 1
-            }
-            crate::proxy::sticky_config::SchedulingMode::CacheFirst => true,
-            crate::proxy::sticky_config::SchedulingMode::PerformanceFirst => false,
-        };
+        // [Grace Policy] SchedulingMode does not take part in this decision (same as upstream
+        // pipeline/rotation.rs callers): the 429 micro-gap GraceRetry protects the account
+        // pool, and RequestRetryState allows it once per account per request, so a single
+        // account cannot wait without bound. Only the Claude endpoint still gates by mode.
 
         // 确定重试策略：传入当前 attempt 与 pool_size，执行智能自适应裁决
         let strategy = retry_state.determine_strategy_adaptive(
@@ -4959,14 +4955,10 @@ pub async fn handle_completions(
                 .await;
         }
 
-        let scheduling_mode = token_manager.get_scheduling_mode().await;
-        let allow_grace = match scheduling_mode {
-            crate::proxy::sticky_config::SchedulingMode::Balance => {
-                token_manager.tokens_count() <= 1
-            }
-            crate::proxy::sticky_config::SchedulingMode::CacheFirst => true,
-            crate::proxy::sticky_config::SchedulingMode::PerformanceFirst => false,
-        };
+        // [Grace Policy] SchedulingMode does not take part in this decision (same as upstream
+        // pipeline/rotation.rs callers): the 429 micro-gap GraceRetry protects the account
+        // pool, and RequestRetryState allows it once per account per request, so a single
+        // account cannot wait without bound. Only the Claude endpoint still gates by mode.
 
         let strategy = retry_state.determine_strategy_adaptive(
             &account_id,
