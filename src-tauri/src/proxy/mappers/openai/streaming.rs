@@ -70,7 +70,39 @@ where
     )
 }
 
+/// Chat SSE stream without a tool-signature session: tool-call signatures seen in
+/// the stream are NOT cached (`session_id` may be a Responses chain id, not the
+/// stable `store_key`). Handlers that know the `store_key` call
+/// [`create_openai_sse_stream_with_tool_scope`].
 pub fn create_openai_sse_stream_with_anchor<S, E>(
+    gemini_stream: Pin<Box<S>>,
+    model: String,
+    session_id: String,
+    message_count: usize,
+    client_tool_names: Option<std::collections::HashSet<String>>,
+    include_usage: bool,
+    causal_anchor: Option<String>,
+) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>>
+where
+    S: Stream<Item = Result<Bytes, E>> + Send + ?Sized + 'static,
+    E: std::fmt::Display + Send + 'static,
+{
+    create_openai_sse_stream_with_tool_scope(
+        gemini_stream,
+        model,
+        session_id,
+        message_count,
+        client_tool_names,
+        include_usage,
+        causal_anchor,
+        None,
+    )
+}
+
+/// `tool_signature_session` is the request's ThinkingStore `store_key`: tool-call
+/// signatures in the stream are cached under (that key, tool id) so a later turn of
+/// the same conversation can recover them. `None` caches nothing.
+pub fn create_openai_sse_stream_with_tool_scope<S, E>(
     mut gemini_stream: Pin<Box<S>>,
     model: String,
     session_id: String,
@@ -78,6 +110,7 @@ pub fn create_openai_sse_stream_with_anchor<S, E>(
     client_tool_names: Option<std::collections::HashSet<String>>,
     include_usage: bool,
     causal_anchor: Option<String>,
+    tool_signature_session: Option<String>,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>>
 where
     S: Stream<Item = Result<Bytes, E>> + Send + ?Sized + 'static,
@@ -102,6 +135,7 @@ where
         } else {
             crate::proxy::thinking_store::TurnAccumulator::new()
         };
+        thinking_acc.set_session_key(tool_signature_session.as_deref());
 
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(15));
         heartbeat_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -187,7 +221,7 @@ where
                                                                         });
 
                                                                     if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                                        crate::proxy::SignatureCache::global().cache_tool_signature(&call_id, sig.to_string());
+                                                                        crate::proxy::SignatureCache::global().cache_tool_signature(tool_signature_session.as_deref(), &call_id, sig.to_string());
                                                                     }
                                                                     thinking_acc.record_tool_id(name, &call_id);
 
@@ -425,7 +459,9 @@ where
     let stream = async_stream::stream! {
         let mut final_usage: Option<super::models::OpenAIUsage> = None;
         let mut error_occurred = false;
-        let mut thinking_acc = crate::proxy::thinking_store::TurnAccumulator::new();
+        // `session_id` is the request's store_key (it is also the key the turn is committed under).
+        let mut thinking_acc = crate::proxy::thinking_store::TurnAccumulator::new()
+            .with_session_key(Some(session_id.as_str()));
         let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(15));
         heartbeat_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -604,7 +640,9 @@ where
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut accumulated_text = String::new();
         let mut accumulated_thinking = String::new();
-        let mut thinking_acc = crate::proxy::thinking_store::TurnAccumulator::new();
+        // `session_id` is the request's store_key (it is also the key the turn is committed under).
+        let mut thinking_acc = crate::proxy::thinking_store::TurnAccumulator::new()
+            .with_session_key(Some(session_id.as_str()));
         let mut has_seen_tool_calls = false;
         let mut final_finish_reason: Option<String> = None;
 
@@ -801,7 +839,7 @@ where
                                                                     });
 
                                                                 if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                                    crate::proxy::SignatureCache::global().cache_tool_signature(&call_id, sig.to_string());
+                                                                    crate::proxy::SignatureCache::global().cache_tool_signature(Some(session_id.as_str()), &call_id, sig.to_string());
                                                                 }
                                                                 thinking_acc.record_tool_id(name, &call_id);
 

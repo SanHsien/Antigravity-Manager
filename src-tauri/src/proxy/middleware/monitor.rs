@@ -362,44 +362,32 @@ fn build_canonical_consolidated_response(
     timing_obj: serde_json::Map<String, Value>,
     usage_obj: Option<serde_json::Map<String, Value>>,
 ) -> Value {
-    // 权威网关签名回填：若当前签名为空，尝试通过工具调用ID或会话ID从网关状态机(内存 L1 / SQLite L2 DB 思考持久化)恢复
+    // 权威网关签名回填：若当前签名为空，尝试通过思考文本片段或会话ID从网关状态机(内存 L1 / SQLite L2 DB 思考持久化)恢复。
+    // 这里不再按工具调用 ID 回填：工具签名缓存按 (store_key, tool_id) 隔离，而日志只带客户端侧的
+    // session_id（不含租户前缀的 store_key），没有稳定的会话键就不能安全地按 tool_id 查找
+    // （客户端会跨会话重用 `call_1` 之类的 ID）。
     if thinking_signature.is_empty() {
-        for tc in &tool_calls {
-            if let Some(call_id) = tc.get("id").and_then(|v| v.as_str()) {
-                if !call_id.is_empty() {
-                    if let Some(sig) =
-                        crate::proxy::SignatureCache::global().get_tool_signature(call_id)
-                    {
-                        thinking_signature = sig;
-                        break;
-                    }
-                }
+        // 1. 优先按当前轮次的思考文本片段精准直捞专属签名
+        if !thinking_content.is_empty() {
+            let trimmed = thinking_content.trim();
+            let snippet = thought_snippet_prefix(trimmed);
+            if let Some(sig) =
+                crate::modules::proxy_db::lookup_signature_by_thought_snippet(snippet)
+            {
+                thinking_signature = sig;
             }
         }
+
+        // 2. 兜底按会话状态机与会话数据库查找最新签名
         if thinking_signature.is_empty() {
-            // 1. 优先按当前轮次的思考文本片段精准直捞专属签名
-            if !thinking_content.is_empty() {
-                let trimmed = thinking_content.trim();
-                let snippet = thought_snippet_prefix(trimmed);
-                if let Some(sig) =
-                    crate::modules::proxy_db::lookup_signature_by_thought_snippet(snippet)
+            if let Some(sid) = session_id {
+                if let Some(sig) = crate::proxy::SignatureCache::global().get_session_signature(sid)
                 {
                     thinking_signature = sig;
-                }
-            }
-
-            // 2. 兜底按会话状态机与会话数据库查找最新签名
-            if thinking_signature.is_empty() {
-                if let Some(sid) = session_id {
-                    if let Some(sig) =
-                        crate::proxy::SignatureCache::global().get_session_signature(sid)
-                    {
-                        thinking_signature = sig;
-                    } else if let Some(sig) =
-                        crate::modules::proxy_db::lookup_latest_thinking_signature(sid)
-                    {
-                        thinking_signature = sig;
-                    }
+                } else if let Some(sig) =
+                    crate::modules::proxy_db::lookup_latest_thinking_signature(sid)
+                {
+                    thinking_signature = sig;
                 }
             }
         }

@@ -10,8 +10,9 @@ use tracing::{debug, error, info}; // Import Engine trait for encode method
 
 use crate::proxy::mappers::openai::{
     clean_openai_tool_schemas, transform_openai_request, transform_openai_request_with_session,
-    transform_openai_response, validate_openai_tool_schemas, validate_raw_openai_tool_schemas,
-    OpenAIContent, OpenAIContentBlock, OpenAIMessage, OpenAIRequest, OpenAIResponse,
+    transform_openai_response_with_tool_scope, validate_openai_tool_schemas,
+    validate_raw_openai_tool_schemas, OpenAIContent, OpenAIContentBlock, OpenAIMessage,
+    OpenAIRequest, OpenAIResponse,
 };
 // use crate::proxy::upstream::client::UpstreamClient; // 通过 state 获取
 use crate::proxy::debug_logger;
@@ -2444,13 +2445,15 @@ pub async fn handle_chat_completions(
 
                 // [P1 FIX] Enhanced Peek logic to handle heartbeats and slow start
                 // Pre-read until we find meaningful content, skip heartbeats
-                use crate::proxy::mappers::openai::streaming::create_openai_sse_stream_with_anchor;
+                use crate::proxy::mappers::openai::streaming::create_openai_sse_stream_with_tool_scope;
                 let include_usage = openai_req
                     .stream_options
                     .as_ref()
                     .map(|o| o.include_usage)
                     .unwrap_or(false);
-                let mut openai_stream = create_openai_sse_stream_with_anchor(
+                // `session_id` is the request's store_key on this path.
+                let tool_signature_session = Some(session_id.clone());
+                let mut openai_stream = create_openai_sse_stream_with_tool_scope(
                     gemini_stream,
                     openai_req.model.clone(),
                     session_id,
@@ -2458,6 +2461,7 @@ pub async fn handle_chat_completions(
                     Some(client_tool_names.clone()),
                     include_usage,
                     Some(causal_anchor),
+                    tool_signature_session,
                 );
 
                 let mut first_data_chunk = None;
@@ -2734,8 +2738,10 @@ pub async fn handle_chat_completions(
                 }
             }
 
-            let openai_response = transform_openai_response(
+            let openai_response = transform_openai_response_with_tool_scope(
                 &gemini_resp,
+                Some(&session_id),
+                // `session_id` is the request's store_key on this path
                 Some(&session_id),
                 message_count,
                 Some(&client_tool_names),
@@ -4495,10 +4501,13 @@ pub async fn handle_completions(
                 } else {
                     // Forced Stream Internal -> Convert to Legacy JSON
                     // Use CHAT SSE Stream (so Collector can parse it)
-                    use crate::proxy::mappers::openai::streaming::create_openai_sse_stream_with_anchor;
+                    use crate::proxy::mappers::openai::streaming::create_openai_sse_stream_with_tool_scope;
                     // Note: We use create_openai_sse_stream regardless of is_codex_style here,
                     // because we just want the content aggregation which chat stream does well.
-                    let mut openai_stream = create_openai_sse_stream_with_anchor(
+                    // The stream id above can be a Responses id; tool signatures are scoped to the
+                    // stable store_key (`session_id_str`) instead.
+                    let tool_signature_session = Some(session_id_str.clone());
+                    let mut openai_stream = create_openai_sse_stream_with_tool_scope(
                         gemini_stream,
                         openai_req.model.clone(),
                         if is_responses_api {
@@ -4510,6 +4519,7 @@ pub async fn handle_completions(
                         Some(client_tool_names.clone()),
                         true,
                         Some(causal_anchor),
+                        tool_signature_session,
                     );
 
                     // Peek Logic (Repeated for safety/correctness on this stream type)
@@ -4756,9 +4766,12 @@ pub async fn handle_completions(
 
             crate::proxy::thinking_store::capture_gemini_response(&session_id_str, &gemini_resp);
 
-            let chat_resp = transform_openai_response(
+            let chat_resp = transform_openai_response_with_tool_scope(
                 &gemini_resp,
                 Some(&signature_session_id_str),
+                // `signature_session_id_str` can be a Responses chain id; tool
+                // signatures are scoped to the stable store_key instead.
+                Some(&session_id_str),
                 1,
                 Some(&client_tool_names),
             );

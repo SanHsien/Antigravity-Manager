@@ -1100,8 +1100,8 @@ fn build_contents(
                                 break;
                             }
                         }
-                        if let Some(s) =
-                            crate::proxy::SignatureCache::global().get_tool_signature(id)
+                        if let Some(s) = crate::proxy::SignatureCache::global()
+                            .get_tool_signature(Some(session_id), id)
                         {
                             if !mapped_model.to_lowercase().contains("gemini")
                                 || crate::proxy::thinking_store::is_likely_gemini_signature(&s)
@@ -1399,7 +1399,7 @@ fn build_contents(
                             .cloned()
                             .or_else(|| {
                                 crate::proxy::SignatureCache::global()
-                                    .get_tool_signature(id)
+                                    .get_tool_signature(Some(session_id), id)
                                     .filter(|s| {
                                         !mapped_model.to_lowercase().contains("gemini")
                                             || crate::proxy::thinking_store::is_likely_gemini_signature(s)

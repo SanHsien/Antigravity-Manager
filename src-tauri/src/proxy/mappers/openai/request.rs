@@ -838,7 +838,7 @@ pub fn transform_openai_request_with_session(
                         .map(str::to_string)
                         .or_else(|| {
                             crate::proxy::SignatureCache::global()
-                                .get_tool_signature(&tc.id)
+                                .get_tool_signature(Some(thinking_store_key.as_str()), &tc.id)
                                 .filter(|s| {
                                     !mapped_model.to_lowercase().contains("gemini")
                                         || crate::proxy::thinking_store::is_likely_gemini_signature(s)
@@ -3342,14 +3342,17 @@ mod tests {
         let sid = format!("test-sess-{}", uuid::Uuid::new_v4());
         let sig_round_1 = valid_gemini_sig("round-1");
         let sig_round_2 = valid_gemini_sig("round-2");
-        // The tool-signature cache is process-wide and keyed by tool id alone, so the ids must be
-        // unique to this test: the generic ids call_1 / call_2 leaked this test's round-1
-        // signature into unrelated tests (thinking_store's signed_function_call_is_not_mistaken_...).
+        // The tool-signature cache is scoped by (session, tool id), so this test's `sid` keeps its
+        // round-1 signature away from unrelated tests; the ids stay unique to it anyway.
         let call_1 = format!("call_1_{sid}");
         let call_2 = format!("call_2_{sid}");
 
-        // 缓存第 1 轮工具的专属签名
-        crate::proxy::SignatureCache::global().cache_tool_signature(&call_1, sig_round_1.clone());
+        // 缓存第 1 轮工具的专属签名 (会话键 = 本请求的 thinking_store_key，即路由 sid)
+        crate::proxy::SignatureCache::global().cache_tool_signature(
+            Some(&sid),
+            &call_1,
+            sig_round_1.clone(),
+        );
 
         // 模拟第 2 轮刚完成，产生了会话级别的最新签名 sig_round_2 (通过 previous_response_id)
         let prev_resp_id = format!("resp-prev-{}", uuid::Uuid::new_v4());
@@ -3710,10 +3713,11 @@ mod tests {
     fn test_openai_tool_call_retrieves_signature_from_signature_cache() {
         let tool_id = "call_cached_test_999";
         let valid_gemini_sig = "EmIKYAFpFH0TDqviLY1vZ8EuHqBLLj5xxD+0hchYg2VaoyolUQRP+hSCsKRpSpj+yrQA2H27yVFnF7tlp5OHIUvTdZKKErAqILJzK5FG8RJg42jCaaI2/iwqoBuRd5BDVwBxaQ==";
-        crate::proxy::SignatureCache::global()
-            .cache_tool_signature(tool_id, valid_gemini_sig.to_string());
+        // The request's session key (its store_key when set, else the content-derived id).
+        let session = "tenant:sess-openai-cache-999";
 
         let req = OpenAIRequest {
+            session_id: Some(session.to_string()),
             model: "gemini-3.8-flash".to_string(),
             messages: vec![
                 OpenAIMessage {
@@ -3745,6 +3749,12 @@ mod tests {
             ..Default::default()
         };
 
+        crate::proxy::SignatureCache::global().cache_tool_signature(
+            Some(session),
+            tool_id,
+            valid_gemini_sig.to_string(),
+        );
+
         let (result, _, _, _) =
             transform_openai_request(&req, "test-proj", "gemini-3.8-flash-tiered", None);
         let contents = result["request"]["contents"].as_array().unwrap();
@@ -3764,6 +3774,25 @@ mod tests {
         assert_eq!(
             fc_part["thoughtSignature"], valid_gemini_sig,
             "OpenAI adapter and pipeline must recover real tool signature from SignatureCache"
+        );
+
+        // The same tool id in a different session (a client reusing `call_1`-style ids) must not
+        // be handed the first session's signature.
+        let mut other_req = req.clone();
+        other_req.session_id = Some("tenant:sess-openai-cache-other".to_string());
+        let (other_result, _, _, _) =
+            transform_openai_request(&other_req, "test-proj", "gemini-3.8-flash-tiered", None);
+        let other_contents = other_result["request"]["contents"].as_array().unwrap();
+        let other_fc = other_contents
+            .iter()
+            .find(|c| c["role"] == "model")
+            .and_then(|m| m["parts"].as_array())
+            .and_then(|parts| parts.iter().find(|p| p.get("functionCall").is_some()))
+            .expect("must find functionCall part for the other session");
+        assert_ne!(
+            other_fc["thoughtSignature"].as_str(),
+            Some(valid_gemini_sig),
+            "another session must not recover this session's tool signature"
         );
     }
 

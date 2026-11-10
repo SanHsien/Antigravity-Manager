@@ -337,7 +337,7 @@ impl ThinkingStore {
                 None
             };
             let anchor = compute_causal_anchor(preceding_turn);
-            let mut acc = TurnAccumulator::with_anchor(&anchor);
+            let mut acc = TurnAccumulator::with_anchor(&anchor).with_session_key(Some(store_key));
             for part in parts {
                 acc.ingest_part(part);
             }
@@ -464,7 +464,8 @@ impl ThinkingStore {
                         .and_then(|fc| fc.get("id"))
                         .and_then(|id| id.as_str())
                         .and_then(|id| {
-                            crate::proxy::SignatureCache::global().get_tool_signature(id)
+                            crate::proxy::SignatureCache::global()
+                                .get_tool_signature(Some(store_key), id)
                         })
                         .filter(|s| is_real_signature(s))
                 })
@@ -1204,6 +1205,10 @@ pub struct TurnAccumulator {
     tool_names: Vec<String>,
     context_anchor: String,
     function_call_count: usize,
+    /// Session (ThinkingStore `store_key`) the tool-call signatures seen by this
+    /// accumulator belong to. `None` = the owner cannot name its session, in which
+    /// case no tool signature is cached (see `SignatureCache::cache_tool_signature`).
+    session_key: Option<String>,
 }
 
 impl TurnAccumulator {
@@ -1220,7 +1225,22 @@ impl TurnAccumulator {
             tool_names: Vec::new(),
             context_anchor: anchor.into(),
             function_call_count: 0,
+            session_key: None,
         }
+    }
+
+    /// Scope the tool-call signatures this accumulator caches to one session.
+    pub fn with_session_key(mut self, session_key: Option<&str>) -> Self {
+        self.set_session_key(session_key);
+        self
+    }
+
+    /// Same as [`Self::with_session_key`] for accumulators that already exist
+    /// (e.g. embedded in a stream state whose session is learned later).
+    pub fn set_session_key(&mut self, session_key: Option<&str>) {
+        self.session_key = session_key
+            .filter(|k| !k.trim().is_empty())
+            .map(str::to_string);
     }
 
     pub fn ingest_part(&mut self, part: &Value) {
@@ -1284,18 +1304,27 @@ impl TurnAccumulator {
                     .or_else(|| part.get("thought_signature"))
                     .and_then(|s| s.as_str())
                 {
-                    crate::proxy::SignatureCache::global()
-                        .cache_tool_signature(real_id, sig.to_string());
-                    crate::proxy::SignatureCache::global()
-                        .cache_tool_signature(&synthetic, sig.to_string());
+                    crate::proxy::SignatureCache::global().cache_tool_signature(
+                        self.session_key.as_deref(),
+                        real_id,
+                        sig.to_string(),
+                    );
+                    crate::proxy::SignatureCache::global().cache_tool_signature(
+                        self.session_key.as_deref(),
+                        &synthetic,
+                        sig.to_string(),
+                    );
                 }
             } else if let Some(sig) = part
                 .get("thoughtSignature")
                 .or_else(|| part.get("thought_signature"))
                 .and_then(|s| s.as_str())
             {
-                crate::proxy::SignatureCache::global()
-                    .cache_tool_signature(&synthetic, sig.to_string());
+                crate::proxy::SignatureCache::global().cache_tool_signature(
+                    self.session_key.as_deref(),
+                    &synthetic,
+                    sig.to_string(),
+                );
             }
 
             if !self.tool_names.iter().any(|x| x == &name) {
@@ -1440,7 +1469,7 @@ pub fn capture_gemini_parts(store_key: &str, parts: &[Value]) {
 }
 
 pub fn capture_gemini_parts_with_anchor(store_key: &str, parts: &[Value], anchor: &str) {
-    let mut acc = TurnAccumulator::with_anchor(anchor);
+    let mut acc = TurnAccumulator::with_anchor(anchor).with_session_key(Some(store_key));
     for part in parts {
         acc.ingest_part(part);
     }
@@ -1470,14 +1499,34 @@ pub fn capture_gemini_response_with_preceding(
 }
 
 /// 四大协议统一思考补齐管线：确保所有 Gemini contents 中的 model 轮次在开启思考时，必须具备合法的思考块与签名
+///
+/// 无会话键的入口：不会按工具 ID 回填 SignatureCache 里的工具签名（只用 part 自带签名或哨兵）。
 pub fn finalize_gemini_contents_thinking(contents: &mut [Value], is_thinking_enabled: bool) {
     finalize_gemini_contents_thinking_with_model(contents, is_thinking_enabled, None);
 }
 
+/// 同 [`finalize_gemini_contents_thinking`]，指定目标模型；仍无会话键（不回填缓存的工具签名）。
 pub fn finalize_gemini_contents_thinking_with_model(
     contents: &mut [Value],
     is_thinking_enabled: bool,
     target_model: Option<&str>,
+) {
+    finalize_gemini_contents_thinking_for_session(
+        contents,
+        is_thinking_enabled,
+        target_model,
+        None,
+    );
+}
+
+/// 完整入口。`session_key` 是该请求的 ThinkingStore `store_key`：工具签名缓存按
+/// (session_key, tool_id) 隔离，所以只有带会话键才会回填缓存里的工具签名；
+/// `None` 时该轮走 part 自带签名或哨兵，绝不退回按 tool_id 的全局查找。
+pub fn finalize_gemini_contents_thinking_for_session(
+    contents: &mut [Value],
+    is_thinking_enabled: bool,
+    target_model: Option<&str>,
+    session_key: Option<&str>,
 ) {
     // 预先计算每一轮的前置因果锚点 (causal anchor)，以便无 ID 的 Gemini 原生工具调用也能合成确定性 ID
     let anchors: Vec<String> = (0..contents.len())
@@ -1554,14 +1603,14 @@ pub fn finalize_gemini_contents_thinking_with_model(
                         fc_probe_counter += 1;
 
                         crate::proxy::SignatureCache::global()
-                            .get_tool_signature(&synthetic)
+                            .get_tool_signature(session_key, &synthetic)
                             .or_else(|| {
                                 fc.get("id")
                                     .and_then(|id| id.as_str())
                                     .filter(|s| !s.trim().is_empty())
                                     .and_then(|id| {
                                         crate::proxy::SignatureCache::global()
-                                            .get_tool_signature(id)
+                                            .get_tool_signature(session_key, id)
                                     })
                             })
                             .filter(|s| is_real_signature(s))
@@ -1603,14 +1652,14 @@ pub fn finalize_gemini_contents_thinking_with_model(
                         fc_assign_counter += 1;
 
                         let cached_tool_sig = crate::proxy::SignatureCache::global()
-                            .get_tool_signature(&synthetic)
+                            .get_tool_signature(session_key, &synthetic)
                             .or_else(|| {
                                 fc.get("id")
                                     .and_then(|id| id.as_str())
                                     .filter(|s| !s.trim().is_empty())
                                     .and_then(|id| {
                                         crate::proxy::SignatureCache::global()
-                                            .get_tool_signature(id)
+                                            .get_tool_signature(session_key, id)
                                     })
                             })
                             .filter(|s| is_likely_gemini_signature(s));
@@ -4262,9 +4311,13 @@ mod tests {
     #[test]
     fn test_finalize_recovers_tool_signature_from_global_signature_cache() {
         let tool_id = "call_finalize_cache_777";
+        let session = "tenant:sess-finalize-cache-777";
         let valid_gemini_sig = "EmIKYAFpFH0TDqviLY1vZ8EuHqBLLj5xxD+0hchYg2VaoyolUQRP+hSCsKRpSpj+yrQA2H27yVFnF7tlp5OHIUvTdZKKErAqILJzK5FG8RJg42jCaaI2/iwqoBuRd5BDVwBxaQ==";
-        crate::proxy::SignatureCache::global()
-            .cache_tool_signature(tool_id, valid_gemini_sig.to_string());
+        crate::proxy::SignatureCache::global().cache_tool_signature(
+            Some(session),
+            tool_id,
+            valid_gemini_sig.to_string(),
+        );
 
         let mut contents = vec![json!({
             "role": "model",
@@ -4281,10 +4334,11 @@ mod tests {
         })];
 
         // 终审出站，发往 Gemini
-        finalize_gemini_contents_thinking_with_model(
+        finalize_gemini_contents_thinking_for_session(
             &mut contents,
             true,
             Some("gemini-3.8-flash-tiered"),
+            Some(session),
         );
 
         let parts = contents[0]["parts"].as_array().unwrap();
@@ -4297,6 +4351,126 @@ mod tests {
             fc["thoughtSignature"], valid_gemini_sig,
             "Pipeline finalize must backfill real signature from SignatureCache for any protocol"
         );
+    }
+
+    /// Clients reuse tool ids across sessions. A signature cached by session A for
+    /// `call_1` must never be backfilled into session B's (or an unscoped) request:
+    /// those get the sentinel, exactly as if nothing were cached.
+    #[test]
+    fn test_finalize_never_backfills_a_tool_signature_cached_by_another_session() {
+        let tool_id = "call_1";
+        let owner = "tenant:sess-finalize-owner-1";
+        let valid_gemini_sig = "EmIKYAFpFH0TDqviLY1vZ8EuHqBLLj5xxD+0hchYg2VaoyolUQRP+hSCsKRpSpj+yrQA2H27yVFnF7tlp5OHIUvTdZKKErAqILJzK5FG8RJg42jCaaI2/iwqoBuRd5BDVwBxaQ==";
+        crate::proxy::SignatureCache::global().cache_tool_signature(
+            Some(owner),
+            tool_id,
+            valid_gemini_sig.to_string(),
+        );
+
+        let build = || {
+            vec![json!({
+                "role": "model",
+                "parts": [{
+                    "functionCall": {
+                        "name": "run_command",
+                        "id": tool_id,
+                        "args": { "cmd": "cargo test" }
+                    }
+                }]
+            })]
+        };
+        let fc_sig = |contents: &Vec<Value>| -> String {
+            contents[0]["parts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p.get("functionCall").is_some())
+                .and_then(|p| p["thoughtSignature"].as_str())
+                .expect("a Gemini functionCall always carries a signature or the sentinel")
+                .to_string()
+        };
+
+        // The owning session recovers its own signature.
+        let mut own = build();
+        finalize_gemini_contents_thinking_for_session(
+            &mut own,
+            true,
+            Some("gemini-3.8-flash-tiered"),
+            Some(owner),
+        );
+        assert_eq!(fc_sig(&own), valid_gemini_sig);
+
+        // Another session using the same id gets the sentinel, not the owner's signature.
+        let mut other = build();
+        finalize_gemini_contents_thinking_for_session(
+            &mut other,
+            true,
+            Some("gemini-3.8-flash-tiered"),
+            Some("tenant:sess-finalize-other-2"),
+        );
+        assert_eq!(fc_sig(&other), SENTINEL_SIGNATURE);
+
+        // No session key at all: no recovery either (no global lookup by tool id).
+        let mut unscoped = build();
+        finalize_gemini_contents_thinking_for_session(
+            &mut unscoped,
+            true,
+            Some("gemini-3.8-flash-tiered"),
+            None,
+        );
+        assert_eq!(fc_sig(&unscoped), SENTINEL_SIGNATURE);
+        let mut unscoped_legacy = build();
+        finalize_gemini_contents_thinking_with_model(
+            &mut unscoped_legacy,
+            true,
+            Some("gemini-3.8-flash-tiered"),
+        );
+        assert_eq!(fc_sig(&unscoped_legacy), SENTINEL_SIGNATURE);
+    }
+
+    /// The accumulator caches the tool signatures it sees under its own session
+    /// only; one without a session key caches nothing.
+    #[test]
+    fn test_turn_accumulator_scopes_tool_signatures_to_its_session() {
+        let sig = "EmIKYAFpFH0TDqviLY1vZ8EuHqBLLj5xxD+0hchYg2VaoyolUQRP+hSCsKRpSpj+yrQA2H27yVFnF7tlp5OHIUvTdZKKErAqILJzK5FG8RJg42jCaaI2/iwqoBuRd5BDVwBxaQ==";
+        let part = json!({
+            "functionCall": { "name": "bash", "id": "call_acc_scope_1", "args": {} },
+            "thoughtSignature": sig,
+        });
+
+        let mut scoped = TurnAccumulator::with_anchor("anchor_acc_scope")
+            .with_session_key(Some("tenant:sess-acc-a"));
+        scoped.ingest_part(&part);
+        let mut unscoped = TurnAccumulator::with_anchor("anchor_acc_scope_unscoped");
+        let part_unscoped = json!({
+            "functionCall": { "name": "bash", "id": "call_acc_scope_2", "args": {} },
+            "thoughtSignature": sig,
+        });
+        unscoped.ingest_part(&part_unscoped);
+        let mut blank =
+            TurnAccumulator::with_anchor("anchor_acc_scope_blank").with_session_key(Some("  "));
+        let part_blank = json!({
+            "functionCall": { "name": "bash", "id": "call_acc_scope_3", "args": {} },
+            "thoughtSignature": sig,
+        });
+        blank.ingest_part(&part_blank);
+
+        let cache = crate::proxy::SignatureCache::global();
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-acc-a"), "call_acc_scope_1"),
+            Some(sig.to_string())
+        );
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-acc-b"), "call_acc_scope_1"),
+            None
+        );
+        for id in ["call_acc_scope_2", "call_acc_scope_3"] {
+            assert_eq!(
+                cache.get_tool_signature(Some("tenant:sess-acc-a"), id),
+                None
+            );
+            assert_eq!(cache.get_tool_signature(None, id), None);
+        }
     }
 
     #[test]

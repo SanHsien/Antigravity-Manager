@@ -454,18 +454,23 @@ pub fn init_db() -> Result<(), String> {
         [],
     );
 
-    // 持久化工具签名表 (支持代理重启后根据 tool_id 秒级恢复真实加密签名)
+    // 持久化工具签名表 (支持代理重启后根据 (session_key, tool_id) 秒级恢复真实加密签名)。
+    // 旧表 `tool_signatures` 只以 tool_id 为主键，客户端复用 `call_1` 这类 id 时会让不同会话
+    // 互取签名，且旧行没有会话归属可补。迁移方式：新建按会话隔离的 `tool_signatures_v2`，
+    // 旧表原样保留（不删资料、不读取，由保留期清理逐步过期），所以本段可重复执行。
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS tool_signatures (
-            tool_id TEXT PRIMARY KEY,
+        "CREATE TABLE IF NOT EXISTS tool_signatures_v2 (
+            session_key TEXT NOT NULL,
+            tool_id TEXT NOT NULL,
             signature TEXT NOT NULL,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (session_key, tool_id)
         )",
         [],
     )
     .map_err(|e| e.to_string())?;
     let _ = conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_tool_sig_created ON tool_signatures (created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_tool_sig_v2_created ON tool_signatures_v2 (created_at DESC)",
         [],
     );
 
@@ -503,22 +508,31 @@ fn map_request_log_row(row: &rusqlite::Row) -> rusqlite::Result<ProxyRequestLog>
     })
 }
 
-pub fn save_tool_signature(tool_id: &str, signature: &str) -> Result<(), String> {
-    if tool_id.is_empty() || signature.is_empty() {
+/// Persist a tool-call signature for one session. A blank session key is refused
+/// (silently, `Ok`): an entry without a session is what the id-only table used to
+/// serve to every session.
+pub fn save_tool_signature(
+    session_key: &str,
+    tool_id: &str,
+    signature: &str,
+) -> Result<(), String> {
+    if session_key.trim().is_empty() || tool_id.is_empty() || signature.is_empty() {
         return Ok(());
     }
     let conn = connect_db()?;
     let now = chrono::Utc::now().timestamp_millis();
     conn.execute(
-        "INSERT OR REPLACE INTO tool_signatures (tool_id, signature, created_at) VALUES (?1, ?2, ?3)",
-        params![tool_id, signature, now],
+        "INSERT OR REPLACE INTO tool_signatures_v2 (session_key, tool_id, signature, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![session_key, tool_id, signature, now],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-pub fn load_tool_signature(tool_id: &str) -> Result<Option<String>, String> {
-    if tool_id.is_empty() {
+/// Load a tool-call signature for one session. Never consults the legacy id-only
+/// `tool_signatures` table, and a blank session key never matches anything.
+pub fn load_tool_signature(session_key: &str, tool_id: &str) -> Result<Option<String>, String> {
+    if session_key.trim().is_empty() || tool_id.is_empty() {
         return Ok(None);
     }
     let db_path = get_proxy_db_path()?;
@@ -539,9 +553,13 @@ pub fn load_tool_signature(tool_id: &str) -> Result<Option<String>, String> {
         .1;
     // Dropping rows and the cached statement ends the read before releasing the lock.
     let mut stmt = conn
-        .prepare_cached("SELECT signature FROM tool_signatures WHERE tool_id = ?1 LIMIT 1")
+        .prepare_cached(
+            "SELECT signature FROM tool_signatures_v2 WHERE session_key = ?1 AND tool_id = ?2 LIMIT 1",
+        )
         .map_err(|e| e.to_string())?;
-    let mut rows = stmt.query(params![tool_id]).map_err(|e| e.to_string())?;
+    let mut rows = stmt
+        .query(params![session_key, tool_id])
+        .map_err(|e| e.to_string())?;
     if let Some(row) = rows.next().map_err(|e| e.to_string())? {
         let sig: String = row.get(0).map_err(|e| e.to_string())?;
         Ok(Some(sig))
@@ -1145,7 +1163,7 @@ pub fn purge_foreign_signatures_for_session(session_key: &str) -> Result<usize, 
     purge_foreign_signatures_for_session_with_model(session_key, "gemini")
 }
 
-/// 全量清空思考块数据库 (仅清空 thinking_records / thinking_sessions / tool_signatures，绝不触碰 request_logs 日志)
+/// 全量清空思考块数据库 (仅清空 thinking_records / thinking_sessions / tool_signatures_v2 及旧版 tool_signatures，绝不触碰 request_logs 日志)
 pub fn clear_all_thinking_data() -> Result<usize, String> {
     let mut total_deleted = 0;
     // 1. 清空 thinking_store.db 中的记录与会话
@@ -1159,6 +1177,8 @@ pub fn clear_all_thinking_data() -> Result<usize, String> {
 
     // 2. 清空 proxy_logs.db 中残留的历史工具签名表与陈旧思考表 (绝不触碰 request_logs)
     if let Ok(log_conn) = connect_db() {
+        let _ = log_conn.execute("DELETE FROM tool_signatures_v2", []);
+        // 旧版仅以 tool_id 为键的表（升级前的 DB 才有；新库没有，失败可忽略）
         let _ = log_conn.execute("DELETE FROM tool_signatures", []);
         let _ = log_conn.execute("DELETE FROM thinking_records", []);
         let _ = log_conn.execute("DELETE FROM thinking_sessions", []);
@@ -1181,12 +1201,21 @@ pub fn cleanup_old_thinking_records(days: i64) -> Result<usize, String> {
     let cutoff = chrono::Utc::now().timestamp_millis() - (days * 24 * 3600 * 1000);
     let deleted_tools = connect_db()
         .ok()
-        .and_then(|conn| {
-            conn.execute(
-                "DELETE FROM tool_signatures WHERE created_at < ?1",
-                params![cutoff],
-            )
-            .ok()
+        .map(|conn| {
+            // 旧版 tool_signatures 只在升级前的 DB 里存在；它不再被读取，仅按保留期过期
+            let legacy = conn
+                .execute(
+                    "DELETE FROM tool_signatures WHERE created_at < ?1",
+                    params![cutoff],
+                )
+                .unwrap_or(0);
+            let current = conn
+                .execute(
+                    "DELETE FROM tool_signatures_v2 WHERE created_at < ?1",
+                    params![cutoff],
+                )
+                .unwrap_or(0);
+            legacy + current
         })
         .unwrap_or(0);
     let conn = thinking_db()?;
@@ -1654,7 +1683,7 @@ mod tool_signature_tests {
     #[test]
     fn tool_signature_misses_reuse_readonly_connection() {
         let _dir = TestDataDir::new();
-        assert!(load_tool_signature("missing").is_err());
+        assert!(load_tool_signature("sess-a", "missing").is_err());
         assert!(!get_proxy_db_path().unwrap().exists());
         init_db().unwrap();
         let writer = connect_db().unwrap();
@@ -1667,7 +1696,7 @@ mod tool_signature_tests {
         let before: i64 = writer
             .pragma_query_value(None, "data_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(load_tool_signature("missing").unwrap(), None);
+        assert_eq!(load_tool_signature("sess-a", "missing").unwrap(), None);
         {
             let db = TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap();
             let conn = &db.as_ref().unwrap().1;
@@ -1676,7 +1705,7 @@ mod tool_signature_tests {
             conn.pragma_update(None, "cache_size", -1234).unwrap();
         }
         for _ in 0..32 {
-            assert_eq!(load_tool_signature("missing").unwrap(), None);
+            assert_eq!(load_tool_signature("sess-a", "missing").unwrap(), None);
         }
         {
             let db = TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap();
@@ -1701,28 +1730,144 @@ mod tool_signature_tests {
         let _dir = TestDataDir::new();
         init_db().unwrap();
         let signature = "s".repeat(60);
-        assert_eq!(load_tool_signature("tool").unwrap(), None);
-        save_tool_signature("tool", &signature).unwrap();
+        assert_eq!(load_tool_signature("sess-a", "tool").unwrap(), None);
+        save_tool_signature("sess-a", "tool", &signature).unwrap();
         assert_eq!(
-            load_tool_signature("tool").unwrap(),
+            load_tool_signature("sess-a", "tool").unwrap(),
             Some(signature.clone())
         );
         let replacement = "r".repeat(60);
-        save_tool_signature("tool", &replacement).unwrap();
+        save_tool_signature("sess-a", "tool", &replacement).unwrap();
         assert_eq!(
-            load_tool_signature("tool").unwrap(),
+            load_tool_signature("sess-a", "tool").unwrap(),
             Some(replacement.clone())
         );
         {
             let _other_dir = TestDataDir::new();
-            assert!(load_tool_signature("tool").is_err());
+            assert!(load_tool_signature("sess-a", "tool").is_err());
             init_db().unwrap();
-            assert_eq!(load_tool_signature("tool").unwrap(), None);
-            save_tool_signature("tool", &signature).unwrap();
-            assert_eq!(load_tool_signature("tool").unwrap(), Some(signature));
+            assert_eq!(load_tool_signature("sess-a", "tool").unwrap(), None);
+            save_tool_signature("sess-a", "tool", &signature).unwrap();
+            assert_eq!(
+                load_tool_signature("sess-a", "tool").unwrap(),
+                Some(signature)
+            );
             TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap().take();
         }
-        assert_eq!(load_tool_signature("tool").unwrap(), Some(replacement));
+        assert_eq!(
+            load_tool_signature("sess-a", "tool").unwrap(),
+            Some(replacement)
+        );
+        TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap().take();
+    }
+
+    /// The same tool id (`call_1` is what real clients send) cached by two sessions
+    /// must stay two separate rows; neither session may read the other's.
+    #[test]
+    fn tool_signature_rows_are_isolated_per_session() {
+        let _dir = TestDataDir::new();
+        init_db().unwrap();
+        let sig_a = "a".repeat(60);
+        let sig_b = "b".repeat(60);
+        save_tool_signature("tenant:sess-a", "call_1", &sig_a).unwrap();
+        save_tool_signature("tenant:sess-b", "call_1", &sig_b).unwrap();
+        assert_eq!(
+            load_tool_signature("tenant:sess-a", "call_1").unwrap(),
+            Some(sig_a)
+        );
+        assert_eq!(
+            load_tool_signature("tenant:sess-b", "call_1").unwrap(),
+            Some(sig_b)
+        );
+        assert_eq!(
+            load_tool_signature("tenant:sess-c", "call_1").unwrap(),
+            None
+        );
+        TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap().take();
+    }
+
+    /// A blank session key is never stored and never matches: there is no
+    /// "global" row that every session could read.
+    #[test]
+    fn tool_signature_blank_session_key_is_not_stored_or_matched() {
+        let _dir = TestDataDir::new();
+        init_db().unwrap();
+        let sig = "s".repeat(60);
+        save_tool_signature("", "call_1", &sig).unwrap();
+        save_tool_signature("   ", "call_1", &sig).unwrap();
+        let conn = connect_db().unwrap();
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tool_signatures_v2", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "blank session keys must not create rows");
+        // Even a row that exists for a real session is invisible to a blank key.
+        save_tool_signature("tenant:sess-a", "call_1", &sig).unwrap();
+        assert_eq!(load_tool_signature("", "call_1").unwrap(), None);
+        assert_eq!(load_tool_signature("  ", "call_1").unwrap(), None);
+        TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap().take();
+    }
+
+    /// Upgrade path: a database written by the id-only schema keeps its rows
+    /// (user data is never dropped), `init_db` can run any number of times, and
+    /// the legacy rows are not served to any session.
+    #[test]
+    fn legacy_id_only_tool_signatures_are_kept_but_never_served() {
+        let _dir = TestDataDir::new();
+        let legacy_sig = "L".repeat(60);
+        {
+            let conn = Connection::open(get_proxy_db_path().unwrap()).unwrap();
+            conn.execute(
+                "CREATE TABLE tool_signatures (
+                    tool_id TEXT PRIMARY KEY,
+                    signature TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tool_signatures (tool_id, signature, created_at) VALUES ('call_1', ?1, 1)",
+                params![legacy_sig],
+            )
+            .unwrap();
+        }
+
+        init_db().unwrap();
+        init_db().unwrap(); // idempotent
+
+        let conn = connect_db().unwrap();
+        let legacy_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tool_signatures", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(legacy_rows, 1, "migration must not delete legacy rows");
+        let v2_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'tool_signatures_v2'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v2_exists, 1);
+
+        for session in ["tenant:sess-a", "tenant:sess-b", ""] {
+            assert_eq!(
+                load_tool_signature(session, "call_1").unwrap(),
+                None,
+                "legacy rows have no session and must not be served to {session:?}"
+            );
+        }
+
+        // The upgraded database works normally for new, session-scoped rows.
+        let fresh = "N".repeat(60);
+        save_tool_signature("tenant:sess-a", "call_1", &fresh).unwrap();
+        assert_eq!(
+            load_tool_signature("tenant:sess-a", "call_1").unwrap(),
+            Some(fresh)
+        );
+        assert_eq!(
+            load_tool_signature("tenant:sess-b", "call_1").unwrap(),
+            None
+        );
         TOOL_SIGNATURE_DB.get().unwrap().lock().unwrap().take();
     }
 }

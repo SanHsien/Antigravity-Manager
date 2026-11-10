@@ -355,7 +355,7 @@ pub fn wrap_request_v2(
                                 }
                                 if let Some(call_id) = fc.get("id").and_then(|v| v.as_str()) {
                                     if let Some(s) = crate::proxy::SignatureCache::global()
-                                        .get_tool_signature(call_id)
+                                        .get_tool_signature(session_id, call_id)
                                     {
                                         turn_signature = Some(s);
                                         break;

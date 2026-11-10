@@ -48,6 +48,8 @@ where
     Box::pin(stream! {
         let mut state = StreamingState::new();
         state.session_id = session_id; // Set session ID for signature caching
+        // Tool signatures captured by the accumulator are scoped to this same session.
+        state.thinking_acc.set_session_key(state.session_id.as_deref());
         state.message_count = message_count; // [NEW v4.0.0] Set message count
         state.scaling_enabled = scaling_enabled; // Set scaling enabled flag
         state.context_limit = context_limit;

@@ -31,9 +31,32 @@ pub fn resolve_shell_tool_name(
     model_tool_name.to_string()
 }
 
+/// Convert a Gemini response without a tool-signature session: tool-call signatures
+/// are NOT cached (the tool-signature cache is keyed by session, and `session_id`
+/// here may be a Responses chain id rather than the stable `store_key`). Handlers
+/// that know the `store_key` call [`transform_openai_response_with_tool_scope`].
 pub fn transform_openai_response(
     gemini_response: &Value,
     session_id: Option<&str>,
+    message_count: usize,
+    client_tool_names: Option<&std::collections::HashSet<String>>,
+) -> OpenAIResponse {
+    transform_openai_response_with_tool_scope(
+        gemini_response,
+        session_id,
+        None,
+        message_count,
+        client_tool_names,
+    )
+}
+
+/// `tool_signature_session` is the ThinkingStore `store_key` of the request; tool-call
+/// signatures found in the response are cached under (that key, tool id) so a later
+/// turn of the same conversation can recover them. `None` caches nothing.
+pub fn transform_openai_response_with_tool_scope(
+    gemini_response: &Value,
+    session_id: Option<&str>,
+    tool_signature_session: Option<&str>,
     message_count: usize,
     client_tool_names: Option<&std::collections::HashSet<String>>,
 ) -> OpenAIResponse {
@@ -110,8 +133,11 @@ pub fn transform_openai_response(
                             .or(part.get("thought_signature"))
                             .and_then(|s| s.as_str())
                         {
-                            crate::proxy::SignatureCache::global()
-                                .cache_tool_signature(&id, sig.to_string());
+                            crate::proxy::SignatureCache::global().cache_tool_signature(
+                                tool_signature_session,
+                                &id,
+                                sig.to_string(),
+                            );
                         }
 
                         tool_calls.push(ToolCall {

@@ -551,7 +551,8 @@ pub async fn handle_generate(
                     let mut saw_image_data = false;
                     let mut stream_failed = false;
                     let mut thinking_acc =
-                        crate::proxy::thinking_store::TurnAccumulator::with_anchor(&causal_anchor_clone);
+                        crate::proxy::thinking_store::TurnAccumulator::with_anchor(&causal_anchor_clone)
+                            .with_session_key(Some(s_id_for_stream.as_str()));
 
                     loop {
                         // [NEW] 阶段 6.2: 补全 __cloudCodeMeta 响应元数据透传
@@ -645,7 +646,7 @@ pub async fn handle_generate(
                                                                     crate::proxy::SignatureCache::global()
                                                                         .cache_session_signature(&s_id_for_stream, sig.to_string(), 1);
                                                                     if let Some(call_id) = part.get("functionCall").and_then(|f| f.get("id")).and_then(|id| id.as_str()) {
-                                                                        crate::proxy::SignatureCache::global().cache_tool_signature(call_id, sig.to_string());
+                                                                        crate::proxy::SignatureCache::global().cache_tool_signature(Some(s_id_for_stream.as_str()), call_id, sig.to_string());
                                                                     }
                                                                     debug!("[Gemini-SSE] Cached signature (len: {}) for session: {}", sig.len(), s_id_for_stream);
                                                                 }
@@ -798,7 +799,11 @@ pub async fn handle_generate(
                                         .and_then(|id| id.as_str())
                                     {
                                         crate::proxy::SignatureCache::global()
-                                            .cache_tool_signature(call_id, sig.to_string());
+                                            .cache_tool_signature(
+                                                Some(session_id.as_str()),
+                                                call_id,
+                                                sig.to_string(),
+                                            );
                                     }
                                     debug!("[Gemini-Response] Cached signature (len: {}) for session: {}", sig.len(), session_id);
                                 }

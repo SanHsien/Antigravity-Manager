@@ -261,15 +261,16 @@ impl InboundThinkingPipeline {
                                         fc_counter += 1;
 
                                         // 核心原则：统一根据上下文因果合成伪 ID 查库回填，不受客户端是否携带或使用何种 tool_id 限制
+                                        // 工具签名按 (会话键, 工具 ID) 隔离；没有会话键就不回填，交给下面的哨兵路径。
                                         let found_sig = crate::proxy::SignatureCache::global()
-                                            .get_tool_signature(&synthetic_id)
+                                            .get_tool_signature(session_id, &synthetic_id)
                                             .or_else(|| {
                                                 fc.get("id")
                                                     .and_then(|id| id.as_str())
                                                     .filter(|s| !s.trim().is_empty())
                                                     .and_then(|id| {
                                                         crate::proxy::SignatureCache::global()
-                                                            .get_tool_signature(id)
+                                                            .get_tool_signature(session_id, id)
                                                     })
                                             });
 
@@ -427,10 +428,11 @@ impl InboundThinkingPipeline {
         }
 
         // 3. 终审把关与脱敏规范化 (Finalize)
-        crate::proxy::thinking_store::finalize_gemini_contents_thinking_with_model(
+        crate::proxy::thinking_store::finalize_gemini_contents_thinking_for_session(
             contents,
             is_thinking_enabled,
             Some(target_model),
+            session_id,
         );
     }
 

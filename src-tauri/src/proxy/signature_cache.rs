@@ -38,15 +38,46 @@ impl<T> CacheEntry<T> {
     }
 }
 
+/// The identity of one tool-signature entry: which session it belongs to and
+/// which tool call id it is for. Built only when both parts are usable, so no
+/// code path can read or write an entry that is not tied to a session.
+#[derive(Clone, Debug)]
+struct ToolSignatureScope {
+    session_key: String,
+    tool_id: String,
+}
+
+impl ToolSignatureScope {
+    /// `None` when the session key is missing/blank or the tool id is blank.
+    fn new(session_key: Option<&str>, tool_id: &str) -> Option<Self> {
+        let session_key = session_key?;
+        if session_key.trim().is_empty() || tool_id.trim().is_empty() {
+            return None;
+        }
+        Some(Self {
+            session_key: session_key.to_string(),
+            tool_id: tool_id.to_string(),
+        })
+    }
+
+    fn into_key(self) -> (String, String) {
+        (self.session_key, self.tool_id)
+    }
+}
+
 /// Triple-layer signature cache to handle:
 /// 1. Signature recovery for tool calls (when clients strip them)
 /// 2. Cross-model compatibility checks (preventing Claude signatures on Gemini models)
 /// 3. Session-based signature tracking (preventing cross-session pollution)
 pub struct SignatureCache {
-    /// Layer 1: Tool Use ID -> Thinking Signature
-    /// Key: tool_use_id (e.g., "toolu_01...")
+    /// Layer 1: (session key, Tool Use ID) -> Thinking Signature
+    /// Key: (session key, tool_use_id), e.g. ("<tenant>:sess-...", "toolu_01...").
     /// Value: The thought signature that generated this tool call
-    tool_signatures: Mutex<HashMap<String, CacheEntry<String>>>,
+    ///
+    /// The session key is part of the key because clients reuse ids such as
+    /// "call_1" across sessions; an id alone would hand one session another
+    /// session's signature (see `ToolSignatureScope`).
+    tool_signatures: Mutex<HashMap<(String, String), CacheEntry<String>>>,
 
     /// Layer 2: Signature -> Model Family
     /// Key: thought signature string
@@ -81,22 +112,45 @@ impl SignatureCache {
         INSTANCE.get_or_init(SignatureCache::new)
     }
 
-    /// Store a tool call signature
-    pub fn cache_tool_signature(&self, tool_use_id: &str, signature: String) {
+    /// Store a tool call signature under `(session_key, tool_use_id)`.
+    ///
+    /// `session_key` is the stable per-conversation key of the request (the
+    /// ThinkingStore `store_key`). With no usable session key the signature is
+    /// NOT cached, in memory or in SQLite: a global entry keyed by tool id alone
+    /// is exactly what leaked between sessions, so callers that cannot name
+    /// their session simply do not take part in tool-signature recovery.
+    pub fn cache_tool_signature(
+        &self,
+        session_key: Option<&str>,
+        tool_use_id: &str,
+        signature: String,
+    ) {
         if signature.len() < MIN_SIGNATURE_LENGTH {
             return;
         }
+        let Some(scope) = ToolSignatureScope::new(session_key, tool_use_id) else {
+            tracing::debug!(
+                "[SignatureCache] Not caching tool signature for id {}: no session key",
+                tool_use_id
+            );
+            return;
+        };
 
         // 1. 持久化到 SQLite L2 数据库 (支持代理重启后秒级恢复)
-        let _ = crate::modules::proxy_db::save_tool_signature(tool_use_id, &signature);
+        let _ = crate::modules::proxy_db::save_tool_signature(
+            &scope.session_key,
+            &scope.tool_id,
+            &signature,
+        );
 
         // 2. 写入内存 L1 缓存
         if let Ok(mut cache) = self.tool_signatures.lock() {
             tracing::debug!(
-                "[SignatureCache] Caching tool signature for id: {}",
-                tool_use_id
+                "[SignatureCache] Caching tool signature for id: {} (session {})",
+                scope.tool_id,
+                scope.session_key
             );
-            cache.insert(tool_use_id.to_string(), CacheEntry::new(signature));
+            cache.insert(scope.into_key(), CacheEntry::new(signature));
 
             // Clean up expired entries when limit is reached
             if cache.len() > TOOL_CACHE_LIMIT {
@@ -114,15 +168,26 @@ impl SignatureCache {
         }
     }
 
-    /// Retrieve a signature for a tool_use_id
-    pub fn get_tool_signature(&self, tool_use_id: &str) -> Option<String> {
+    /// Retrieve a signature for a tool_use_id within one session.
+    ///
+    /// Returns `None` when `session_key` is missing or empty: there is no
+    /// fallback to a lookup by tool id alone (callers then use their normal
+    /// sentinel path instead of borrowing another session's signature).
+    pub fn get_tool_signature(
+        &self,
+        session_key: Option<&str>,
+        tool_use_id: &str,
+    ) -> Option<String> {
+        let scope = ToolSignatureScope::new(session_key, tool_use_id)?;
+
         // 1. 先查内存 L1 缓存
         if let Ok(cache) = self.tool_signatures.lock() {
-            if let Some(entry) = cache.get(tool_use_id) {
+            if let Some(entry) = cache.get(&scope.clone().into_key()) {
                 if !entry.is_expired() {
                     tracing::debug!(
-                        "[SignatureCache] Hit tool signature for id: {}",
-                        tool_use_id
+                        "[SignatureCache] Hit tool signature for id: {} (session {})",
+                        scope.tool_id,
+                        scope.session_key
                     );
                     return Some(entry.data.clone());
                 }
@@ -130,14 +195,17 @@ impl SignatureCache {
         }
 
         // 2. 内存未命中（如代理重启过），从 SQLite L2 数据库恢复
-        if let Ok(Some(sig)) = crate::modules::proxy_db::load_tool_signature(tool_use_id) {
+        if let Ok(Some(sig)) =
+            crate::modules::proxy_db::load_tool_signature(&scope.session_key, &scope.tool_id)
+        {
             let sig: String = sig;
             if let Ok(mut cache) = self.tool_signatures.lock() {
-                cache.insert(tool_use_id.to_string(), CacheEntry::new(sig.clone()));
+                cache.insert(scope.clone().into_key(), CacheEntry::new(sig.clone()));
             }
             tracing::info!(
-                "[SignatureCache] Restored tool signature from SQLite for id: {}",
-                tool_use_id
+                "[SignatureCache] Restored tool signature from SQLite for id: {} (session {})",
+                scope.tool_id,
+                scope.session_key
             );
             return Some(sig);
         }
@@ -455,22 +523,26 @@ impl SignatureCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::monitor::prompt_log_tests::TestDataDir;
 
     #[test]
     fn test_tool_signature_cache() {
         let cache = SignatureCache::new();
         let sig = "x".repeat(60); // Valid length
 
-        cache.cache_tool_signature("tool_1", sig.clone());
-        assert_eq!(cache.get_tool_signature("tool_1"), Some(sig));
-        assert_eq!(cache.get_tool_signature("tool_2"), None);
+        cache.cache_tool_signature(Some("sess-1"), "tool_1", sig.clone());
+        assert_eq!(
+            cache.get_tool_signature(Some("sess-1"), "tool_1"),
+            Some(sig)
+        );
+        assert_eq!(cache.get_tool_signature(Some("sess-1"), "tool_2"), None);
     }
 
     #[test]
     fn test_min_length() {
         let cache = SignatureCache::new();
-        cache.cache_tool_signature("tool_short", "short".to_string());
-        assert_eq!(cache.get_tool_signature("tool_short"), None);
+        cache.cache_tool_signature(Some("sess-1"), "tool_short", "short".to_string());
+        assert_eq!(cache.get_tool_signature(Some("sess-1"), "tool_short"), None);
     }
 
     #[test]
@@ -533,41 +605,150 @@ mod tests {
         let cache = SignatureCache::new();
         let sig = "x".repeat(60);
 
-        cache.cache_tool_signature("tool_1", sig.clone());
+        cache.cache_tool_signature(Some("sess-1"), "tool_1", sig.clone());
         cache.cache_thinking_family(sig.clone(), "model".to_string());
         cache.cache_session_signature("sid-1", sig.clone(), 1);
 
-        assert!(cache.get_tool_signature("tool_1").is_some());
+        assert!(cache.get_tool_signature(Some("sess-1"), "tool_1").is_some());
         assert!(cache.get_signature_family(&sig).is_some());
         assert!(cache.get_session_signature("sid-1").is_some());
 
         cache.clear();
 
-        assert!(cache.get_tool_signature("tool_1").is_none());
+        assert!(cache.get_tool_signature(Some("sess-1"), "tool_1").is_none());
         assert!(cache.get_signature_family(&sig).is_none());
         assert!(cache.get_session_signature("sid-1").is_none());
     }
 
     #[test]
     fn test_tool_signature_sqlite_recovery() {
+        let _dir = TestDataDir::new();
+        crate::modules::proxy_db::init_db().unwrap();
+        let session = "tenant:sess-sqlite-recovery";
         let tool_id = "call_sig_sqlite_recovery_unique";
         let sig = "s".repeat(60);
 
-        // 1. Direct save to SQLite
-        let db_res = crate::modules::proxy_db::save_tool_signature(tool_id, &sig);
-        if let Err(e) = db_res {
-            eprintln!("Skipping DB test if DB not initialized: {}", e);
-            return;
-        }
+        // 1. Cache through the public API (writes L1 and SQLite L2)
+        SignatureCache::new().cache_tool_signature(Some(session), tool_id, sig.clone());
 
         // 2. New in-memory cache (simulating proxy restart)
         let cache = SignatureCache::new();
 
         // 3. get_tool_signature should fall back to SQLite and populate L1 cache
-        let recovered = cache.get_tool_signature(tool_id);
-        assert_eq!(recovered, Some(sig.clone()));
+        assert_eq!(
+            cache.get_tool_signature(Some(session), tool_id),
+            Some(sig.clone())
+        );
+        // ... but only for the session that wrote it
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-someone-else"), tool_id),
+            None
+        );
 
         // 4. Second lookup should hit L1
-        assert_eq!(cache.get_tool_signature(tool_id), Some(sig));
+        assert_eq!(cache.get_tool_signature(Some(session), tool_id), Some(sig));
+    }
+
+    /// Clients reuse ids like `call_1` in every conversation. Two sessions that
+    /// both cached `call_1` must each get their own signature back, and a third
+    /// session that never cached it must get nothing.
+    #[test]
+    fn same_tool_id_in_two_sessions_never_reads_the_other_sessions_signature() {
+        let _dir = TestDataDir::new();
+        crate::modules::proxy_db::init_db().unwrap();
+        let cache = SignatureCache::new();
+        let sig_a = "A".repeat(60);
+        let sig_b = "B".repeat(70);
+
+        cache.cache_tool_signature(Some("tenant:sess-a"), "call_1", sig_a.clone());
+        // Session B has not cached anything yet: it must not see session A's value.
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-b"), "call_1"),
+            None
+        );
+        cache.cache_tool_signature(Some("tenant:sess-b"), "call_1", sig_b.clone());
+
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-a"), "call_1"),
+            Some(sig_a.clone())
+        );
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-b"), "call_1"),
+            Some(sig_b.clone())
+        );
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-c"), "call_1"),
+            None
+        );
+
+        // The same holds after a restart, when everything comes from SQLite.
+        let restarted = SignatureCache::new();
+        assert_eq!(
+            restarted.get_tool_signature(Some("tenant:sess-a"), "call_1"),
+            Some(sig_a)
+        );
+        assert_eq!(
+            restarted.get_tool_signature(Some("tenant:sess-b"), "call_1"),
+            Some(sig_b)
+        );
+        assert_eq!(
+            restarted.get_tool_signature(Some("tenant:sess-c"), "call_1"),
+            None
+        );
+    }
+
+    /// The same session and tool id still round-trips, and a later signature for
+    /// that same pair replaces the earlier one (same as before scoping).
+    #[test]
+    fn same_session_gets_its_own_tool_signature_back() {
+        let _dir = TestDataDir::new();
+        crate::modules::proxy_db::init_db().unwrap();
+        let cache = SignatureCache::new();
+        let first = "1".repeat(60);
+        let second = "2".repeat(60);
+        cache.cache_tool_signature(Some("tenant:sess-a"), "call_1", first.clone());
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-a"), "call_1"),
+            Some(first)
+        );
+        cache.cache_tool_signature(Some("tenant:sess-a"), "call_1", second.clone());
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-a"), "call_1"),
+            Some(second)
+        );
+    }
+
+    /// No session key means no tool-signature recovery at all: nothing is stored
+    /// (not in memory, not in SQLite) and nothing is returned, so the caller falls
+    /// through to its sentinel path instead of borrowing another session's value.
+    #[test]
+    fn without_a_session_key_nothing_is_cached_or_returned() {
+        let _dir = TestDataDir::new();
+        crate::modules::proxy_db::init_db().unwrap();
+        let cache = SignatureCache::new();
+        let sig = "N".repeat(60);
+
+        cache.cache_tool_signature(None, "call_1", sig.clone());
+        cache.cache_tool_signature(Some(""), "call_1", sig.clone());
+        cache.cache_tool_signature(Some("   "), "call_1", sig.clone());
+
+        // A session that does have a key cannot find a "global" copy either.
+        assert_eq!(
+            cache.get_tool_signature(Some("tenant:sess-a"), "call_1"),
+            None
+        );
+        assert_eq!(cache.get_tool_signature(None, "call_1"), None);
+        assert_eq!(cache.get_tool_signature(Some(""), "call_1"), None);
+        assert!(cache.tool_signatures.lock().unwrap().is_empty());
+        let restarted = SignatureCache::new();
+        assert_eq!(
+            restarted.get_tool_signature(Some("tenant:sess-a"), "call_1"),
+            None
+        );
+
+        // A real entry is not visible without a key, either.
+        cache.cache_tool_signature(Some("tenant:sess-a"), "call_1", sig);
+        assert_eq!(cache.get_tool_signature(None, "call_1"), None);
+        assert_eq!(cache.get_tool_signature(Some(" "), "call_1"), None);
     }
 }
