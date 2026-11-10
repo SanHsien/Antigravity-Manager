@@ -169,6 +169,14 @@ pub struct TokenManager {
 
 impl TokenManager {
     fn resolved_data_dir(&self) -> PathBuf {
+        // Unit tests build a TokenManager on a throw-away directory; without this they would load
+        // (and rewrite) the accounts of the real data directory instead.
+        #[cfg(test)]
+        {
+            if !self.data_dir.as_os_str().is_empty() {
+                return self.data_dir.clone();
+            }
+        }
         crate::modules::account::get_data_dir().unwrap_or_else(|_| self.data_dir.clone())
     }
 
