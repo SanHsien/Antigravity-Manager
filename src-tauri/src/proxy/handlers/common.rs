@@ -263,27 +263,34 @@ pub fn determine_retry_strategy_adaptive(
                 return RetryStrategy::FixedDelay(Duration::from_millis(50));
             }
 
-            // 3. 单账号模式 (pool_size <= 1)：无法切号，等待是唯一选择
+            // 3. 单账号模式 (pool_size <= 1)：无法切号，等待是唯一选择。
+            // GraceRetry 受「每账号每请求一次」限制（allow_grace_retry）：额度用完后降级为
+            // 固定退避交给轮换预算收尾，否则调用方会对同一个账号无限原地重试。
             if pool_size <= 1 {
                 if let Some(delay) = parsed_delay {
                     let actual_ms = delay.actual_wait_ms();
-                    if actual_ms <= 30_000 {
+                    if actual_ms <= 30_000 && allow_grace_retry {
                         tracing::info!(
                             "[Retry] Single account 429: quotaResetDelay detected ({}ms), applying GraceRetry",
                             actual_ms
                         );
                         return RetryStrategy::GraceRetry(Duration::from_millis(actual_ms));
                     } else {
-                        return RetryStrategy::FixedDelay(Duration::from_millis(30_000));
+                        return RetryStrategy::FixedDelay(Duration::from_millis(
+                            actual_ms.min(30_000),
+                        ));
                     }
                 } else {
-                    // 没有给出明确延迟时的保底退避 (单账号等待 3s~5s，杜绝 50ms 闪电耗尽重试)
+                    // 没有给出明确延迟时的保底退避 (单账号等待 3s~10s，杜绝 50ms 闪电耗尽重试)
                     let backoff_ms = (3000 * (attempt + 1) as u64).min(10_000);
-                    tracing::info!(
-                        "[Retry] Single account 429 without explicit delay: backing off {}ms",
-                        backoff_ms
-                    );
-                    return RetryStrategy::GraceRetry(Duration::from_millis(backoff_ms));
+                    if allow_grace_retry {
+                        tracing::info!(
+                            "[Retry] Single account 429 without explicit delay: backing off {}ms",
+                            backoff_ms
+                        );
+                        return RetryStrategy::GraceRetry(Duration::from_millis(backoff_ms));
+                    }
+                    return RetryStrategy::FixedDelay(Duration::from_millis(backoff_ms));
                 }
             }
 
@@ -388,6 +395,11 @@ mod tests {
             {
                 retry_same_account = false;
                 sends.push(attempt);
+                assert!(
+                    sends.len() <= 8,
+                    "rotation loop must terminate, sends so far: {:?}",
+                    sends
+                );
                 let account_id = format!("account-{}", attempt);
                 let strategy = state.determine_strategy(&account_id, 429, body, None, false);
                 if matches!(strategy, RetryStrategy::GraceRetry(_)) {

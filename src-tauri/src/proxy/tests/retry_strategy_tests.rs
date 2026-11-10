@@ -333,3 +333,42 @@ fn test_per_request_grace_cap_stops_same_account_retry_loop_in_round_2() {
         );
     }
 }
+
+#[test]
+fn test_per_request_grace_cap_single_account_degrades_to_fixed_delay() {
+    use crate::proxy::handlers::common::RequestRetryState;
+    // 單帳號池 (pool_size = 1) 的 429：同一帳號在同一個請求內只能 Grace 一次，
+    // 第二次起改回固定退避，否則呼叫端會對同一個帳號無限原地重試。
+    let with_delay = r#"{"error":{"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"1s"}]}}"#;
+    let without_delay = "rate limited";
+
+    for body in [with_delay, without_delay] {
+        let mut state = RequestRetryState::default();
+        let first =
+            state.determine_strategy_adaptive_gated("acct-a", 429, body, None, false, 0, 1, true);
+        assert!(
+            matches!(first, RetryStrategy::GraceRetry(_)),
+            "first 429 on a single account is grace-retried, got {:?}",
+            first
+        );
+        for _ in 0..3 {
+            let again = state
+                .determine_strategy_adaptive_gated("acct-a", 429, body, None, false, 0, 1, true);
+            assert!(
+                matches!(again, RetryStrategy::FixedDelay(_)),
+                "grace budget spent: expected FixedDelay, got {:?} (body {:?})",
+                again,
+                body
+            );
+        }
+        // 排程模式不允許 Grace 時，第一次也不能 Grace。
+        let mut gated_off = RequestRetryState::default();
+        let s = gated_off
+            .determine_strategy_adaptive_gated("acct-a", 429, body, None, false, 0, 1, false);
+        assert!(
+            !matches!(s, RetryStrategy::GraceRetry(_)),
+            "scheduling mode forbids grace, got {:?}",
+            s
+        );
+    }
+}
