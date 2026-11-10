@@ -4496,7 +4496,7 @@ mod tests {
                     "reason": "QuotaExhausted",
                     "until": now + 7200,
                     "detected_at": now,
-                    "message": "QUOTA_EXHAUSTED; reset after 2h"
+                    "message": "QUOTA_EXHAUSTED"
                 }
             }
         });

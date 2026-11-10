@@ -520,6 +520,7 @@ pub fn transform_openai_request_with_session(
 
     // 从缓存获取当前会话的思维签名
     let thought_sig = session_thought_sig;
+
     if thought_sig.is_some() {
         tracing::debug!(
             "[OpenAI-Request] Using session signature (sid: {}, len: {})",
@@ -787,7 +788,7 @@ pub fn transform_openai_request_with_session(
 
             // Handle tool calls (assistant message)
             if let Some(tool_calls) = &msg.tool_calls {
-                for (_index, tc) in tool_calls.iter().enumerate() {
+                for (tc_index, tc) in tool_calls.iter().enumerate() {
                     /* 暂时移除：防止 Codex CLI 界面碎片化
                     if index == 0 && parts.is_empty() {
                          if mapped_model.contains("gemini-3") {
@@ -842,6 +843,24 @@ pub fn transform_openai_request_with_session(
                                     !mapped_model.to_lowercase().contains("gemini")
                                         || crate::proxy::thinking_store::is_likely_gemini_signature(s)
                                 })
+                        })
+                        .or_else(|| {
+                            // 最新一条 assistant 轮次的首个工具调用，继承上一轮流式产出的会话级签名
+                            // （历史轮次只认自己工具 ID 的专属签名，绝不被最新签名覆盖）。
+                            // 对 Gemini 只接受看起来像 Gemini 原生的签名，否则交给流水线回填哨兵。
+                            if tc_index == 0
+                                && last_assistant_msg_idx == Some(msg_index)
+                                && mapped_model.to_lowercase().contains("gemini")
+                            {
+                                thought_sig
+                                    .as_deref()
+                                    .filter(|s| {
+                                        crate::proxy::thinking_store::is_likely_gemini_signature(s)
+                                    })
+                                    .map(str::to_string)
+                            } else {
+                                None
+                            }
                         });
 
                     if let Some(sig) = final_sig {
