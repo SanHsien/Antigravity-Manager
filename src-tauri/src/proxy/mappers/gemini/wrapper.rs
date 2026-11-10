@@ -1156,6 +1156,9 @@ mod test_fixes {
 
     #[test]
     fn test_wrap_request_with_signature() {
+        // The wrapper is a pure wire pass-through for functionCall signatures: it keeps what the
+        // client sent (see the snake_case test below) and never invents one. Back-filling a missing
+        // signature from the session cache or the sentinel is the inbound pipeline's job.
         let session_id = "test-session-sig";
         let signature = "test-signature-must-be-longer-than-fifty-characters-to-be-cached-by-signature-cache-12345"; // > 50 chars
         crate::proxy::SignatureCache::global().cache_session_signature(
@@ -1178,12 +1181,12 @@ mod test_fixes {
         });
 
         let result = wrap_request(&body, "proj", "gemini-pro", None, Some(session_id), None);
-        let injected_sig = result["request"]["contents"][0]["parts"][0]["thoughtSignature"]
-            .as_str()
-            .unwrap();
+        let part = &result["request"]["contents"][0]["parts"][0];
+        assert_eq!(part["functionCall"]["name"], "get_weather");
         assert!(
-            injected_sig == signature
-                || injected_sig == crate::proxy::thinking_store::SENTINEL_SIGNATURE
+            part.get("thoughtSignature").is_none(),
+            "the wrapper must not back-fill a signature the client did not send, got {:?}",
+            part.get("thoughtSignature")
         );
     }
 
@@ -2076,13 +2079,25 @@ mod tests {
         let text_2 = contents[1]["parts"][0]["text"].as_str().unwrap();
         assert!(!text_2.contains("Basically"));
 
-        let tool_resp = contents[3]["parts"][0]["functionResponse"]["response"]["output"]
-            .as_str()
-            .unwrap();
+        // Consecutive same-role turns are merged by the wrapper, so locate the parts by content
+        // instead of by their position in `contents`.
+        let all_parts: Vec<&Value> = contents
+            .iter()
+            .flat_map(|c| c["parts"].as_array().into_iter().flatten())
+            .collect();
+
+        let tool_resp = all_parts
+            .iter()
+            .find_map(|p| p["functionResponse"]["response"]["output"].as_str())
+            .expect("the functionResponse output must survive");
         assert!(tool_resp.contains("Collapsed"));
         assert!(tool_resp.contains("Error: compilation failed"));
 
-        let text_5 = contents[4]["parts"][0]["text"].as_str().unwrap();
+        let text_5 = all_parts
+            .iter()
+            .filter_map(|p| p["text"].as_str())
+            .find(|t| t.contains("Latest message 1"))
+            .expect("the latest user message must be kept");
         assert!(text_5.contains("Please"));
     }
 
@@ -2125,8 +2140,9 @@ mod tests {
         // Part 0 should be normalized from "·" to "..."
         assert_eq!(parts[0]["thought"], true);
         assert_eq!(parts[0]["text"], "...");
-        // Part 0 signature should be preserved because it's valid length and compatible
-        assert_eq!(parts[0]["thoughtSignature"], valid_sig);
+        // A thought block never carries a signature on this path (signatures live on
+        // functionCall anchors; this turn has none), even if the client sent a valid-length one.
+        assert!(parts[0].get("thoughtSignature").is_none());
 
         // Part 1 should be downgraded to text without thought: true
         assert!(parts[1].get("thought").is_none());
@@ -2168,7 +2184,7 @@ mod tests {
         assert_eq!(tc["thinkingBudget"], 16384);
         assert!(tc.get("thinkingLevel").is_none());
 
-        // 2. 裸模型 Flash 接管客户端 thinkingLevel
+        // 2. 只有 tiered 模型接管客户端 thinkingLevel（网关控制模式下，思考参数统一只给 tiered 模型）
         let req_flash_high = json!({
             "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
             "generationConfig": {
@@ -2178,7 +2194,7 @@ mod tests {
         let wrapped = wrap_request(
             &req_flash_high,
             "test-p",
-            "gemini-3-flash",
+            "gemini-3.7-flash-tiered",
             None,
             None,
             None,
@@ -2193,10 +2209,34 @@ mod tests {
                 "thinkingConfig": { "thinkingLevel": "LOW" }
             }
         });
-        let wrapped = wrap_request(&req_flash_low, "test-p", "gemini-3-flash", None, None, None);
+        let wrapped = wrap_request(
+            &req_flash_low,
+            "test-p",
+            "gemini-3.7-flash-tiered",
+            None,
+            None,
+            None,
+        );
         let tc = &wrapped["request"]["generationConfig"]["thinkingConfig"];
         assert_eq!(tc["thinkingBudget"], 1024);
         assert!(tc.get("thinkingLevel").is_none());
+
+        // 裸模型（没有 -high/-low/-tiered 后缀）不接管客户端 thinkingLevel：一律回填 -medium (4096)
+        for level in ["HIGH", "LOW"] {
+            let req_bare = json!({
+                "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+                "generationConfig": {
+                    "thinkingConfig": { "thinkingLevel": level }
+                }
+            });
+            let wrapped = wrap_request(&req_bare, "test-p", "gemini-3-flash", None, None, None);
+            let tc = &wrapped["request"]["generationConfig"]["thinkingConfig"];
+            assert_eq!(
+                tc["thinkingBudget"], 4096,
+                "bare flash must ignore client level {level}"
+            );
+            assert!(tc.get("thinkingLevel").is_none());
+        }
 
         // 3. 裸模型 Flash 客户端传 NONE 或未传：绝不关闭思考，强制回填 -medium (4096)
         let req_flash_none = json!({
@@ -2264,6 +2304,6 @@ mod tests {
             None,
         );
         let tc = &wrapped["request"]["generationConfig"]["thinkingConfig"];
-        assert_eq!(tc["thinkingBudget"], 16384);
+        assert_eq!(tc["thinkingBudget"], 4096);
     }
 }

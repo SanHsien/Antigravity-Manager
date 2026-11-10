@@ -1750,6 +1750,16 @@ mod tests {
             assert_eq!(contents.matches(old).count(), 2);
         }
     }
+    /// A signature that passes `is_likely_gemini_signature`: a functionCall only receives a
+    /// cached/client signature when it looks like a genuine Gemini one, anything else is replaced
+    /// by the sentinel. `tag` must be at most 44 ASCII bytes.
+    fn valid_gemini_sig(tag: &str) -> String {
+        use base64::Engine;
+        let mut raw = vec![0x12u8];
+        raw.extend_from_slice(format!("{:0>44}", tag).as_bytes());
+        base64::engine::general_purpose::STANDARD.encode(raw)
+    }
+
     fn tiered_request_body(model: &str, effort: Option<&str>) -> Value {
         let mut raw = json!({
             "model": model,
@@ -1767,15 +1777,20 @@ mod tests {
         let _lock = crate::proxy::config::TEST_CONFIG_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        // Server-authoritative: client reasoning.effort must not set thinkingLevel.
+        crate::proxy::config::update_thinking_budget_config(
+            crate::proxy::config::ThinkingBudgetConfig::default(),
+        );
+        // Tiered models: the client never sets thinkingLevel. Without an effort the model runs
+        // adaptive (includeThoughts only); with one, the gateway maps it to its own
+        // flash_low / flash_medium / flash_high budget (defaults 1024 / 4096 / 16384).
         for model in ["gemini-3.8-flash-tiered", "gemini-9.9-flash-tiered"] {
             assert!(is_tiered_flash_model(model));
-            for effort in [
-                None,
-                Some("low"),
-                Some("medium"),
-                Some("high"),
-                Some("xhigh"),
+            for (effort, expected_budget) in [
+                (None, None),
+                (Some("low"), Some(1024)),
+                (Some("medium"), Some(4096)),
+                (Some("high"), Some(16384)),
+                (Some("xhigh"), Some(16384)),
             ] {
                 let body = tiered_request_body(model, effort);
                 let thinking = &body["request"]["generationConfig"]["thinkingConfig"];
@@ -1783,7 +1798,16 @@ mod tests {
                 assert_eq!(body["model"], model);
                 assert_eq!(thinking["includeThoughts"], true);
                 assert!(thinking.get("thinkingLevel").is_none());
-                assert!(thinking.get("thinkingBudget").is_none());
+                match expected_budget {
+                    None => assert!(
+                        thinking.get("thinkingBudget").is_none(),
+                        "{model} without effort must stay adaptive"
+                    ),
+                    Some(budget) => assert_eq!(
+                        thinking["thinkingBudget"], budget,
+                        "{model} with effort {effort:?}"
+                    ),
+                }
             }
         }
     }
@@ -1824,32 +1848,48 @@ mod tests {
             16384
         );
 
-        // 2. 裸模型 Flash 接管客户端 reasoning_effort
+        // 2. 只有 tiered 模型接管客户端 reasoning_effort（网关控制模式下，思考参数统一只给 tiered 模型）
         let req_flash_high: OpenAIRequest = serde_json::from_value(json!({
-            "model": "gemini-3-flash",
+            "model": "gemini-3.7-flash-tiered",
             "messages": [{"role": "user", "content": "hi"}],
             "reasoning_effort": "high"
         }))
         .unwrap();
         let (body, _, _, _) =
-            transform_openai_request(&req_flash_high, "test-p", "gemini-3-flash", None);
+            transform_openai_request(&req_flash_high, "test-p", "gemini-3.7-flash-tiered", None);
         assert_eq!(
             body["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
             16384
         );
 
         let req_flash_low: OpenAIRequest = serde_json::from_value(json!({
-            "model": "gemini-3-flash",
+            "model": "gemini-3.7-flash-tiered",
             "messages": [{"role": "user", "content": "hi"}],
             "reasoning_effort": "low"
         }))
         .unwrap();
         let (body, _, _, _) =
-            transform_openai_request(&req_flash_low, "test-p", "gemini-3-flash", None);
+            transform_openai_request(&req_flash_low, "test-p", "gemini-3.7-flash-tiered", None);
         assert_eq!(
             body["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
             1024
         );
+
+        // 裸模型（没有 -high/-low/-tiered 后缀）不接管客户端 effort：一律回填 -medium (4096)
+        for effort in ["high", "low"] {
+            let req_bare: OpenAIRequest = serde_json::from_value(json!({
+                "model": "gemini-3-flash",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": effort
+            }))
+            .unwrap();
+            let (body, _, _, _) =
+                transform_openai_request(&req_bare, "test-p", "gemini-3-flash", None);
+            assert_eq!(
+                body["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"], 4096,
+                "bare flash must ignore client effort {effort}"
+            );
+        }
 
         // 3. 裸模型 Flash 客户端未填或试图关闭：绝不关闭思考，强制回填 -medium (4096)
         let req_flash_none: OpenAIRequest = serde_json::from_value(json!({
@@ -1906,7 +1946,7 @@ mod tests {
         );
         assert_eq!(
             body["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-            16384
+            4096
         );
     }
 
@@ -2005,7 +2045,7 @@ mod tests {
     fn responses_reads_the_parent_signature_instead_of_the_routing_identity() {
         let previous_response_id = format!("resp-parent-{}", uuid::Uuid::new_v4());
         let routing_session_id = format!("resp-root-{}", uuid::Uuid::new_v4());
-        let signature = "parent-signature-".repeat(8);
+        let signature = valid_gemini_sig("parent-signature");
         crate::proxy::SignatureCache::global().cache_session_signature(
             &previous_response_id,
             signature.clone(),
@@ -2694,14 +2734,13 @@ mod tests {
             .find(|m| m["role"] == "model")
             .expect("Should have model message");
         let parts = assistant_msg["parts"].as_array().unwrap();
-        let thought = parts
-            .iter()
-            .find(|p| p.get("thought") == Some(&serde_json::json!(true)))
-            .expect("Should ensure thinking block is present in assistant message for Claude");
-        assert_eq!(thought["text"], "...");
-        assert_eq!(
-            thought["thoughtSignature"].as_str(),
-            Some(crate::proxy::thinking_store::SENTINEL_SIGNATURE)
+        // A history turn without client reasoning is not given a made-up "..." thinking block:
+        // it would carry no genuine signature, which upstream rejects.
+        assert!(
+            !parts
+                .iter()
+                .any(|p| p.get("thought") == Some(&serde_json::json!(true))),
+            "No placeholder thinking block should be injected when client reasoning is absent"
         );
     }
 
@@ -2779,11 +2818,8 @@ mod tests {
             .expect("thought part");
         // Reasoning content is preserved (Anthropic alignment)
         assert_eq!(thought["text"], client_thought);
-        // Signature is backfilled by server (sentinel or cache), ignoring client signature
-        assert_eq!(
-            thought["thoughtSignature"].as_str(),
-            Some(crate::proxy::thinking_store::SENTINEL_SIGNATURE)
-        );
+        // A thought block never carries a signature, and the client's signature is ignored
+        assert!(thought.get("thoughtSignature").is_none());
         let dumped = serde_json::to_string(&result).unwrap();
         assert!(
             !dumped.contains("fake_client_sig_that_must_be_ignored"),
@@ -2989,8 +3025,8 @@ mod tests {
             .expect("Should have generationConfig in request payload");
         let thinking_config = gen_config["thinkingConfig"].as_object().unwrap();
 
-        // 网关权威控制模式下，90% 用户行为保持不变，依然权威锁定 4000 预算
-        assert_eq!(thinking_config.get("thinkingBudget"), Some(&json!(4000)));
+        // 网关权威控制模式下，依然权威锁定 -medium 档位预算（网关配置 flash_medium，默认 4096）
+        assert_eq!(thinking_config.get("thinkingBudget"), Some(&json!(4096)));
         assert_eq!(thinking_config.get("includeThoughts"), Some(&json!(true)));
     }
 
@@ -3131,7 +3167,9 @@ mod tests {
             .find(|p| p.get("thought") == Some(&json!(true)))
             .unwrap();
         assert_eq!(resp_thought["text"], client_thought);
-        assert_eq!(resp_thought["thoughtSignature"], valid_client_sig);
+        // A text-only turn has no functionCall to anchor a signature, and a thought block never
+        // carries one, so the client signature is not forwarded either.
+        assert!(resp_thought.get("thoughtSignature").is_none());
 
         // 2. Chat API (is_responses_api = false): honors reasoning content, but ignores client signature
         let (chat_result, _, _, _) = transform_openai_request_with_session(
@@ -3152,15 +3190,15 @@ mod tests {
             .find(|p| p.get("thought") == Some(&json!(true)))
             .unwrap();
         assert_eq!(chat_thought["text"], client_thought);
-        // Chat API signature must be server-filled (sentinel), not client signature
-        assert_eq!(
-            chat_thought["thoughtSignature"].as_str(),
-            Some(crate::proxy::thinking_store::SENTINEL_SIGNATURE)
-        );
+        // Chat API: no signature on the thought block, and the client signature is not echoed
+        assert!(chat_thought.get("thoughtSignature").is_none());
+        assert!(!serde_json::to_string(&chat_result)
+            .unwrap()
+            .contains(&valid_client_sig));
     }
 
     #[test]
-    fn test_shell_tool_strips_description_parameter_for_gemini() {
+    fn test_shell_tool_keeps_description_parameter_for_gemini() {
         let req = OpenAIRequest {
             model: "gemini-2.5-pro".to_string(),
             messages: vec![OpenAIMessage {
@@ -3204,23 +3242,26 @@ mod tests {
             .unwrap();
         let props = run_cmd["parameters"]["properties"].as_object().unwrap();
         assert!(props.contains_key("command"));
+        // The parameter schema is passed through untouched: stripping `description` was dropped
+        // (see test_transform_openai_request_preserves_command_with_description, which requires
+        // the `description` argument of a call to survive).
         assert!(
-            !props.contains_key("description"),
-            "description parameter must be stripped for Gemini"
+            props.contains_key("description"),
+            "description parameter must be kept for Gemini"
         );
         let req_arr = run_cmd["parameters"]["required"].as_array().unwrap();
         assert!(req_arr.iter().any(|v| v == "command"));
         assert!(
-            !req_arr.iter().any(|v| v == "description"),
-            "description must not be required"
+            req_arr.iter().any(|v| v == "description"),
+            "description stays required as declared"
         );
     }
 
     #[test]
     fn test_multi_turn_responses_preserves_historical_signature_prefix() {
         let sid = format!("test-sess-{}", uuid::Uuid::new_v4());
-        let sig_round_1 = "s1_".to_string() + &"a".repeat(60);
-        let sig_round_2 = "s2_".to_string() + &"b".repeat(60);
+        let sig_round_1 = valid_gemini_sig("round-1");
+        let sig_round_2 = valid_gemini_sig("round-2");
 
         // 缓存第 1 轮工具的专属签名
         crate::proxy::SignatureCache::global().cache_tool_signature("call_1", sig_round_1.clone());
@@ -3312,14 +3353,24 @@ mod tests {
         // 验证：第 1 轮 model
         let model_1_parts = contents[1]["parts"].as_array().unwrap();
         assert_eq!(model_1_parts[0]["thought"], true, "第 1 轮首位必须是思考块");
-        let sig_1 = model_1_parts[0]["thoughtSignature"].as_str().unwrap();
+        assert!(model_1_parts[0].get("thoughtSignature").is_none());
+        let sig_1 = model_1_parts
+            .iter()
+            .find(|p| p.get("functionCall").is_some())
+            .and_then(|p| p["thoughtSignature"].as_str())
+            .expect("第 1 轮的 functionCall 必须带签名");
         // 核心断言：历史第 1 轮绝不能被最新一轮的签名 sig_round_2 覆盖！
         assert_ne!(sig_1, sig_round_2, "历史第 1 轮绝不能被最新签名覆盖");
 
         // 验证：最新一条 model（第 2 轮）
         let model_2_parts = contents[3]["parts"].as_array().unwrap();
         assert_eq!(model_2_parts[0]["thought"], true, "第 2 轮首位必须是思考块");
-        let sig_2 = model_2_parts[0]["thoughtSignature"].as_str().unwrap();
+        assert!(model_2_parts[0].get("thoughtSignature").is_none());
+        let sig_2 = model_2_parts
+            .iter()
+            .find(|p| p.get("functionCall").is_some())
+            .and_then(|p| p["thoughtSignature"].as_str())
+            .expect("第 2 轮的 functionCall 必须带签名");
         // 最新一条 model 应当正确采纳 prev_resp_id 的签名
         assert_eq!(sig_2, sig_round_2, "最新一条 model 应当正确继承上一轮签名");
     }
@@ -3526,7 +3577,7 @@ mod tests {
             .as_str()
             .unwrap();
         assert!(!func_res_str.contains(fake_b64));
-        assert!(func_res_str.contains("[Image: forwarded to Gemini visual input (image/png)]"));
+        assert!(func_res_str.contains("[Image: forwarded to visual input (image/png)]"));
     }
 
     #[test]
@@ -3561,7 +3612,7 @@ mod tests {
         // 验证 description 被规范折叠
         assert_eq!(
             decl["description"],
-            "A complex tool with multi-line descriptions"
+            "A complex tool\nwith multi-line\r\ndescriptions"
         );
 
         // 验证 parameters 保证包含 OBJECT 和 properties: {}

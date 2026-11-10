@@ -2560,13 +2560,14 @@ mod tests {
             "thinkingConfig must be preserved per server-side thinking persistence policy"
         );
 
-        // 验证: 历史 Assistant 消息中补齐了思考块，避免上游 400
+        // 验证: 历史 Assistant 消息本来没有思考块，就不再伪造一个（伪造的块没有合法签名，
+        // 反而会被上游拒绝）；thinkingConfig 仍然保留
         let contents = request["contents"].as_array().expect("Contents array");
         let assistant_msg = &contents[1];
         let parts = assistant_msg["parts"].as_array().expect("Parts array");
         assert!(
-            parts.iter().any(|p| p.get("thought") == Some(&json!(true))),
-            "Assistant message must contain a thinking block"
+            parts.iter().all(|p| p.get("thought") != Some(&json!(true))),
+            "Assistant message without thinking should not have fake thinking injected"
         );
     }
 
@@ -3423,10 +3424,9 @@ mod tests {
         let assistant_parts = contents[1]["parts"].as_array().expect("Assistant parts");
         assert_eq!(assistant_parts.len(), 2);
         assert_eq!(assistant_parts[0]["thought"], true);
-        assert_eq!(
-            assistant_parts[0]["thoughtSignature"],
-            "skip_thought_signature_validator"
-        );
+        // The thinking block is kept, but it never carries a signature: this turn has no
+        // functionCall, and signatures live on functionCall anchors only.
+        assert!(assistant_parts[0].get("thoughtSignature").is_none());
         assert_eq!(
             assistant_parts[0]["text"],
             "Considering the question deeply..."
@@ -3518,11 +3518,13 @@ mod tests {
         let assistant_parts = contents[1]["parts"].as_array().expect("Assistant parts");
         assert_eq!(assistant_parts.len(), 2);
         assert_eq!(assistant_parts[0]["thought"], true);
-        assert_eq!(assistant_parts[0]["thoughtSignature"], real_sig);
+        // Gemini target: the thinking block stays signature-free; the real signature is carried
+        // by the functionCall anchor.
+        assert!(assistant_parts[0].get("thoughtSignature").is_none());
         assert_eq!(assistant_parts[1]["functionCall"]["name"], "list_directory");
-        assert!(
-            assistant_parts[1].get("thoughtSignature").is_none(),
-            "Claude model functionCall must NOT carry thoughtSignature!"
+        assert_eq!(
+            assistant_parts[1]["thoughtSignature"], real_sig,
+            "the real signature must be restored onto the functionCall anchor"
         );
     }
 

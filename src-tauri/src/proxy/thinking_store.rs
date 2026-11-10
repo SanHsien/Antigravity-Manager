@@ -2706,6 +2706,17 @@ pub fn fingerprint(visible: &str, tool_ids: &[String], tool_names: &[String]) ->
 mod tests {
     use super::*;
 
+    /// A 60-char signature that passes `is_likely_gemini_signature` (base64 of a payload whose
+    /// first byte is protobuf tag 0x12). Restore only puts a signature on a functionCall when it
+    /// looks like a genuine Gemini one; anything else (`sig_...`, `"s".repeat(60)`) becomes the
+    /// sentinel. `tag` must be at most 44 ASCII bytes; different tags give different signatures.
+    fn gemini_sig(tag: &str) -> String {
+        use base64::Engine;
+        let mut raw = vec![0x12u8];
+        raw.extend_from_slice(format!("{:0>44}", tag).as_bytes());
+        base64::engine::general_purpose::STANDARD.encode(raw)
+    }
+
     fn rec(thought: &str, visible: &str, tool_id: Option<&str>) -> ThinkingRecord {
         let tool_ids = tool_id.map(|id| vec![id.to_string()]).unwrap_or_default();
         let tool_names = if tool_id.is_some() {
@@ -2721,7 +2732,7 @@ mod tests {
             hasher.update(t_id.as_bytes());
         }
         let hash_hex = format!("{:x}", hasher.finalize());
-        let sig = format!("sig_{:0>56}", &hash_hex[..40]);
+        let sig = gemini_sig(&hash_hex[..40]);
         ThinkingRecord {
             fingerprint: fp,
             thought: thought.to_string(),
@@ -2748,13 +2759,9 @@ mod tests {
             50_000
         );
         assert_eq!(contents[0]["parts"][0]["thought"], true);
-        assert_eq!(
-            contents[0]["parts"][0]["thoughtSignature"]
-                .as_str()
-                .unwrap()
-                .len(),
-            60
-        );
+        // Thought blocks never carry a signature; a text-only turn has no functionCall to anchor one.
+        assert!(contents[0]["parts"][0].get("thoughtSignature").is_none());
+        assert!(contents[0]["parts"][1].get("thoughtSignature").is_none());
     }
 
     #[test]
@@ -2923,15 +2930,14 @@ mod tests {
         // Test Case 6: 有思考、有正文、有多工具并行出来
         let tool_ids = vec!["call_batch_1".to_string(), "call_batch_2".to_string()];
         let tool_names = vec!["read_file".to_string(), "grep_search".to_string()];
+        let real_sig = gemini_sig("parallel");
         let fp = fingerprint("I will read both files in parallel", &tool_ids, &tool_names);
         store.record(
             "t:s2",
             ThinkingRecord {
                 fingerprint: fp,
                 thought: "Parallel execution planned".to_string(),
-                signature: Some(
-                    "sig_parallel_12345678901234567890123456789012345678901234567890".to_string(),
-                ),
+                signature: Some(real_sig.clone()),
                 tool_ids: tool_ids.clone(),
                 tool_names: tool_names.clone(),
                 visible: "I will read both files in parallel".to_string(),
@@ -2961,10 +2967,7 @@ mod tests {
 
         // Index 2: tool 1 承载真实签名
         assert_eq!(parts[2]["functionCall"]["id"], "call_batch_1");
-        assert_eq!(
-            parts[2]["thoughtSignature"],
-            "sig_parallel_12345678901234567890123456789012345678901234567890"
-        );
+        assert_eq!(parts[2]["thoughtSignature"], real_sig);
 
         // Index 3: tool 2 承载哨兵签名 (满足 Google AST 校验且绝不复制 500KB)
         assert_eq!(parts[3]["functionCall"]["id"], "call_batch_2");
@@ -2979,10 +2982,11 @@ mod tests {
             &["call_persisted_999".to_string()],
             &["bash".to_string()],
         );
+        let real_sig = gemini_sig("persisted");
         let rec = ThinkingRecord {
             fingerprint: fp,
             thought: "Thought restored from SQLite".to_string(),
-            signature: Some("sig_persisted_1234567890123456789012345678901234567890".to_string()),
+            signature: Some(real_sig.clone()),
             tool_ids: vec!["call_persisted_999".to_string()],
             tool_names: vec!["bash".to_string()],
             visible: "Persisted visible text".to_string(),
@@ -3018,14 +3022,10 @@ mod tests {
         let parts = contents[0]["parts"].as_array().unwrap();
         assert_eq!(parts[0]["thought"], true);
         assert_eq!(parts[0]["text"], "Thought restored from SQLite");
-        assert_eq!(
-            parts[0]["thoughtSignature"],
-            "sig_persisted_1234567890123456789012345678901234567890"
-        );
-        assert_eq!(
-            parts[2]["thoughtSignature"],
-            "sig_persisted_1234567890123456789012345678901234567890"
-        );
+        assert!(parts[0].get("thoughtSignature").is_none());
+        assert!(parts[1].get("thoughtSignature").is_none());
+        assert_eq!(parts[2]["thoughtSignature"], real_sig);
+        assert_eq!(parts[2]["functionCall"]["id"], "call_persisted_999");
     }
 
     #[test]
@@ -3483,6 +3483,7 @@ mod tests {
     fn placeholder_history_fills_in_order_without_scramble() {
         let store = ThinkingStore::new();
         let key = "t:fill-order";
+        let _ = crate::modules::proxy_db::delete_thinking_records_for_session(key);
         for i in 0..12 {
             store.record(
                 key,
@@ -3516,7 +3517,7 @@ mod tests {
                 "thought must stay at parts[0] for turn {i}"
             );
             assert_eq!(parts[0]["text"], format!("THOUGHT-BLOCK-{i}"));
-            assert_eq!(parts[0]["thoughtSignature"].as_str().unwrap().len(), 60);
+            assert!(parts[0].get("thoughtSignature").is_none());
             assert_eq!(parts[1]["text"], format!("answer {i}"));
             assert_eq!(parts[2]["functionCall"]["id"], format!("call_{i}"));
             assert_eq!(parts[2]["functionCall"]["args"]["n"], i);
@@ -3744,14 +3745,14 @@ mod tests {
         let store = ThinkingStore::new();
         let key = "t:sqlite-fallback-test";
         let tool_id = "call_fallback_999";
-        let real_sig = "s".repeat(60);
+        let real_sig = gemini_sig("sqlite-fallback");
 
         // 1. 模拟旧轮次已持久化入库 SQLite（但在内存缓存中已被淘汰或未命中）
         crate::modules::proxy_db::save_thinking_record(
             key,
             "fp_fallback",
             "This thinking was retrieved directly from SQLite!",
-            Some(&real_sig),
+            Some(real_sig.as_str()),
             &[tool_id.to_string()],
             &[],
             "some visible",
@@ -3877,7 +3878,7 @@ mod tests {
             acc.ingest_part(&json!({
                 "text": format!("Thought turn {i}"),
                 "thought": true,
-                "thoughtSignature": format!("sig_{:0>60}", i)
+                "thoughtSignature": gemini_sig(&i.to_string())
             }));
             acc.ingest_part(&json!({
                 "functionCall": { "name": "bash", "args": { "step": i } }
@@ -3913,10 +3914,14 @@ mod tests {
                 format!("Thought turn {step}"),
                 "Turn {step} must strictly match its own thought without phase shift"
             );
+            assert!(
+                parts[0].get("thoughtSignature").is_none(),
+                "Turn {step} thought block must not carry a signature"
+            );
             assert_eq!(
-                parts[0]["thoughtSignature"],
-                format!("sig_{:0>60}", step),
-                "Turn {step} must strictly match its own thoughtSignature"
+                parts[1]["thoughtSignature"],
+                gemini_sig(&step.to_string()),
+                "Turn {step} must strictly match its own thoughtSignature on the functionCall anchor"
             );
         }
 
@@ -4135,7 +4140,8 @@ mod tests {
             Some("claude-opus-4-6-thinking"),
         );
 
-        // 终审把关：没有合法 Claude 签名的思考块安全降级为普通 text，绝不报 400 签名错误
+        // 终审把关：没有合法 Claude 签名的思考块被整块移除（不发 thought: true，也不把
+        // 异构模型的思考文本降级成正文），绝不报 400 签名错误
         let final_parts = contents[1]["parts"].as_array().unwrap();
         let has_thought_block = final_parts
             .iter()
@@ -4145,11 +4151,17 @@ mod tests {
             "Claude turn must NOT have thought: true when thinking lacked a genuine Claude signature"
         );
         assert!(
+            !final_parts.iter().any(|p| p
+                .get("text")
+                .and_then(|t| t.as_str())
+                .is_some_and(|s| s.contains("Thought generated by Gemini"))),
+            "Gemini thinking text must not leak into a Claude turn as visible text"
+        );
+        assert!(
             final_parts
                 .iter()
-                .any(|p| p.get("text").and_then(|t| t.as_str())
-                    == Some("Thought generated by Gemini")),
-            "Original thinking content must be safely preserved as text in conversation history"
+                .any(|p| p.get("text").and_then(|t| t.as_str()) == Some("Gemini visible text")),
+            "The visible answer must be kept"
         );
     }
 
@@ -4465,7 +4477,13 @@ mod tests {
         let visible_answer = "Running bash tool.";
 
         // 1. 模拟 OpenAI 协议下生成的工具调用（带有 client_tool_id）
-        let mut acc = TurnAccumulator::with_anchor("user-root-anchor");
+        // The anchor is derived from the preceding user turn, exactly as the restore path does.
+        let user_turn = json!({
+            "role": "user",
+            "parts": [{ "text": "List the files" }]
+        });
+        let anchor = compute_causal_anchor(Some(&user_turn));
+        let mut acc = TurnAccumulator::with_anchor(&anchor);
         acc.ingest_part(&json!({
             "thought": true,
             "text": thought_text,
@@ -4484,10 +4502,7 @@ mod tests {
         // 2. 模拟用户切换到了原生 Gemini 协议发起后续对话：
         // 原生 Gemini 请求的 contents 中天生没有 id 字段（id: None）！
         let mut gemini_contents = vec![
-            json!({
-                "role": "user",
-                "parts": [{ "text": "List the files" }]
-            }),
+            user_turn,
             json!({
                 "role": "model",
                 "parts": [

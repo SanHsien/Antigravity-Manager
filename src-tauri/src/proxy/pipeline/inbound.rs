@@ -1412,10 +1412,8 @@ mod tests {
         // 1. 首位成功提升为 thought: true 的思考块
         assert_eq!(parts[0]["thought"], true);
         assert_eq!(parts[0]["text"], thought_text);
-        assert_eq!(
-            parts[0]["thoughtSignature"],
-            crate::proxy::thinking_store::SENTINEL_SIGNATURE
-        );
+        // 思考块本身不挂签名（签名只挂在 functionCall 上，这一轮没有工具调用）
+        assert!(parts[0].get("thoughtSignature").is_none());
 
         // 2. 正文部件已干净剔除 <think>...</think> 标签与换行，仅保留真实回答
         assert_eq!(parts[1]["text"], visible_answer);
