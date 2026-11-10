@@ -47,30 +47,46 @@ jobs:
           cd src-tauri
           cargo test --locked --lib --no-run
 
+      # One cargo invocation per test module (explicit test names, --exact), each under its own
+      # `timeout`. A hung or aborting test (stack overflow, endless loop) then costs one batch
+      # instead of the rest of the suite, and the batch is named in batch-status.txt.
       - name: Run whole lib test suite
-        timeout-minutes: 40
+        timeout-minutes: 60
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/probe"
+          out="$RUNNER_TEMP/probe"
+          mkdir -p "$out"
           cd src-tauri
-          set +e
-          # Probe-only: the migrate test is skipped here (it aborted the whole process with a
-          # stack overflow in the first probe) and run in isolation by the next step.
-          cargo test --locked --lib --no-fail-fast -- --test-threads=1 --skip modules::account::tests::test_migrate_data_dir_rename_and_copy 2>&1 | tee "$RUNNER_TEMP/probe/full-lib-test.log"
-          code=${PIPESTATUS[0]}
-          echo "cargo test exit code: $code" | tee "$RUNNER_TEMP/probe/exit-code.txt"
-          exit "$code"
-
-      - name: Run migrate_data_dir test in isolation
-        if: ${{ always() }}
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/probe"
-          cd src-tauri
-          set +e
-          cargo test --locked --lib -- --test-threads=1 modules::account::tests::test_migrate_data_dir_rename_and_copy modules::account::tests::test_nested_dir_detected modules::account::tests::test_copy_dir_recursive_refuses 2>&1 | tee "$RUNNER_TEMP/probe/migrate-isolated.log"
-          exit "${PIPESTATUS[0]}"
+          cargo test --locked --lib -- --list 2>/dev/null | sed -n 's/: test$//p' > "$out/all-tests.txt"
+          echo "listed $(wc -l < "$out/all-tests.txt") tests"
+          sed 's/::[^:]*$//' "$out/all-tests.txt" | sort -u > "$out/batches.txt"
+          : > "$out/full-lib-test.log"
+          : > "$out/batch-status.txt"
+          overall=0
+          while IFS= read -r mod; do
+            awk -v m="$mod" '{ n = $0; sub(/::[^:]*$/, "", n); if (n == m) print $0 }' "$out/all-tests.txt" > "$out/batch-names.txt"
+            split -l 60 -d "$out/batch-names.txt" "$out/batch-chunk-"
+            for chunk in "$out"/batch-chunk-*; do
+              mapfile -t names < "$chunk"
+              echo "=== BATCH $mod (${#names[@]} tests)" | tee -a "$out/full-lib-test.log"
+              timeout 480 cargo test --locked --lib --no-fail-fast -- --test-threads=1 --exact "${names[@]}" > "$out/batch.tmp" 2>&1
+              rc=$?
+              cat "$out/batch.tmp" | tee -a "$out/full-lib-test.log"
+              if [ "$rc" -eq 124 ]; then
+                echo "TIMEOUT $mod (first test in chunk: ${names[0]})" >> "$out/batch-status.txt"
+                taskkill //F //FI "IMAGENAME eq antigravity_tools_lib-*" > /dev/null 2>&1 || true
+                overall=1
+              elif [ "$rc" -ne 0 ]; then
+                echo "FAIL(rc=$rc) $mod" >> "$out/batch-status.txt"
+                overall=1
+              else
+                echo "ok $mod" >> "$out/batch-status.txt"
+              fi
+            done
+            rm -f "$out"/batch-chunk-*
+          done < "$out/batches.txt"
+          echo "overall: $overall" | tee "$out/exit-code.txt"
+          exit "$overall"
 
       - name: Summarize failures
         if: ${{ always() }}
@@ -80,7 +96,7 @@ jobs:
           if [ -f "$log" ]; then
             grep -E '^test .* \.\.\. (FAILED|ignored)' "$log" | sort > "$RUNNER_TEMP/probe/failed-and-ignored.txt" || true
             grep -E '^test .* \.\.\. FAILED' "$log" | sort > "$RUNNER_TEMP/probe/failed.txt" || true
-            grep -E '^test result:' "$log" > "$RUNNER_TEMP/probe/result.txt" || true
+            grep -E '^test result:' "$log" | awk '{p+=$4; f+=$6; i+=$8} END {print "passed=" p " failed=" f " ignored=" i}' > "$RUNNER_TEMP/probe/result.txt" || true
             {
               echo '## Full lib test probe'
               echo
@@ -89,6 +105,10 @@ jobs:
               echo '### FAILED'
               echo '```'
               cat "$RUNNER_TEMP/probe/failed.txt" 2>/dev/null
+              echo '```'
+              echo '### TIMEOUT / non-zero batches'
+              echo '```'
+              grep -v '^ok ' "$RUNNER_TEMP/probe/batch-status.txt" 2>/dev/null
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           else
