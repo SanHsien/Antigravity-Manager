@@ -54,7 +54,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/probe"
           cd src-tauri
           set +e
-          cargo test --locked --lib -- --test-threads=1 --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/probe/full-lib-test.log"
+          cargo test --locked --lib --no-fail-fast -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/probe/full-lib-test.log"
           code=${PIPESTATUS[0]}
           echo "cargo test exit code: $code" | tee "$RUNNER_TEMP/probe/exit-code.txt"
           exit "$code"
