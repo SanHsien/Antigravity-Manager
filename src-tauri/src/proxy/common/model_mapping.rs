@@ -499,10 +499,15 @@ mod tests {
             map_claude_model_to_gemini("gemini-3.1-pro-low"),
             "gemini-3.1-pro-low"
         );
-        // Generic aliases still map to preview entrypoint.
+        // Generic aliases map to the 3.1 preview entrypoint: the legacy 3-pro ids are
+        // redirected like gemini-3-pro-high -> gemini-pro-agent (see the redirect table).
         assert_eq!(
             map_claude_model_to_gemini("gemini-3-pro"),
-            "gemini-3-pro-preview"
+            "gemini-3.1-pro-preview"
+        );
+        assert_eq!(
+            map_claude_model_to_gemini("gemini-3-pro-preview"),
+            "gemini-3.1-pro-preview"
         );
         assert_eq!(
             map_claude_model_to_gemini("gemini-3.1-pro"),

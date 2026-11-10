@@ -36,18 +36,17 @@
 
 ## 3）当前 Gemini Pro 内置映射策略
 
-当前策略是：具体模型 ID 直接透传；只有泛别名会归一化。
+当前策略（以 `map_claude_model_to_gemini` 为准）：`-low` 与 3.1 preview 直接透传；`-high` 与旧版 3-pro 泛别名会重定向。
 
-具体 ID（不做跨版本强制改写）：
-- `gemini-3-pro-high -> gemini-3-pro-high`
+- `gemini-3-pro-high -> gemini-pro-agent`
+- `gemini-3.1-pro-high -> gemini-pro-agent`
 - `gemini-3-pro-low -> gemini-3-pro-low`
-- `gemini-3-pro-preview -> gemini-3-pro-preview`
-- `gemini-3.1-pro-high -> gemini-3.1-pro-high`
 - `gemini-3.1-pro-low -> gemini-3.1-pro-low`
 - `gemini-3.1-pro-preview -> gemini-3.1-pro-preview`
 
-泛别名（仍映射到 preview 入口）：
-- `gemini-3-pro -> gemini-3-pro-preview`
+泛别名与旧 preview（映射到 3.1 preview 入口）：
+- `gemini-3-pro -> gemini-3.1-pro-preview`
+- `gemini-3-pro-preview -> gemini-3.1-pro-preview`
 - `gemini-3.1-pro -> gemini-3.1-pro-preview`
 
 代码位置：
@@ -103,7 +102,7 @@
 
 示例 C（泛别名）：
 - 请求：`gemini-3-pro`
-- 静态阶段先映射为：`gemini-3-pro-preview`
+- 静态阶段先映射为：`gemini-3.1-pro-preview`
 - 动态阶段再根据账号可用模型决定是否继续回退。
 
 ## 7）设计目标
