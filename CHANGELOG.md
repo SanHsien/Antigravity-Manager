@@ -8,6 +8,7 @@
         -   **[硬配額重試]** 整個帳號池都回「配額已耗盡」後，第二輪起改走線性退避，不再每次重試都 50ms 空轉（移植上游 `4e00a667` 的 `attempt < pool_size` 條件；REVIEW 第 29 節 4-b）。
         -   **[Claude 原地重試上限]** Claude 端點對同一個冷卻中的帳號，每個請求最多原地小等重試一次，之後改走輪換或退避，不再在第二輪反覆對同一帳號原地重試（沿用 Gemini／OpenAI 端點已有的 `RequestRetryState`；REVIEW 第 31 節 14-a）。
         -   **[單帳號 429 重試上限]** 帳號池只有一個帳號時，Gemini／OpenAI 端點遇到持續 429 不再無限原地重試同一帳號：每個請求原地小等一次，之後最多 3 次固定退避就回 429（與上游一致；REVIEW 第 31 節 14-a 後續發現）。
+        -   **[OpenCode 供應商移除限制]** 移除 OpenCode 供應商只允許本功能建立的 `apikey-fun` 與 `apikey-fun-*`；`anthropic`、`openai` 等不屬於本功能的供應商現在會被拒絕，不會再從使用者的 OpenCode 設定中被刪掉。
         -   **[Gemini 認證與隱私]** 代理路由接受 `?key=`，管理端點仍要求標頭認證；監控與 IP 日誌移除 query key，包含編碼後的參數名稱（`d1611b8e`；REVIEW 00.2 P3）。
         -   **[會話與工具相容性]** 短文字、圖片與含 `[System` 的訊息維持穩定會話指紋；強制 Claude 工具呼叫時移除衝突的 thinkingConfig；thought 簽名查詢改為比對解壓後文字，UTF-8 摘要不再切斷字元（`2a6c8ee2`、`b75f4075`、`2fa371d7`、`78d7cce2`、`10b40189`；REVIEW 00.2 P5／P9／P13）。
         -   **[錯誤與串流收尾]** Claude 最後一次失敗為其他錯誤時不再誤報 429；OpenAI Chat 串流僅在已收到 usage、但缺 finishReason 時補齊終態（`ae762fb1`、`f7509ad9`、`fe3313ea`；REVIEW 00.2 P10、P6）。

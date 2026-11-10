@@ -1557,6 +1557,10 @@ pub fn sync_opencode_config(
 
 /// Provider ids become JSON keys in opencode.json and are accepted over the admin
 /// HTTP API, so restrict them to a safe charset.
+/// Provider ids this feature creates per API key are `apikey-fun` or `apikey-fun-<suffix>`;
+/// only those may be removed again, and only those get the "belongs to another key" check.
+const MANAGED_PROFILE_PREFIX: &str = "apikey-fun";
+
 fn validate_provider_id(provider_id: &str) -> Result<(), String> {
     if provider_id.is_empty() {
         return Err("OpenCode provider id is required".to_string());
@@ -1649,7 +1653,7 @@ fn sync_openai_provider_to_path(
         Err(error) => return Err(format!("Failed to read OpenCode config: {}", error)),
     };
 
-    if provider_id.starts_with("apikey-fun-") {
+    if provider_id.starts_with(&format!("{}-", MANAGED_PROFILE_PREFIX)) {
         if let Some(existing) = config.get("provider").and_then(|p| p.get(provider_id)) {
             let existing_key = existing
                 .get("options")
@@ -2833,13 +2837,13 @@ mod tests {
     fn test_profile_collision_leaves_config_unchanged() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join(OPENCODE_CONFIG_FILE);
-        let original =
-            r#"{"provider":{"custom-provider-abcdef":{"options":{"apiKey":"first-key"}}}}"#;
+        // Only `apikey-fun-*` profiles are guarded against being taken over by another key.
+        let original = r#"{"provider":{"apikey-fun-abcdef":{"options":{"apiKey":"first-key"}}}}"#;
         fs::write(&path, original).unwrap();
         let error = sync_openai_provider_to_path(
             &path,
-            "custom-provider-abcdef",
-            "Custom Provider",
+            "apikey-fun-abcdef",
+            "APIKEY.FUN",
             "https://api.example.com",
             "second-key",
             None,
@@ -4222,6 +4226,17 @@ pub fn remove_opencode_provider(provider_id: &str) -> Result<(), String> {
         return Err(format!(
             "Provider '{}' is reserved and cannot be removed; use clear instead",
             ANTIGRAVITY_PROVIDER_ID
+        ));
+    }
+
+    // Only profiles managed by this feature may be removed. Without this check any caller could
+    // delete an unrelated provider (anthropic, openai, ...) from the user's OpenCode config.
+    if provider_id != MANAGED_PROFILE_PREFIX
+        && !provider_id.starts_with(&format!("{}-", MANAGED_PROFILE_PREFIX))
+    {
+        return Err(format!(
+            "Provider '{}' is not managed by Antigravity-Manager and cannot be removed",
+            provider_id
         ));
     }
 
