@@ -1773,7 +1773,7 @@ mod tests {
     }
 
     #[test]
-    fn tiered_flash_ignores_client_effort_and_keeps_include_thoughts_only() {
+    fn tiered_flash_maps_client_effort_to_gateway_levels() {
         let _lock = crate::proxy::config::TEST_CONFIG_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -1834,6 +1834,9 @@ mod tests {
         let _lock = crate::proxy::config::TEST_CONFIG_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        crate::proxy::config::update_thinking_budget_config(
+            crate::proxy::config::ThinkingBudgetConfig::default(),
+        );
         // 1. 启发式模型忽略客户端 reasoning_effort
         let req_high: OpenAIRequest = serde_json::from_value(json!({
             "model": "gemini-3.7-flash-high",
@@ -3361,6 +3364,7 @@ mod tests {
             .expect("第 1 轮的 functionCall 必须带签名");
         // 核心断言：历史第 1 轮绝不能被最新一轮的签名 sig_round_2 覆盖！
         assert_ne!(sig_1, sig_round_2, "历史第 1 轮绝不能被最新签名覆盖");
+        assert_eq!(sig_1, sig_round_1, "历史第 1 轮必须保留自己工具的专属签名");
 
         // 验证：最新一条 model（第 2 轮）
         let model_2_parts = contents[3]["parts"].as_array().unwrap();
@@ -3609,7 +3613,7 @@ mod tests {
         let func_decls = tools[0]["functionDeclarations"].as_array().unwrap();
         let decl = &func_decls[0];
 
-        // 验证 description 被规范折叠
+        // 验证 description 原样保留（换行不被折叠）
         assert_eq!(
             decl["description"],
             "A complex tool\nwith multi-line\r\ndescriptions"

@@ -355,7 +355,7 @@ mod stress_tests {
         is_ip_in_blacklist, remove_from_blacklist, save_ip_access_log, IpAccessLog,
     };
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     /// 辅助函数：清理测试环境
     fn cleanup_test_data() {
@@ -406,11 +406,13 @@ mod stress_tests {
             !is_ip_in_blacklist("stress.absent.0.0.0").expect("lookup must succeed"),
             "an address that was never added must not match"
         );
-        assert_eq!(
-            get_blacklist().expect("list blacklist").len(),
-            count as usize,
-            "every entry must have been stored"
-        );
+        // security.db is shared with other tests and real data: count only this test's own entries.
+        let stored = get_blacklist()
+            .expect("list blacklist")
+            .iter()
+            .filter(|entry| entry.ip_pattern.starts_with("stress."))
+            .count();
+        assert_eq!(stored, count as usize, "every entry must have been stored");
 
         cleanup_test_data();
     }

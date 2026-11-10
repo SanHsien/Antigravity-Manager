@@ -1156,9 +1156,10 @@ mod test_fixes {
 
     #[test]
     fn test_wrap_request_with_signature() {
-        // The wrapper is a pure wire pass-through for functionCall signatures: it keeps what the
-        // client sent (see the snake_case test below) and never invents one. Back-filling a missing
-        // signature from the session cache or the sentinel is the inbound pipeline's job.
+        // A functionCall lives in a model turn. wrap_request runs the inbound thinking pipeline, which
+        // gives every model-turn functionCall a signature: a cached genuine one, else the sentinel.
+        // (A functionCall placed in a user turn is not touched, which is why this fixture uses
+        // role "model".)
         let session_id = "test-session-sig";
         let signature = "test-signature-must-be-longer-than-fifty-characters-to-be-cached-by-signature-cache-12345"; // > 50 chars
         crate::proxy::SignatureCache::global().cache_session_signature(
@@ -1170,7 +1171,7 @@ mod test_fixes {
         let body = json!({
             "model": "gemini-pro",
             "contents": [{
-                "role": "user",
+                "role": "model",
                 "parts": [{
                     "functionCall": {
                         "name": "get_weather",
@@ -1181,12 +1182,20 @@ mod test_fixes {
         });
 
         let result = wrap_request(&body, "proj", "gemini-pro", None, Some(session_id), None);
-        let part = &result["request"]["contents"][0]["parts"][0];
-        assert_eq!(part["functionCall"]["name"], "get_weather");
+        let part = result["request"]["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["parts"].as_array().into_iter().flatten())
+            .find(|p| p.get("functionCall").is_some())
+            .expect("the functionCall part must survive");
+        let injected_sig = part["thoughtSignature"]
+            .as_str()
+            .expect("a model-turn functionCall must get a thoughtSignature");
         assert!(
-            part.get("thoughtSignature").is_none(),
-            "the wrapper must not back-fill a signature the client did not send, got {:?}",
-            part.get("thoughtSignature")
+            injected_sig == signature
+                || injected_sig == crate::proxy::thinking_store::SENTINEL_SIGNATURE,
+            "unexpected signature {injected_sig:?}"
         );
     }
 

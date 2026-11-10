@@ -1555,12 +1555,12 @@ pub fn sync_opencode_config(
     Ok(())
 }
 
-/// Provider ids become JSON keys in opencode.json and are accepted over the admin
-/// HTTP API, so restrict them to a safe charset.
 /// Provider ids this feature creates per API key are `apikey-fun` or `apikey-fun-<suffix>`;
 /// only those may be removed again, and only those get the "belongs to another key" check.
 const MANAGED_PROFILE_PREFIX: &str = "apikey-fun";
 
+/// Provider ids become JSON keys in opencode.json and are accepted over the admin
+/// HTTP API, so restrict them to a safe charset.
 fn validate_provider_id(provider_id: &str) -> Result<(), String> {
     if provider_id.is_empty() {
         return Err("OpenCode provider id is required".to_string());
