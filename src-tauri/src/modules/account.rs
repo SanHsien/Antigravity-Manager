@@ -213,7 +213,7 @@ mod tests {
         fs::create_dir_all(&other).unwrap();
         let alias = base.path().join("alias");
         if !make_dir_link(&alias, &real) {
-            eprintln!("skipping: cannot create a directory link here");
+            eprintln!("SKIPPED test_directory_identity_sees_through_a_second_spelling: cannot create a directory link here (this run did NOT verify link aliases)");
             return;
         }
 
@@ -244,7 +244,7 @@ mod tests {
         let local = base.path().to_string_lossy().to_string();
         let bytes = local.as_bytes();
         if bytes.len() < 4 || bytes[1] != b':' || bytes[2] != b'\\' {
-            eprintln!("skipping: temp dir is not on a drive letter");
+            eprintln!("SKIPPED test_loopback_share_alias_is_the_same_directory: temp dir is not on a drive letter (this run did NOT verify share aliases)");
             return;
         }
         let unc = PathBuf::from(format!(
@@ -253,7 +253,7 @@ mod tests {
             &local[2..]
         ));
         if !unc.is_dir() {
-            eprintln!("skipping: the local admin share is not reachable");
+            eprintln!("SKIPPED test_loopback_share_alias_is_the_same_directory: the local admin share is not reachable (this run did NOT verify share aliases)");
             return;
         }
         fs::write(base.path().join("marker.txt"), "hello").unwrap();
@@ -314,12 +314,18 @@ mod tests {
         // `source_chain` says `inner` is one of the directories being copied. A destination
         // that turns out to be that same directory (however it was reached) must stop the
         // copy instead of feeding on what it writes.
-        let mut chain = vec![same_file::Handle::from_path(&inner).unwrap()];
+        let mut chain = vec![open_dir_handle(&inner).unwrap()];
+        fs::write(sibling.path().join("payload.txt"), "payload").unwrap();
         let err = copy_dir_checked(sibling.path(), &inner, &mut chain).expect_err("must stop");
         assert!(err.contains("自身内部"), "unexpected error: {err}");
+        assert_eq!(
+            fs::read_dir(&inner).unwrap().count(),
+            1,
+            "the refusal comes before anything is written into the destination"
+        );
 
         // A source directory that is already in the chain is a loop in the source tree.
-        let mut chain = vec![same_file::Handle::from_path(sibling.path()).unwrap()];
+        let mut chain = vec![open_dir_handle(sibling.path()).unwrap()];
         let err = copy_dir_checked(sibling.path(), &outer.path().join("out"), &mut chain)
             .expect_err("loop");
         assert!(err.contains("循环"), "unexpected error: {err}");
@@ -1136,12 +1142,31 @@ enum DirRelation {
     Inside,
 }
 
+/// Open a directory only to learn its identity. On Windows the handle asks for
+/// FILE_READ_ATTRIBUTES (not GENERIC_READ), so an ancestor that may be traversed but not
+/// listed can still be identified; `same_file::Handle::from_path` would be refused there.
+fn open_dir_handle(path: &Path) -> std::io::Result<same_file::Handle> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let file = fs::OpenOptions::new()
+            .access_mode(0x80) // FILE_READ_ATTRIBUTES
+            .custom_flags(0x0200_0000) // FILE_FLAG_BACKUP_SEMANTICS (open directories)
+            .open(path)?;
+        same_file::Handle::from_file(file)
+    }
+    #[cfg(not(windows))]
+    {
+        same_file::Handle::from_path(path)
+    }
+}
+
 /// Whether `a` and `b` are the same directory on disk (volume + file id on Windows,
 /// device + inode elsewhere). A path that is not there is a different directory from any
 /// existing one (`Ok(false)`); any other failure to open either side is an error, never a
 /// guess, because "cannot tell" must stop a move that ends in deleting the source.
 fn same_directory_entity(a: &Path, b: &Path) -> Result<bool, String> {
-    let open = |p: &Path| match same_file::Handle::from_path(p) {
+    let open = |p: &Path| match open_dir_handle(p) {
         Ok(handle) => Ok(Some(handle)),
         Err(e) if is_missing_path_error(&e) => Ok(None),
         Err(e) => Err(format!("无法确认目录身份 {}: {}", p.display(), e)),
@@ -1243,16 +1268,33 @@ fn copy_dir_checked(
     dst: &Path,
     source_chain: &mut Vec<same_file::Handle>,
 ) -> Result<(), String> {
-    let src_id = same_file::Handle::from_path(src)
+    let src_id = open_dir_handle(src)
         .map_err(|e| format!("无法确认来源数据目录身份 {}: {}", src.display(), e))?;
     if source_chain.contains(&src_id) {
         return Err("来源数据目录存在循环，已停止复制".to_string());
     }
+    // Decide on the destination's identity before creating anything: a destination that
+    // already exists and is a source directory must stop the copy without a single write.
+    let overlaps = |dst_id: &same_file::Handle| dst_id == &src_id || source_chain.contains(dst_id);
+    let existed = match open_dir_handle(dst) {
+        Ok(dst_id) => {
+            if overlaps(&dst_id) {
+                return Err("不能把数据目录复制到自身内部".to_string());
+            }
+            true
+        }
+        Err(e) if is_missing_path_error(&e) => false,
+        Err(e) => return Err(format!("无法确认目标数据目录身份 {}: {}", dst.display(), e)),
+    };
     fs::create_dir_all(dst).map_err(|e| format!("创建目标数据目录失败: {}", e))?;
-    let dst_id = same_file::Handle::from_path(dst)
-        .map_err(|e| format!("无法确认目标数据目录身份 {}: {}", dst.display(), e))?;
-    if dst_id == src_id || source_chain.contains(&dst_id) {
-        return Err("不能把数据目录复制到自身内部".to_string());
+    if !existed {
+        // Just created: it cannot be an old source directory, but if a link on the way made
+        // it one, say so instead of copying into it.
+        let dst_id = open_dir_handle(dst)
+            .map_err(|e| format!("无法确认目标数据目录身份 {}: {}", dst.display(), e))?;
+        if overlaps(&dst_id) {
+            return Err("不能把数据目录复制到自身内部".to_string());
+        }
     }
     source_chain.push(src_id);
     for entry in fs::read_dir(src).map_err(|e| format!("读取原数据目录失败: {}", e))? {
