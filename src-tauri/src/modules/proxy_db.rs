@@ -964,57 +964,67 @@ pub fn load_thinking_by_signature(
     }
 }
 
-/// 为 UI 展示层兜底提供：按会话查找最新记录中的权威签名 (支持带租户前缀的容错匹配)
-pub fn lookup_latest_thinking_signature(session_id: &str) -> Option<String> {
-    if session_id.trim().is_empty() {
+/// 为 UI 展示层兜底提供：按会话查找最新记录中的权威签名。
+///
+/// `session_key` 必须是写入时的完整 `store_key`（`<tenant>:<client id>`），只做精确比对：
+/// 不接受裸 session id，也不做后缀匹配，否则别的租户同尾码的会话会被一并命中。
+pub fn lookup_latest_thinking_signature(session_key: &str) -> Option<String> {
+    let session_key = session_key.trim();
+    if session_key.is_empty() {
         return None;
     }
     let conn = thinking_db().ok()?;
-    let suffix = format!("%:{}", session_id.trim());
     conn.query_row(
-        "SELECT signature FROM thinking_records 
-         WHERE (session_key = ?1 OR session_key LIKE ?2) 
-           AND signature IS NOT NULL 
+        "SELECT signature FROM thinking_records
+         WHERE session_key = ?1 AND signature IS NOT NULL
          ORDER BY id DESC LIMIT 1",
-        rusqlite::params![session_id.trim(), suffix],
+        rusqlite::params![session_key],
         |r| r.get(0),
     )
     .ok()
 }
 
-/// Number of most recent signed thinking records scanned by
+/// Number of most recent signed thinking records of one session scanned by
 /// `lookup_signature_by_thought_snippet`.
 const SNIPPET_LOOKUP_SCAN_LIMIT: usize = 50;
 
-/// 为 UI 展示层兜底提供：按思考内容片段模糊查找权威签名
+/// 为 UI 展示层兜底提供：在**同一个会话**内按思考内容片段查找权威签名
+///
+/// `session_key` 是完整 `store_key`；没有可信的会话键就不查（回 `None`），绝不退回对全域最新
+/// 记录的片段搜索：两个会话的思考常以相同的开头起笔，全域搜索会把别的会话（甚至别的租户）的
+/// 签名写进这笔日志。
 ///
 /// Thoughts at or above `MIN_GZIP_THOUGHT` are stored as gzip BLOBs (and short ones carry a
 /// magic prefix), so a SQL `LIKE` on the column can never match their plain text. Scan the
-/// newest signed records and match on the unpacked text instead.
-pub fn lookup_signature_by_thought_snippet(snippet: &str) -> Option<String> {
+/// newest signed records of the session and match on the unpacked text instead.
+pub fn lookup_signature_by_thought_snippet(session_key: &str, snippet: &str) -> Option<String> {
+    let session_key = session_key.trim();
     let clean = snippet.trim();
-    if clean.is_empty() {
+    if session_key.is_empty() || clean.is_empty() {
         return None;
     }
     let conn = thinking_db().ok()?;
     let mut stmt = conn
         .prepare_cached(
             "SELECT thought, signature FROM thinking_records
-             WHERE signature IS NOT NULL
-             ORDER BY id DESC LIMIT ?1",
+             WHERE session_key = ?1 AND signature IS NOT NULL
+             ORDER BY id DESC LIMIT ?2",
         )
         .ok()?;
     let rows = stmt
-        .query_map(rusqlite::params![SNIPPET_LOOKUP_SCAN_LIMIT as i64], |r| {
-            // Legacy rows may still hold TEXT; accept both TEXT and BLOB.
-            let thought = match r.get_ref(0)? {
-                rusqlite::types::ValueRef::Blob(b) => unpack_thought(b),
-                rusqlite::types::ValueRef::Text(t) => unpack_thought(t),
-                _ => String::new(),
-            };
-            let signature: String = r.get(1)?;
-            Ok((thought, signature))
-        })
+        .query_map(
+            rusqlite::params![session_key, SNIPPET_LOOKUP_SCAN_LIMIT as i64],
+            |r| {
+                // Legacy rows may still hold TEXT; accept both TEXT and BLOB.
+                let thought = match r.get_ref(0)? {
+                    rusqlite::types::ValueRef::Blob(b) => unpack_thought(b),
+                    rusqlite::types::ValueRef::Text(t) => unpack_thought(t),
+                    _ => String::new(),
+                };
+                let signature: String = r.get(1)?;
+                Ok((thought, signature))
+            },
+        )
         .ok()?;
     for (thought, signature) in rows.flatten() {
         if thought.contains(clean) {
@@ -1996,18 +2006,104 @@ mod thinking_sqlite_tests {
         .unwrap();
 
         assert_eq!(
-            lookup_signature_by_thought_snippet("needle_in_compressed_thought"),
+            lookup_signature_by_thought_snippet(
+                "sess-gzip-snippet",
+                "needle_in_compressed_thought"
+            ),
             Some(sig_long)
         );
         assert_eq!(
-            lookup_signature_by_thought_snippet("  raw_marker_value  "),
+            lookup_signature_by_thought_snippet("sess-raw-snippet", "  raw_marker_value  "),
             Some(sig_short)
         );
         assert_eq!(
-            lookup_signature_by_thought_snippet("non_existent_snippet_xyz"),
+            lookup_signature_by_thought_snippet("sess-raw-snippet", "non_existent_snippet_xyz"),
             None
         );
-        assert_eq!(lookup_signature_by_thought_snippet("   "), None);
+        assert_eq!(
+            lookup_signature_by_thought_snippet("sess-raw-snippet", "   "),
+            None
+        );
+    }
+
+    #[test]
+    fn thought_snippet_lookup_never_takes_a_signature_from_another_session() {
+        let _dir = TestDataDir::new();
+
+        // Two sessions (here even two tenants) open their thinking with the same words;
+        // session B is the newer one.
+        let opening = "I will inspect the requested files carefully.";
+        let sig_a = "a".repeat(60);
+        let sig_b = "b".repeat(60);
+        save_thinking_record(
+            "tenant-a:sess-a",
+            "fp_a",
+            &format!("{opening} A continues with its own plan."),
+            Some(&sig_a),
+            &[],
+            &[],
+            "visible",
+        )
+        .unwrap();
+        save_thinking_record(
+            "tenant-b:sess-b",
+            "fp_b",
+            &format!("{opening} B continues with something else."),
+            Some(&sig_b),
+            &[],
+            &[],
+            "visible",
+        )
+        .unwrap();
+
+        let snippet = &opening[..32];
+        assert_eq!(
+            lookup_signature_by_thought_snippet("tenant-a:sess-a", snippet),
+            Some(sig_a.clone()),
+            "session A must get its own signature although B's record is newer"
+        );
+        assert_eq!(
+            lookup_signature_by_thought_snippet("tenant-b:sess-b", snippet),
+            Some(sig_b)
+        );
+        // No trusted session key, a bare client id, or an unknown session: nothing.
+        assert_eq!(lookup_signature_by_thought_snippet("", snippet), None);
+        assert_eq!(lookup_signature_by_thought_snippet("   ", snippet), None);
+        assert_eq!(lookup_signature_by_thought_snippet("sess-a", snippet), None);
+        assert_eq!(
+            lookup_signature_by_thought_snippet("tenant-c:sess-a", snippet),
+            None
+        );
+    }
+
+    #[test]
+    fn latest_thinking_signature_lookup_is_exact_and_not_a_suffix_match() {
+        let _dir = TestDataDir::new();
+
+        let sig = "c".repeat(60);
+        save_thinking_record(
+            "tenant-a:sess-latest",
+            "fp_latest",
+            "Some thinking that carries a signature for the latest lookup.",
+            Some(&sig),
+            &[],
+            &[],
+            "visible",
+        )
+        .unwrap();
+
+        assert_eq!(
+            lookup_latest_thinking_signature("tenant-a:sess-latest"),
+            Some(sig)
+        );
+        // A bare client id, another tenant's key and a `%`/`_` pattern must not match.
+        assert_eq!(lookup_latest_thinking_signature("sess-latest"), None);
+        assert_eq!(
+            lookup_latest_thinking_signature("tenant-b:sess-latest"),
+            None
+        );
+        assert_eq!(lookup_latest_thinking_signature("tenant-a:sess-%"), None);
+        assert_eq!(lookup_latest_thinking_signature("  "), None);
     }
 }
 

@@ -1194,6 +1194,26 @@ impl SessionScope {
             store_key,
         }
     }
+
+    /// Rebuild a request's `store_key` from its tenant (see [`tenant_for_headers`]) and
+    /// the client-facing session id the handler echoed back in `X-Session-Id`.
+    ///
+    /// For code that runs outside the handlers (the request monitor) and has only those
+    /// two parts. `None` when either part is blank, so such a caller never has to guess
+    /// a key; the result equals `SessionScope::store_key` for the same request.
+    pub fn store_key_for_client_id(tenant: &str, client_id: &str) -> Option<String> {
+        let (tenant, client_id) = (tenant.trim(), client_id.trim());
+        if tenant.is_empty() || client_id.is_empty() {
+            return None;
+        }
+        Some(format!("{}:{}", tenant, client_id))
+    }
+}
+
+/// The tenant a request belongs to, derived from its credentials. This is the part
+/// `SessionScope` puts in front of the client session id to form the `store_key`.
+pub fn tenant_for_headers(headers: &HeaderMap) -> String {
+    tenant_from_headers(headers)
 }
 
 #[derive(Debug, Default, Clone)]
@@ -3150,6 +3170,28 @@ mod tests {
         let empty_headers = HeaderMap::new();
         let extracted2 = explicit_session_id_with_query(&empty_headers, Some(&body), None);
         assert_eq!(extracted2.as_deref(), Some("meta-conv-888"));
+    }
+
+    #[test]
+    fn store_key_for_client_id_matches_the_handler_scope_and_keeps_tenants_apart() {
+        let mut key_a = HeaderMap::new();
+        key_a.insert("authorization", "Bearer key-a".parse().unwrap());
+        let mut key_b = HeaderMap::new();
+        key_b.insert("authorization", "Bearer key-b".parse().unwrap());
+
+        let scope_a = SessionScope::from_headers(&key_a, "shared-fallback");
+        let rebuilt_a =
+            SessionScope::store_key_for_client_id(&tenant_for_headers(&key_a), &scope_a.client_id);
+        assert_eq!(rebuilt_a.as_deref(), Some(scope_a.store_key.as_str()));
+
+        // The same client id under another credential is a different store_key.
+        let rebuilt_b =
+            SessionScope::store_key_for_client_id(&tenant_for_headers(&key_b), &scope_a.client_id);
+        assert!(rebuilt_b.is_some());
+        assert_ne!(rebuilt_b, rebuilt_a);
+
+        assert_eq!(SessionScope::store_key_for_client_id("tenant", "  "), None);
+        assert_eq!(SessionScope::store_key_for_client_id("", "sess-x"), None);
     }
 
     #[test]

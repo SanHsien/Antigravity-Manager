@@ -358,34 +358,38 @@ fn build_canonical_consolidated_response(
     response_content: String,
     tool_calls: Vec<Value>,
     session_id: Option<&str>,
+    session_store_key: Option<&str>,
     log_id: &str,
     timing_obj: serde_json::Map<String, Value>,
     usage_obj: Option<serde_json::Map<String, Value>>,
 ) -> Value {
-    // 权威网关签名回填：若当前签名为空，尝试通过思考文本片段或会话ID从网关状态机(内存 L1 / SQLite L2 DB 思考持久化)恢复。
-    // 这里不再按工具调用 ID 回填：工具签名缓存按 (store_key, tool_id) 隔离，而日志只带客户端侧的
-    // session_id（不含租户前缀的 store_key），没有稳定的会话键就不能安全地按 tool_id 查找
-    // （客户端会跨会话重用 `call_1` 之类的 ID）。
+    // 权威网关签名回填：若当前签名为空，只在**本请求自己的会话**内从网关状态机(内存 L1 / SQLite L2 DB
+    // 思考持久化)恢复。`session_store_key` 是由请求凭证（租户）与回显的客户端 session id 重建的完整
+    // `store_key`；没有它（日志没带 session id）就不回填，保持空签名。
+    // 不再按工具调用 ID 回填（客户端会跨会话重用 `call_1` 之类的 ID），也不再对全域最新记录做
+    // 思考片段搜索（两个会话常以相同的开头起笔，会把别的会话／租户的签名写进这笔日志），
+    // 也不再用裸 session id 做后缀比对。
     if thinking_signature.is_empty() {
-        // 1. 优先按当前轮次的思考文本片段精准直捞专属签名
-        if !thinking_content.is_empty() {
-            let trimmed = thinking_content.trim();
-            let snippet = thought_snippet_prefix(trimmed);
-            if let Some(sig) =
-                crate::modules::proxy_db::lookup_signature_by_thought_snippet(snippet)
-            {
-                thinking_signature = sig;
+        if let Some(store_key) = session_store_key {
+            // 1. 优先按当前轮次的思考文本片段，在本会话的记录里精准直捞专属签名
+            if !thinking_content.is_empty() {
+                let trimmed = thinking_content.trim();
+                let snippet = thought_snippet_prefix(trimmed);
+                if let Some(sig) = crate::modules::proxy_db::lookup_signature_by_thought_snippet(
+                    store_key, snippet,
+                ) {
+                    thinking_signature = sig;
+                }
             }
-        }
 
-        // 2. 兜底按会话状态机与会话数据库查找最新签名
-        if thinking_signature.is_empty() {
-            if let Some(sid) = session_id {
-                if let Some(sig) = crate::proxy::SignatureCache::global().get_session_signature(sid)
+            // 2. 兜底按本会话的状态机与会话数据库查找最新签名
+            if thinking_signature.is_empty() {
+                if let Some(sig) =
+                    crate::proxy::SignatureCache::global().get_session_signature(store_key)
                 {
                     thinking_signature = sig;
                 } else if let Some(sig) =
-                    crate::modules::proxy_db::lookup_latest_thinking_signature(sid)
+                    crate::modules::proxy_db::lookup_latest_thinking_signature(store_key)
                 {
                     thinking_signature = sig;
                 }
@@ -443,6 +447,7 @@ fn consolidate_non_streaming_response(
     raw_json: &Value,
     log: &ProxyRequestLog,
     headers_map: &serde_json::Map<String, Value>,
+    session_store_key: Option<&str>,
 ) -> Option<Value> {
     // 若本就已是统一的 consolidated 格式 (例如带有顶层 thinking/tool_calls 且无 choices/candidates)，直接返回 None
     if (raw_json.get("thinking").is_some()
@@ -703,6 +708,7 @@ fn consolidate_non_streaming_response(
         response_content,
         tool_calls,
         log.session_id.as_deref(),
+        session_store_key,
         &log.id,
         timing_obj,
         Some(usage_obj),
@@ -743,6 +749,11 @@ pub async fn monitor_middleware(
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string())
         });
+
+    // Tenant of this request (from its credentials), needed later to rebuild the full
+    // `store_key` of the session the handler echoes back; the request itself is consumed
+    // before the response exists.
+    let request_tenant = crate::proxy::thinking_store::tenant_for_headers(request.headers());
 
     let user_agent = request
         .headers()
@@ -890,6 +901,14 @@ pub async fn monitor_middleware(
         .or_else(|| response.headers().get("X-Antigravity-Session-Id"))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
+    // Full tenant-scoped session key for the signature backfill of the condensed response;
+    // `None` when the handler echoed no session id.
+    let session_store_key = session_id.as_deref().and_then(|client_id| {
+        crate::proxy::thinking_store::SessionScope::store_key_for_client_id(
+            &request_tenant,
+            client_id,
+        )
+    });
 
     let monitor = state.monitor.clone();
     let mut log = ProxyRequestLog {
@@ -1440,6 +1459,7 @@ pub async fn monitor_middleware(
                     response_content,
                     tool_calls,
                     log.session_id.as_deref(),
+                    session_store_key.as_deref(),
                     &log.id,
                     timing_obj,
                     if usage_obj.is_empty() {
@@ -1576,9 +1596,12 @@ pub async fn monitor_middleware(
                             .or_else(|| Some(s.to_string()));
                     } else if let Ok(json) = serde_json::from_str::<Value>(&s) {
                         // 🌟 非流式响应入库统一转换为满血简要版 (包含网关权威签名回填与防雪崩确定性 Tool ID)
-                        if let Some(canonical) =
-                            consolidate_non_streaming_response(&json, &log, &headers_map)
-                        {
+                        if let Some(canonical) = consolidate_non_streaming_response(
+                            &json,
+                            &log,
+                            &headers_map,
+                            session_store_key.as_deref(),
+                        ) {
                             log.response_body = serde_json::to_string_pretty(&canonical)
                                 .ok()
                                 .or_else(|| Some(s.to_string()));
@@ -1672,6 +1695,55 @@ mod tests {
         assert!(prefix.len() <= 32);
         assert!(cjk.starts_with(prefix));
         assert_eq!(prefix.chars().count(), 10);
+    }
+
+    #[test]
+    fn condensed_response_backfills_a_signature_only_from_its_own_session() {
+        use crate::proxy::monitor::prompt_log_tests::TestDataDir;
+        let _dir = TestDataDir::new();
+
+        // Two sessions open their thinking with the same words; session B is newer.
+        let opening = "I will inspect the requested files carefully.";
+        let sig_a = "a".repeat(60);
+        let sig_b = "b".repeat(60);
+        for (session, fingerprint, sig) in [
+            ("tenant-a:sess-a", "fp_a", &sig_a),
+            ("tenant-b:sess-b", "fp_b", &sig_b),
+        ] {
+            crate::modules::proxy_db::save_thinking_record(
+                session,
+                fingerprint,
+                &format!("{opening} More reasoning for {session}."),
+                Some(sig.as_str()),
+                &[],
+                &[],
+                "visible",
+            )
+            .unwrap();
+        }
+
+        let build = |store_key: Option<&str>| {
+            super::build_canonical_consolidated_response(
+                format!("{opening} More reasoning for tenant-a:sess-a."),
+                String::new(),
+                "visible".to_string(),
+                Vec::new(),
+                Some("sess-a"),
+                store_key,
+                "log-1",
+                serde_json::Map::new(),
+                None,
+            )
+        };
+
+        let own = build(Some("tenant-a:sess-a"));
+        assert_eq!(own["thinking_signature"], sig_a.as_str());
+        // No trusted session key, or one that belongs to nobody who thought this: no signature,
+        // in particular not the newer record that merely starts with the same words.
+        assert!(build(None).get("thinking_signature").is_none());
+        assert!(build(Some("tenant-c:sess-a"))
+            .get("thinking_signature")
+            .is_none());
     }
 
     use super::next_chunk_while_receiver_open;
