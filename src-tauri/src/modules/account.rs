@@ -136,9 +136,204 @@ mod tests {
             .join("moved");
         assert!(!inner.exists());
         assert!(
-            is_nested_data_dir(&inner, outer.path()),
+            is_nested_data_dir(&inner, outer.path()).unwrap(),
             "a not-yet-existing destination inside the source must be seen as nested"
         );
+    }
+
+    /// Directory link `link` -> `target` without needing elevation (a junction on
+    /// Windows, a symlink elsewhere). `false` when the platform refuses, so a test can skip.
+    fn make_dir_link(link: &Path, target: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(not(any(windows, unix)))]
+        {
+            let _ = (link, target);
+            false
+        }
+    }
+
+    #[test]
+    fn test_path_resolution_only_treats_not_found_as_missing() {
+        let base = TestDataDir::new();
+        let missing = base.path().join("not").join("there").join("yet");
+        // A genuinely missing tail still resolves: deepest existing ancestor + the tail.
+        let resolved = resolve_existing_path(&missing).expect("a missing path is not an error");
+        assert!(resolved.ends_with(Path::new("not").join("there").join("yet")));
+
+        // An error that is not "missing" (here an invalid name with an embedded NUL) says
+        // nothing about whether the path exists. It used to be swallowed and the textual
+        // spelling compared instead; it must now surface, so no nesting verdict is invented.
+        let unresolvable = base.path().join("bad\0name").join("child");
+        assert!(resolve_existing_path(&unresolvable).is_err());
+        assert!(path_compare_key(&unresolvable).is_err());
+        assert!(is_nested_data_dir(&unresolvable, base.path()).is_err());
+        assert!(paths_equivalent(&unresolvable, base.path()).is_err());
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_refuses_when_the_destination_cannot_be_resolved() {
+        let src = TestDataDir::new();
+        fs::write(src.path().join("marker.txt"), "hello").unwrap();
+        let dst = src.path().join("..").join("bad\0name");
+
+        let err = copy_dir_recursive(src.path(), &dst).expect_err("must refuse");
+        assert!(err.contains("无法解析"), "unexpected error: {err}");
+        assert_eq!(
+            fs::read_to_string(src.path().join("marker.txt")).unwrap(),
+            "hello"
+        );
+        assert_eq!(
+            fs::read_dir(src.path()).unwrap().count(),
+            1,
+            "nothing may be created before the refusal"
+        );
+    }
+
+    #[test]
+    fn test_directory_identity_sees_through_a_second_spelling() {
+        let base = TestDataDir::new();
+        let real = base.path().join("real");
+        let other = base.path().join("other");
+        fs::create_dir_all(&real).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        let alias = base.path().join("alias");
+        if !make_dir_link(&alias, &real) {
+            eprintln!("skipping: cannot create a directory link here");
+            return;
+        }
+
+        assert!(same_directory_entity(&real, &alias).unwrap());
+        assert!(!same_directory_entity(&real, &other).unwrap());
+        // A path that is not there is simply a different directory.
+        assert!(!same_directory_entity(&real, &base.path().join("missing")).unwrap());
+
+        // The alias works as an ancestor too: `alias/moved` lies inside `real`.
+        assert_eq!(
+            relate_data_dirs(&alias.join("moved"), &real).unwrap(),
+            DirRelation::Inside
+        );
+        assert_eq!(relate_data_dirs(&alias, &real).unwrap(), DirRelation::Same);
+        assert_eq!(
+            relate_data_dirs(&other.join("moved"), &real).unwrap(),
+            DirRelation::Unrelated
+        );
+    }
+
+    /// The same folder reached as `X:\dir` and as the local admin share `\\localhost\X$\dir`
+    /// spells differently after canonicalisation, so only the directory identity can tell
+    /// they are one directory. Skipped where the share is not reachable.
+    #[cfg(windows)]
+    #[test]
+    fn test_loopback_share_alias_is_the_same_directory() {
+        let base = TestDataDir::new();
+        let local = base.path().to_string_lossy().to_string();
+        let bytes = local.as_bytes();
+        if bytes.len() < 4 || bytes[1] != b':' || bytes[2] != b'\\' {
+            eprintln!("skipping: temp dir is not on a drive letter");
+            return;
+        }
+        let unc = PathBuf::from(format!(
+            "\\\\localhost\\{}${}",
+            char::from(bytes[0]),
+            &local[2..]
+        ));
+        if !unc.is_dir() {
+            eprintln!("skipping: the local admin share is not reachable");
+            return;
+        }
+        fs::write(base.path().join("marker.txt"), "hello").unwrap();
+
+        assert_ne!(
+            path_compare_key(base.path()).unwrap(),
+            path_compare_key(&unc).unwrap(),
+            "the premise: string comparison sees two different spellings"
+        );
+        assert!(same_directory_entity(base.path(), &unc).unwrap());
+        assert_eq!(
+            relate_data_dirs(&unc, base.path()).unwrap(),
+            DirRelation::Same
+        );
+        assert_eq!(
+            relate_data_dirs(&unc.join("moved"), base.path()).unwrap(),
+            DirRelation::Inside
+        );
+        let err = copy_dir_recursive(base.path(), &unc.join("moved")).expect_err("must refuse");
+        assert!(err.contains("自身内部"), "unexpected error: {err}");
+        assert!(!base.path().join("moved").exists());
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_refuses_to_copy_a_directory_onto_itself() {
+        let src = TestDataDir::new();
+        fs::write(src.path().join("marker.txt"), "hello").unwrap();
+
+        let err = copy_dir_recursive(src.path(), src.path()).expect_err("must refuse");
+        assert!(err.contains("同一个"), "unexpected error: {err}");
+        assert_eq!(
+            fs::read_to_string(src.path().join("marker.txt")).unwrap(),
+            "hello",
+            "refusal must leave the files untouched"
+        );
+
+        // The same directory reached through a link is the same directory.
+        let holder = TestDataDir::new();
+        let alias = holder.path().join("alias");
+        if make_dir_link(&alias, src.path()) {
+            let err = copy_dir_recursive(src.path(), &alias).expect_err("must refuse");
+            assert!(err.contains("同一个"), "unexpected error: {err}");
+            assert_eq!(
+                fs::read_to_string(src.path().join("marker.txt")).unwrap(),
+                "hello"
+            );
+        }
+    }
+
+    #[test]
+    fn test_copy_worker_stops_when_the_destination_is_a_directory_being_copied() {
+        let outer = TestDataDir::new();
+        let inner = outer.path().join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(inner.join("marker.txt"), "hello").unwrap();
+        let sibling = TestDataDir::new();
+
+        // `source_chain` says `inner` is one of the directories being copied. A destination
+        // that turns out to be that same directory (however it was reached) must stop the
+        // copy instead of feeding on what it writes.
+        let mut chain = vec![same_file::Handle::from_path(&inner).unwrap()];
+        let err = copy_dir_checked(sibling.path(), &inner, &mut chain).expect_err("must stop");
+        assert!(err.contains("自身内部"), "unexpected error: {err}");
+
+        // A source directory that is already in the chain is a loop in the source tree.
+        let mut chain = vec![same_file::Handle::from_path(sibling.path()).unwrap()];
+        let err = copy_dir_checked(sibling.path(), &outer.path().join("out"), &mut chain)
+            .expect_err("loop");
+        assert!(err.contains("循环"), "unexpected error: {err}");
+        assert!(!outer.path().join("out").exists());
+
+        // An unrelated destination still copies.
+        let mut chain = Vec::new();
+        let target = outer.path().join("copied");
+        copy_dir_checked(&inner, &target, &mut chain).unwrap();
+        assert_eq!(
+            fs::read_to_string(target.join("marker.txt")).unwrap(),
+            "hello"
+        );
+        assert!(chain.is_empty(), "the chain is unwound after a copy");
     }
 
     #[test]
@@ -855,6 +1050,17 @@ fn lexically_clean(path: &Path) -> PathBuf {
     out
 }
 
+/// `true` only for "this path (or a part of it) is not there": the one error for which it is
+/// correct to keep looking for an existing ancestor. Anything else (access denied, invalid
+/// name, I/O failure) says nothing about whether the path exists, so it must not be read as
+/// "does not exist".
+fn is_missing_path_error(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+    )
+}
+
 /// Canonical form of `path`, also for paths that do not exist yet.
 ///
 /// A path that does not exist cannot be canonicalized as a whole, so it used to be returned
@@ -863,35 +1069,51 @@ fn lexically_clean(path: &Path) -> PathBuf {
 /// destination, miss the nesting, and let `copy_dir_recursive` copy a directory into itself
 /// until the stack overflowed. Here the deepest existing ancestor is canonicalized and the
 /// missing tail is appended, so both sides use the same spelling.
-fn resolve_existing_path(path: &Path) -> PathBuf {
+///
+/// Only a NotFound-type error means "missing"; every other `canonicalize` error (for example
+/// access denied on an SMB ancestor) is returned, because falling back to a textual guess
+/// there is exactly how an aliased destination slips past the nesting check.
+fn resolve_existing_path(path: &Path) -> Result<PathBuf, String> {
     let normalized = normalize_data_dir_path(path);
-    if let Ok(canon) = normalized.canonicalize() {
-        return normalize_data_dir_path(canon);
+    match normalized.canonicalize() {
+        Ok(canon) => return Ok(normalize_data_dir_path(canon)),
+        Err(e) if is_missing_path_error(&e) => {}
+        Err(e) => {
+            return Err(format!(
+                "无法解析数据目录路径 {}: {}",
+                normalized.display(),
+                e
+            ))
+        }
     }
 
     let cleaned = lexically_clean(&normalized);
     let mut tail: Vec<std::ffi::OsString> = Vec::new();
     let mut current: &Path = cleaned.as_path();
     loop {
-        if let Ok(canon) = current.canonicalize() {
-            let mut resolved = normalize_data_dir_path(canon);
-            for part in tail.iter().rev() {
-                resolved.push(part);
+        match current.canonicalize() {
+            Ok(canon) => {
+                let mut resolved = normalize_data_dir_path(canon);
+                for part in tail.iter().rev() {
+                    resolved.push(part);
+                }
+                return Ok(resolved);
             }
-            return resolved;
+            Err(e) if is_missing_path_error(&e) => {}
+            Err(e) => return Err(format!("无法解析数据目录路径 {}: {}", current.display(), e)),
         }
         match (current.parent(), current.file_name()) {
             (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
                 tail.push(name.to_os_string());
                 current = parent;
             }
-            _ => return cleaned,
+            _ => return Ok(cleaned),
         }
     }
 }
 
-fn path_compare_key(path: &Path) -> String {
-    let mut s = resolve_existing_path(path)
+fn path_compare_key(path: &Path) -> Result<String, String> {
+    let mut s = resolve_existing_path(path)?
         .to_string_lossy()
         .replace('\\', "/");
     while s.len() > 1 && s.ends_with('/') {
@@ -901,17 +1123,69 @@ fn path_compare_key(path: &Path) -> String {
     {
         s = s.to_ascii_lowercase();
     }
-    s
+    Ok(s)
 }
 
-fn paths_equivalent(a: &Path, b: &Path) -> bool {
-    path_compare_key(a) == path_compare_key(b)
+/// How one directory relates to another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirRelation {
+    Unrelated,
+    /// Same directory (possibly spelled differently).
+    Same,
+    /// `inner` lies strictly below `outer`.
+    Inside,
 }
 
-fn is_nested_data_dir(inner: &Path, outer: &Path) -> bool {
-    let inner_key = path_compare_key(inner);
-    let outer_key = path_compare_key(outer);
-    inner_key != outer_key && inner_key.starts_with(&(outer_key + "/"))
+/// Whether `a` and `b` are the same directory on disk (volume + file id on Windows,
+/// device + inode elsewhere). A path that is not there is a different directory from any
+/// existing one (`Ok(false)`); any other failure to open either side is an error, never a
+/// guess, because "cannot tell" must stop a move that ends in deleting the source.
+fn same_directory_entity(a: &Path, b: &Path) -> Result<bool, String> {
+    let open = |p: &Path| match same_file::Handle::from_path(p) {
+        Ok(handle) => Ok(Some(handle)),
+        Err(e) if is_missing_path_error(&e) => Ok(None),
+        Err(e) => Err(format!("无法确认目录身份 {}: {}", p.display(), e)),
+    };
+    match (open(a)?, open(b)?) {
+        (Some(a), Some(b)) => Ok(a == b),
+        _ => Ok(false),
+    }
+}
+
+/// Relation of `inner` to `outer`. Beyond comparing canonical spellings, the existing
+/// ancestors of `inner` are compared with `outer` by directory identity, so the same folder
+/// reached through another namespace (for example a drive path and a local SMB share) is
+/// still recognised.
+fn relate_data_dirs(inner: &Path, outer: &Path) -> Result<DirRelation, String> {
+    let inner_key = path_compare_key(inner)?;
+    let outer_key = path_compare_key(outer)?;
+    if inner_key == outer_key {
+        return Ok(DirRelation::Same);
+    }
+    if inner_key.starts_with(&(outer_key + "/")) {
+        return Ok(DirRelation::Inside);
+    }
+
+    let resolved_inner = resolve_existing_path(inner)?;
+    let resolved_outer = resolve_existing_path(outer)?;
+    for (depth, ancestor) in resolved_inner.ancestors().enumerate() {
+        if same_directory_entity(ancestor, &resolved_outer)? {
+            return Ok(if depth == 0 {
+                DirRelation::Same
+            } else {
+                DirRelation::Inside
+            });
+        }
+    }
+    Ok(DirRelation::Unrelated)
+}
+
+fn paths_equivalent(a: &Path, b: &Path) -> Result<bool, String> {
+    Ok(relate_data_dirs(a, b)? == DirRelation::Same)
+}
+
+fn is_nested_data_dir(inner: &Path, outer: &Path) -> Result<bool, String> {
+    Ok(relate_data_dirs(inner, outer)? == DirRelation::Inside)
 }
 
 fn persist_clean_env(dir: &Path) {
@@ -939,18 +1213,48 @@ fn write_location_pointer(dir: &Path) -> Result<(), String> {
 }
 
 fn is_default_data_dir(dir: &Path) -> bool {
+    // Only decides whether a location pointer file is written, so "cannot tell" safely
+    // counts as "not the default" (the pointer is then written, never silently dropped).
     default_data_dir()
-        .map(|d| paths_equivalent(&d, dir) || d == dir)
+        .map(|d| paths_equivalent(&d, dir).unwrap_or(false) || d == dir)
         .unwrap_or(false)
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     // Copying a directory into its own subtree never terminates: every level re-lists the
-    // freshly created destination. Refuse before touching the disk.
-    if is_nested_data_dir(dst, src) {
-        return Err("不能把数据目录复制到自身内部".to_string());
+    // freshly created destination. Refuse before touching the disk. Copying a directory onto
+    // itself would overwrite every file with itself, so that is refused too.
+    match relate_data_dirs(dst, src)? {
+        DirRelation::Unrelated => {}
+        DirRelation::Inside => return Err("不能把数据目录复制到自身内部".to_string()),
+        DirRelation::Same => return Err("来源与目标是同一个数据目录".to_string()),
+    }
+    let mut source_chain = Vec::new();
+    copy_dir_checked(src, dst, &mut source_chain)
+}
+
+/// Recursive worker of [`copy_dir_recursive`]. `source_chain` holds the identity of every
+/// source directory currently being copied (outermost first). The destination directory
+/// must never be one of them, and a source subdirectory must never be one of its own
+/// ancestors: either way the copy would feed on what it is writing and never end. Checked on
+/// the real directories, so aliases and links that string comparison cannot see are caught.
+fn copy_dir_checked(
+    src: &Path,
+    dst: &Path,
+    source_chain: &mut Vec<same_file::Handle>,
+) -> Result<(), String> {
+    let src_id = same_file::Handle::from_path(src)
+        .map_err(|e| format!("无法确认来源数据目录身份 {}: {}", src.display(), e))?;
+    if source_chain.contains(&src_id) {
+        return Err("来源数据目录存在循环，已停止复制".to_string());
     }
     fs::create_dir_all(dst).map_err(|e| format!("创建目标数据目录失败: {}", e))?;
+    let dst_id = same_file::Handle::from_path(dst)
+        .map_err(|e| format!("无法确认目标数据目录身份 {}: {}", dst.display(), e))?;
+    if dst_id == src_id || source_chain.contains(&dst_id) {
+        return Err("不能把数据目录复制到自身内部".to_string());
+    }
+    source_chain.push(src_id);
     for entry in fs::read_dir(src).map_err(|e| format!("读取原数据目录失败: {}", e))? {
         let entry = entry.map_err(|e| format!("读取数据目录项失败: {}", e))?;
         let from = entry.path();
@@ -959,7 +1263,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
             .file_type()
             .map_err(|e| format!("读取数据目录项类型失败: {}", e))?;
         if file_type.is_dir() {
-            copy_dir_recursive(&from, &to)?;
+            copy_dir_checked(&from, &to, source_chain)?;
         } else {
             if let Some(parent) = to.parent() {
                 fs::create_dir_all(parent).map_err(|e| format!("创建目标子目录失败: {}", e))?;
@@ -967,6 +1271,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
             fs::copy(&from, &to).map_err(|e| format!("复制文件失败 {}: {}", from.display(), e))?;
         }
     }
+    source_chain.pop();
     Ok(())
 }
 
@@ -1044,13 +1349,16 @@ pub fn migrate_data_dir(new_dir: PathBuf) -> Result<PathBuf, String> {
     };
 
     let old_dir = normalize_data_dir_path(get_data_dir()?);
-    if paths_equivalent(&old_dir, &new_dir) {
-        apply_data_dir(&old_dir)?;
-        return Ok(resolve_existing_path(&old_dir));
-    }
-
-    if is_nested_data_dir(&new_dir, &old_dir) {
-        return Err("不能把数据目录迁移到自身内部".to_string());
+    // Every check below can fail to give an answer (access denied on an ancestor, an
+    // unreadable alias). That is an error, not "no overlap": nothing has been moved yet, and
+    // a wrong "no overlap" ends in copying a tree into itself or deleting the source.
+    match relate_data_dirs(&new_dir, &old_dir)? {
+        DirRelation::Same => {
+            apply_data_dir(&old_dir)?;
+            return resolve_existing_path(&old_dir);
+        }
+        DirRelation::Inside => return Err("不能把数据目录迁移到自身内部".to_string()),
+        DirRelation::Unrelated => {}
     }
 
     if new_dir.exists() {
@@ -1075,7 +1383,9 @@ pub fn migrate_data_dir(new_dir: PathBuf) -> Result<PathBuf, String> {
         return Err("目标路径无效".to_string());
     }
 
-    let resolved = resolve_existing_path(&new_dir);
+    // The data is already in place here; the canonical spelling is only used for the
+    // persisted pointer, so a failure to canonicalize falls back to the path we just filled.
+    let resolved = resolve_existing_path(&new_dir).unwrap_or(new_dir);
     apply_data_dir(&resolved)?;
     Ok(resolved)
 }
