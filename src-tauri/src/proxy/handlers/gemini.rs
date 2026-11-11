@@ -982,7 +982,7 @@ pub async fn handle_generate(
                 crate::proxy::thinking_store::ThinkingStore::global()
                     .purge_corrupted_signatures(&session_id, &mapped_model);
                 // 2. 清理当前 session 的 SignatureCache
-                crate::proxy::SignatureCache::global().delete_session_signature(&client_session_id);
+                crate::proxy::SignatureCache::global().delete_session_signature(&session_id);
                 // 3. 保持同一账号原地重试
                 force_rotate = false;
                 continue;

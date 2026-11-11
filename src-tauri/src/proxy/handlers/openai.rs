@@ -1260,6 +1260,7 @@ data: {"type":"response.failed","response":{"status":"failed","error":{"code":"u
                 String::new(),
                 "gemini-pro-agent".to_string(),
                 "routing-cancelled".to_string(),
+                None,
             )
             .await;
         }));
@@ -2882,7 +2883,7 @@ pub async fn handle_chat_completions(
                 crate::proxy::thinking_store::ThinkingStore::global()
                     .purge_corrupted_signatures(&session_id, &mapped_model);
                 // 2. 清理当前 session 的 SignatureCache
-                crate::proxy::SignatureCache::global().delete_session_signature(&client_session_id);
+                crate::proxy::SignatureCache::global().delete_session_signature(&session_id);
                 // 3. 保持同一账号原地重试
                 force_rotate = false;
                 continue;
@@ -3148,6 +3149,10 @@ pub async fn handle_completions(
         std::collections::HashMap::new();
     let mut session_parent = None;
     let mut stored_routing_session_id = None;
+    // Session-signature key the server recorded for the parent response (never the
+    // client's `previous_response_id` string); validated against the requester's tenant
+    // below before it may be used for a lookup.
+    let mut stored_parent_signature_key: Option<String> = None;
     let mut session_delta_input = Vec::new();
     if is_codex_style {
         let mut existing_input = body
@@ -3166,6 +3171,7 @@ pub async fn handle_completions(
                 crate::proxy::http_session_store::get_session_with_parent(prev_id).await
             {
                 stored_routing_session_id = Some(parent.routing_session_id().to_string());
+                stored_parent_signature_key = parent.signature_key().map(str::to_string);
                 let prepared = crate::proxy::http_session_store::prepare_session_input_with_storage(
                     session.input_items,
                     existing_input,
@@ -3216,7 +3222,6 @@ pub async fn handle_completions(
         stored_routing_session_id.as_deref(),
         &response_id_for_save,
     );
-    let signature_read_key = previous_response_id.clone();
 
     let mut bounded_session_input = None;
 
@@ -3845,13 +3850,14 @@ pub async fn handle_completions(
     openai_req.session_id = Some(session_scope.store_key.clone());
     let session_id_str = session_scope.store_key.clone();
     let client_session_id = session_scope.client_id.clone();
-    let signature_session_id_str = if is_responses_api {
-        previous_response_id
-            .clone()
-            .unwrap_or_else(|| response_id_for_save.clone())
-    } else {
-        session_id_str.clone()
-    };
+    // A Responses request may read the session signature of its parent turn, but only
+    // under the key the server recorded for that parent and only within the requester's
+    // own tenant. An unknown / forged / foreign `previous_response_id` yields `None`, so
+    // no signature of another session can be pulled in through it.
+    let signature_read_key = crate::proxy::signature_cache::trusted_parent_signature_key(
+        stored_parent_signature_key.as_deref(),
+        &session_id_str,
+    );
 
     let client_tool_names =
         crate::proxy::mappers::openai::request::extract_client_tool_names(&openai_req.tools);
@@ -3998,7 +4004,7 @@ pub async fn handle_completions(
                 &openai_req,
                 &trace_id,
                 &token_manager_clone,
-                &signature_session_id_str,
+                &session_id_str,
             )
             .await
             {
@@ -4461,6 +4467,7 @@ pub async fn handle_completions(
                         let save_instructions = session_save_instructions;
                         let save_model = openai_req.model.clone();
                         let rid = response_id_for_save.clone();
+                        let save_signature_key = session_id_str.clone();
                         tokio::spawn(async move {
                             if let Ok((outputs, ack_tx)) = completion_rx.await {
                                 let outputs = outputs
@@ -4477,6 +4484,7 @@ pub async fn handle_completions(
                                         save_instructions,
                                         save_model,
                                         routing_session_id,
+                                        Some(save_signature_key),
                                     ),
                                 )
                                 .await;
@@ -4504,14 +4512,14 @@ pub async fn handle_completions(
                     use crate::proxy::mappers::openai::streaming::create_openai_sse_stream_with_tool_scope;
                     // Note: We use create_openai_sse_stream regardless of is_codex_style here,
                     // because we just want the content aggregation which chat stream does well.
-                    // The stream id above can be a Responses id; tool signatures are scoped to the
-                    // stable store_key (`session_id_str`) instead.
+                    // Session and tool signatures are cached under the stable tenant-scoped
+                    // store_key (`session_id_str`), never under a Responses id.
                     let tool_signature_session = Some(session_id_str.clone());
                     let mut openai_stream = create_openai_sse_stream_with_tool_scope(
                         gemini_stream,
                         openai_req.model.clone(),
                         if is_responses_api {
-                            response_id_for_save.clone()
+                            session_id_str.clone()
                         } else {
                             session_id
                         },
@@ -4623,6 +4631,7 @@ pub async fn handle_completions(
                                         session_save_instructions,
                                         openai_req.model.clone(),
                                         routing_session_id.clone(),
+                                        Some(session_id_str.clone()),
                                     )
                                     .await;
                                 }
@@ -4768,9 +4777,8 @@ pub async fn handle_completions(
 
             let chat_resp = transform_openai_response_with_tool_scope(
                 &gemini_resp,
-                Some(&signature_session_id_str),
-                // `signature_session_id_str` can be a Responses chain id; tool
-                // signatures are scoped to the stable store_key instead.
+                // Session and tool signatures are both scoped to the stable store_key.
+                Some(&session_id_str),
                 Some(&session_id_str),
                 1,
                 Some(&client_tool_names),

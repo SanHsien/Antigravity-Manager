@@ -65,6 +65,35 @@ impl ToolSignatureScope {
     }
 }
 
+/// Tenant part of a ThinkingStore `store_key` (`<tenant>:<client id>`).
+/// `None` for keys that do not have both parts.
+pub fn tenant_of_store_key(store_key: &str) -> Option<&str> {
+    let (tenant, rest) = store_key.split_once(':')?;
+    if tenant.is_empty() || rest.is_empty() {
+        None
+    } else {
+        Some(tenant)
+    }
+}
+
+/// Resolve the session-signature key a Responses request may read for its
+/// `previous_response_id`.
+///
+/// `recorded_parent_key` must come from a trusted record (the key the server itself
+/// stored when it produced that parent response), never from the client's string. It is
+/// only returned when it belongs to the same tenant as the requester's own `store_key`;
+/// anything else (no record, a record without a key, another tenant) yields `None`,
+/// i.e. no parent-session signature is looked up at all.
+pub fn trusted_parent_signature_key(
+    recorded_parent_key: Option<&str>,
+    requester_store_key: &str,
+) -> Option<String> {
+    let parent = recorded_parent_key?;
+    let parent_tenant = tenant_of_store_key(parent)?;
+    let requester_tenant = tenant_of_store_key(requester_store_key)?;
+    (parent_tenant == requester_tenant).then(|| parent.to_string())
+}
+
 /// Triple-layer signature cache to handle:
 /// 1. Signature recovery for tool calls (when clients strip them)
 /// 2. Cross-model compatibility checks (preventing Claude signatures on Gemini models)
@@ -355,9 +384,15 @@ impl SignatureCache {
 
     /// Retrieve the latest thinking signature for a session.
     /// Returns None if not found or expired.
+    ///
+    /// `session_id` must be the exact key the signature was cached under (the
+    /// tenant-scoped ThinkingStore `store_key`). There is deliberately no suffix /
+    /// prefix tolerance: a bare client id such as `sess-abc` must never resolve to
+    /// another tenant's `<tenant>:sess-abc` entry, and a client-chosen string (e.g. a
+    /// Responses `previous_response_id`) must never be used as a lookup key unless it
+    /// went through [`trusted_parent_signature_key`].
     pub fn get_session_signature(&self, session_id: &str) -> Option<String> {
         if let Ok(cache) = self.session_signatures.lock() {
-            // 1. 精确匹配
             if let Some(entry) = cache.get(session_id) {
                 if !entry.is_expired() {
                     // Find the signature with the maximum message_count (the latest one)
@@ -372,24 +407,6 @@ impl SignatureCache {
                     }
                 } else {
                     tracing::debug!("[SignatureCache] Session {} -> EXPIRED", session_id);
-                }
-            }
-
-            // 2. 租户前缀容错后缀匹配 (兼容传入裸 session_id 匹配 tenant:session_id)
-            let suffix = format!(":{}", session_id);
-            for (key, entry) in cache.iter() {
-                if (key.ends_with(&suffix) || session_id.ends_with(&format!(":{}", key)))
-                    && !entry.is_expired()
-                {
-                    if let Some(sig_entry) = entry.data.values().max_by_key(|e| e.message_count) {
-                        tracing::debug!(
-                            "[SignatureCache] Session suffix match {} -> key {} -> HIT (len={})",
-                            session_id,
-                            key,
-                            sig_entry.signature.len()
-                        );
-                        return Some(sig_entry.signature.clone());
-                    }
                 }
             }
         }
@@ -627,6 +644,62 @@ mod tests {
         assert!(cache.get_tool_signature(Some("sess-1"), "tool_1").is_none());
         assert!(cache.get_signature_family(&sig).is_none());
         assert!(cache.get_session_signature("sid-1").is_none());
+    }
+
+    #[test]
+    fn session_signature_lookup_is_exact_and_never_crosses_tenants() {
+        let cache = SignatureCache::new();
+        let victim_sig = "v".repeat(60);
+        let own_sig = "o".repeat(60);
+        cache.cache_session_signature("tenant-a:sess-victim", victim_sig.clone(), 1);
+
+        // Tenant B knows (or is told, e.g. via an X-Session-Id response header) the bare id
+        // tail of tenant A's session. A bare id, a foreign-tenant key and a suffix of the
+        // stored key must all miss: only the exact key resolves.
+        assert_eq!(cache.get_session_signature("sess-victim"), None);
+        assert_eq!(cache.get_session_signature("tenant-b:sess-victim"), None);
+        assert_eq!(cache.get_session_signature("tenant-a:sess"), None);
+        assert_eq!(
+            cache.get_session_signature("tenant-a:sess-victim"),
+            Some(victim_sig)
+        );
+
+        // The reverse direction (a bare entry must not answer a tenant-scoped query).
+        cache.cache_session_signature("sess-bare", own_sig, 1);
+        assert_eq!(cache.get_session_signature("tenant-b:sess-bare"), None);
+    }
+
+    #[test]
+    fn trusted_parent_signature_key_needs_a_server_record_in_the_same_tenant() {
+        // No record of the parent (unknown / forged previous_response_id): no key at all.
+        assert_eq!(
+            trusted_parent_signature_key(None, "tenant-b:sess-own"),
+            None
+        );
+        // A record without a tenant-scoped key (legacy entry) cannot be trusted.
+        assert_eq!(
+            trusted_parent_signature_key(Some("sess-victim"), "tenant-b:sess-own"),
+            None
+        );
+        // A record that belongs to another tenant is never handed over.
+        assert_eq!(
+            trusted_parent_signature_key(Some("tenant-a:sess-victim"), "tenant-b:sess-own"),
+            None
+        );
+        // Requester without a tenant-scoped key: nothing to compare against.
+        assert_eq!(
+            trusted_parent_signature_key(Some("tenant-a:sess-victim"), "sess-own"),
+            None
+        );
+        // Same tenant: the recorded key is returned.
+        assert_eq!(
+            trusted_parent_signature_key(Some("tenant-a:sess-parent"), "tenant-a:sess-child"),
+            Some("tenant-a:sess-parent".to_string())
+        );
+        assert_eq!(tenant_of_store_key("tenant-a:sess-x"), Some("tenant-a"));
+        assert_eq!(tenant_of_store_key(":sess-x"), None);
+        assert_eq!(tenant_of_store_key("tenant-a:"), None);
+        assert_eq!(tenant_of_store_key("sess-x"), None);
     }
 
     #[test]

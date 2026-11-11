@@ -31,6 +31,11 @@ struct SessionNode {
     instructions: String,
     model: String,
     routing_session_id: String,
+    /// Tenant-scoped ThinkingStore `store_key` the server cached this response's session
+    /// signatures under. Recorded by the server when it produced the response, so it is
+    /// the only trusted source for a later `previous_response_id` signature lookup
+    /// (never the client's id string). `None` for entries that did not record one.
+    signature_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +44,11 @@ pub struct SessionParent(Arc<SessionNode>);
 impl SessionParent {
     pub fn routing_session_id(&self) -> &str {
         &self.0.routing_session_id
+    }
+
+    /// The server-recorded session-signature key of this parent response, if any.
+    pub fn signature_key(&self) -> Option<&str> {
+        self.0.signature_key.as_deref()
     }
 }
 
@@ -82,6 +92,7 @@ impl HttpSessionStore {
             entry.instructions,
             entry.model,
             None,
+            None,
         );
     }
 
@@ -94,6 +105,7 @@ impl HttpSessionStore {
         instructions: String,
         model: String,
         routing_session_id: Option<String>,
+        signature_key: Option<String>,
     ) {
         let routing_session_id = routing_session_id.unwrap_or_else(|| response_id.clone());
         self.sessions.insert(
@@ -106,6 +118,7 @@ impl HttpSessionStore {
                     instructions,
                     model,
                     routing_session_id,
+                    signature_key,
                 }),
                 last_accessed: Instant::now(),
             },
@@ -176,6 +189,7 @@ pub async fn save_session_delta(
     instructions: String,
     model: String,
     routing_session_id: String,
+    signature_key: Option<String>,
 ) {
     store().lock().await.insert_delta(
         response_id,
@@ -185,6 +199,7 @@ pub async fn save_session_delta(
         instructions,
         model,
         Some(routing_session_id),
+        signature_key,
     );
 }
 
@@ -535,6 +550,7 @@ mod tests {
             "be concise".to_string(),
             "gemini-3.7-flash-high".to_string(),
             Some("routing-root".to_string()),
+            None,
         );
 
         let (previous, _) = store.get("resp-2").expect("child");
@@ -560,6 +576,7 @@ mod tests {
             String::new(),
             String::new(),
             Some("routing-root".to_string()),
+            None,
         );
         store.insert_delta(
             "resp-b".to_string(),
@@ -569,6 +586,7 @@ mod tests {
             String::new(),
             String::new(),
             Some("routing-root".to_string()),
+            None,
         );
 
         let parent_a = store.sessions["resp-a"].node.parent.as_ref().unwrap();
@@ -582,6 +600,31 @@ mod tests {
             store.sessions["resp-b"].node.routing_session_id,
             "routing-root"
         );
+    }
+
+    #[test]
+    fn parent_exposes_only_the_signature_key_the_server_recorded() {
+        let mut store = HttpSessionStore::new();
+        // Legacy / chat entries recorded no key: nothing to hand to a signature lookup.
+        store.insert("resp-legacy".to_string(), entry("legacy"));
+        let (_, legacy) = store.get("resp-legacy").expect("legacy");
+        assert_eq!(legacy.signature_key(), None);
+
+        store.insert_delta(
+            "resp-scoped".to_string(),
+            None,
+            vec![json!({"content": "q"})],
+            Vec::new(),
+            String::new(),
+            String::new(),
+            Some("routing-root".to_string()),
+            Some("tenant-a:sess-parent".to_string()),
+        );
+        let (_, scoped) = store.get("resp-scoped").expect("scoped");
+        assert_eq!(scoped.signature_key(), Some("tenant-a:sess-parent"));
+
+        // An id the client invented has no record at all, so it has no key either.
+        assert!(store.get("sess-victim").is_none());
     }
 
     #[test]

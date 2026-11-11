@@ -2175,6 +2175,68 @@ mod tests {
     }
 
     #[test]
+    fn responses_parent_id_naming_another_tenants_session_never_fills_the_signature() {
+        // Tenant A's session signature sits in the process-wide cache under its store_key.
+        let victim_tail = format!("sess-victim-{}", uuid::Uuid::new_v4());
+        let victim_signature = valid_gemini_sig("tenant-a-victim");
+        crate::proxy::SignatureCache::global().cache_session_signature(
+            &format!("tenant-a:{victim_tail}"),
+            victim_signature.clone(),
+            1,
+        );
+
+        // Tenant B sends the bare tail of that session as its `previous_response_id`
+        // (the handler then passes it on as `signature_read_key`) together with a latest
+        // assistant tool call that has no signature of its own.
+        let own_session = format!("tenant-b:sess-own-{}", uuid::Uuid::new_v4());
+        let request = OpenAIRequest {
+            session_id: Some(own_session.clone()),
+            model: "gemini-3.7-flash-high".to_string(),
+            messages: vec![OpenAIMessage {
+                role: "assistant".to_string(),
+                tool_calls: Some(vec![ToolCall {
+                    id: format!("call-own-{}", uuid::Uuid::new_v4()),
+                    r#type: "function".to_string(),
+                    function: Some(ToolFunction {
+                        name: "test_tool".to_string(),
+                        arguments: "{}".to_string(),
+                    }),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let (body, _, _, _) = transform_openai_request_with_session(
+            &request,
+            "test-project",
+            "gemini-3.7-flash-high",
+            None,
+            &own_session,
+            Some(&victim_tail),
+            true,
+        );
+        let tool_part = body["request"]["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|c| c["parts"].as_array().into_iter().flatten())
+            .find(|part| part.get("functionCall").is_some())
+            .expect("the functionCall part must survive");
+
+        assert_ne!(
+            tool_part["thoughtSignature"], victim_signature,
+            "a bare id naming another tenant's session must not resolve to its signature"
+        );
+        assert_eq!(
+            tool_part["thoughtSignature"],
+            crate::proxy::thinking_store::SENTINEL_SIGNATURE,
+            "with no signature of its own the call gets the sentinel"
+        );
+    }
+
+    #[test]
     fn test_issue_1592_gemini_3_pro_budget_capping() {
         let _lock = crate::proxy::config::TEST_CONFIG_LOCK
             .lock()

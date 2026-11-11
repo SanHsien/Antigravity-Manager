@@ -1929,7 +1929,7 @@ pub async fn handle_messages(
             // 彻底防止重试阶段再次把坏签名还原回 contents
             crate::proxy::thinking_store::ThinkingStore::global()
                 .purge_corrupted_signatures(&session_id_str, &mapped_model);
-            crate::proxy::SignatureCache::global().delete_session_signature(&client_session_id);
+            crate::proxy::SignatureCache::global().delete_session_signature(&session_id_str);
 
             // [FIX Prompt-Cache] 严禁在重试路径中注入合成消息 (close_tool_loop_for_thinking)！
             // 保持历史消息真实纯净，由 InboundThinkingPipeline 与 finalize_gemini_contents_thinking 统一兜底签名与占位。

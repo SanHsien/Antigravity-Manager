@@ -1307,6 +1307,7 @@ mod tests {
                 String::new(),
                 "gemini-pro-agent".to_string(),
                 "routing-test-session".to_string(),
+                None,
             )
             .await;
             ack_tx.send(()).expect("acknowledge session save");
