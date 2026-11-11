@@ -1307,7 +1307,8 @@ mod tests {
                 String::new(),
                 "gemini-pro-agent".to_string(),
                 "routing-test-session".to_string(),
-                None,
+                // The saved response belongs to tenant "tenant-a"; the lookup below asks as it.
+                Some("tenant-a:test-session".to_string()),
             )
             .await;
             ack_tx.send(()).expect("acknowledge session save");
@@ -1330,9 +1331,10 @@ mod tests {
             let text = String::from_utf8_lossy(&item);
             if text.contains("event: response.completed") {
                 saw_completed = true;
-                let restored = crate::proxy::http_session_store::get_session(&response_id)
-                    .await
-                    .expect("session exists when response.completed is visible");
+                let restored =
+                    crate::proxy::http_session_store::get_session(&response_id, "tenant-a")
+                        .await
+                        .expect("session exists when response.completed is visible");
                 assert_eq!(restored.input_items[0]["id"], "user-1");
                 let completed: Value = serde_json::from_str(
                     text.lines()

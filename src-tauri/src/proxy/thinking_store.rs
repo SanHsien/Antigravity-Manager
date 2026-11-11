@@ -2053,6 +2053,11 @@ pub fn tenant_for_credential(credential: Option<&str>) -> String {
 }
 
 /// The tenant the authentication middleware stamped on the request, if it did.
+///
+/// SAFETY PRECONDITION: this header is only trustworthy because `middleware::auth` removes
+/// any client-supplied `TENANT_HEADER` and writes its own on every request it handles. A
+/// route that is mounted outside the authentication layers must not read this value (or
+/// build a `SessionScope` from its headers): there a client could name any tenant.
 pub fn stamped_tenant(headers: &HeaderMap) -> Option<String> {
     headers
         .get(TENANT_HEADER)
