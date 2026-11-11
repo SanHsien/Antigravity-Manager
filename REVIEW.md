@@ -1699,3 +1699,19 @@ PR 軸水位提升至 `#3885`，issue 軸水位提升至 `#3883`。水位推進�
   - **`call_openai_gemini_sync` 參數錯位**：背景摘要呼叫把 `bg_sid_*` 假會話字串當成 `transform_openai_request` 的第三個參數（mapped model），模型相關的思考判斷從來看不到真正的模型；改傳 `model`。
   - **F3 附註**：目錄身分改用 `FILE_READ_ATTRIBUTES`＋`FILE_FLAG_BACKUP_SEMANTICS` 開啟再 `Handle::from_file`（`same-file` 的 `from_path` 在 Windows 要 GENERIC_READ，祖先可穿越但不可列出時會誤拒無關遷移）；`copy_dir_checked` 先比對既有目的地的身分、再建立目錄；兩個需要連結／共用的測試無法執行時印出 `SKIPPED …（本次未驗證）` 而不是靜默通過（GitHub 的 Windows runner 預期可達本機管理共用而會實跑，但沒有查證）；專案沒有 `rust-version`、CI 用 `dtolnay/rust-toolchain@stable`，`ErrorKind::NotADirectory`（1.83）可用。
   - **撤回先前的「未處理觀察」**：(a)「OpenAI Chat 用內容推導的裸 id」不成立——`openai_req.session_id` 在 handler 已設為 `store_key`，`extract_openai_session_id` 會優先回傳（清理後的）該值，內容推導只在 session_id 為空時才用；以 `sanitize_session_id` 逐字保留 `<hex>:sess-<hex>` 驗證。(b) `http_session_store` 不分租戶已由 M2 修復。
+
+### 37. Dependency freshness：main CI 紅燈的三項 REVIEW UPDATE（2026-11-11）
+
+`tools/check_dependency_freshness.py --strict` 在 main 報 REVIEW UPDATE。本輪逐項讀 release notes 並對照 fork 實際用法，結論如下；修改前後都以該檢查的實際輸出為準。
+
+| 項目 | 判定 | 證據與依據 | commit |
+| --- | --- | --- | --- |
+| `postcss-selector-parser` `7.1.7`→`7.2.0`（devDependency 與 `overrides` 同步） | 採用 | 7.2.0 的 changelog 只有新增選項、文件與小幅修正；lock 只變版本與 integrity，並移除 7.2.0 不再宣告的 `cssesc`。`npm run build`、`test:tailwind-regressions`、`test:security-dependencies` 通過。 | `9c4c689d` |
+| `i18next` `^26.7.1`→`^27.1.1` 與 `react-i18next` `^17.1.12`→`^18.0.1` | 採用，無程式碼變更 | v27.0.0 是 major，改了多項預設值；逐項對照：`fallbackLng` 已明寫 `en`；locales 無空字串（`returnEmptyString` 預設改變不影響）；locales 無 HTML 實體（`Trans` 解碼改變不影響）；未用 dotted-language store 呼叫、`*Escaped` 選項、`hydrate`、`returnObjects`、`cleanCode`。`tsc --noEmit` 通過。以 26.7.1 與 27.1.1 對 `src` 內 1020 個字面 `t()` key 在 en／zh-TW／ja 比對解析結果，除下列一項外完全相同。react-i18next 18 的 `Trans` 以 `components` 渲染的標記與 26 相同。 | `e2e05ccb` |
+| `rusqlite` `0.41.1`→`0.42.0`（本輪另外出現，不在 main 紅燈的 3 項內） | 延後（登記於 `.github/dependency-deferrals.json`，`deferredLatest: 0.42.0`） | 0.42.0 於 2026-11-11 發布，內建 SQLite 升到 3.54.1、SQLCipher 到 4.20.0，並新增 `RawValue`；fork 的 db、proxy_db、token_stats、security_db、user_token_db 等模組都在 0.41 的 `fallible_uint` u64 行為上運作。本機無 cmake／MSVC，無法編譯；應在 CI 建置的分支上連同資料庫測試一起升級。 | 本節 commit |
+
+**i18next 26→27 的唯一可觀察差異**：`proxy.config.thinking_budget` 是物件型 key，`AccountDetailsDialog.tsx:146` 以 `t(key, 'Thinking Budget')` 呼叫。26 會回傳「key … returned an object instead of string」這句警告；27 依 release notes 改回傳傳入的預設值。這是 27 的改善，不是回歸。
+
+**驗證（本機，Windows）**：`npm run build` 綠；`tools\dev_check.ps1` 前九步全綠（security dependency、build、tailwind、lightweight window 3/3、compileall、upstream checker unittest 82/82、fork 文件連結、zh-TW locale key 1471/1471）；最後一步 `check_upstream_updates.py --strict` 紅燈，原因是上游積壓未分流：PR 自 `#3899` 起有 5 筆新項、Issue 自 `#3897` 起有 10 筆新項（例如 #3904、#3912、#3913、#3914），與本輪依賴改動無關，本輪未處理，須另開分流；`check_dependency_freshness.py --strict` exit 0；Rust 部分未編譯（本機缺 cmake）。
+
+**未驗證**：實機切換語言、帳號詳情對話框與設定頁的視覺結果；本輪只做了 Node 層的解析與 SSR 標記比對。升級後請在 Windows 實機確認語言切換與 `Trans` 內的程式碼標記顯示。
