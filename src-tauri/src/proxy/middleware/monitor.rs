@@ -750,10 +750,11 @@ pub async fn monitor_middleware(
                 .map(|s| s.to_string())
         });
 
-    // Tenant of this request (from its credentials), needed later to rebuild the full
-    // `store_key` of the session the handler echoes back; the request itself is consumed
-    // before the response exists.
-    let request_tenant = crate::proxy::thinking_store::tenant_for_headers(request.headers());
+    // Tenant the authentication layer stamped for this request (the credential it actually
+    // used, including a `?key=` one), needed later to rebuild the full `store_key` of the
+    // session the handler echoes back; the request itself is consumed before the response
+    // exists. Without the stamp there is no trusted tenant and no signature backfill.
+    let request_tenant = crate::proxy::thinking_store::stamped_tenant(request.headers());
 
     let user_agent = request
         .headers()
@@ -903,11 +904,10 @@ pub async fn monitor_middleware(
         .map(|s| s.to_string());
     // Full tenant-scoped session key for the signature backfill of the condensed response;
     // `None` when the handler echoed no session id.
-    let session_store_key = session_id.as_deref().and_then(|client_id| {
-        crate::proxy::thinking_store::SessionScope::store_key_for_client_id(
-            &request_tenant,
-            client_id,
-        )
+    let session_store_key = request_tenant.as_deref().and_then(|tenant| {
+        session_id.as_deref().and_then(|client_id| {
+            crate::proxy::thinking_store::SessionScope::store_key_for_client_id(tenant, client_id)
+        })
     });
 
     let monitor = state.monitor.clone();

@@ -1210,7 +1210,8 @@ impl SessionScope {
     }
 }
 
-/// The tenant a request belongs to, derived from its credentials. This is the part
+/// The tenant a request belongs to: the one the authentication middleware stamped, else
+/// derived from the request headers with the same credential parser. This is the part
 /// `SessionScope` puts in front of the client session id to form the `store_key`.
 pub fn tenant_for_headers(headers: &HeaderMap) -> String {
     tenant_from_headers(headers)
@@ -2038,16 +2039,38 @@ fn session_id_from_headers(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-fn tenant_from_headers(headers: &HeaderMap) -> String {
-    let raw = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer ").or(Some(s)))
-        .or_else(|| headers.get("x-api-key").and_then(|h| h.to_str().ok()))
-        .or_else(|| headers.get("x-goog-api-key").and_then(|h| h.to_str().ok()))
-        .unwrap_or("anon");
+/// Header the authentication middleware stamps on every request it handles: the tenant of
+/// the credential it actually used (see `middleware::auth::stamp_request_tenant`). Any value
+/// the client sends under this name is removed there.
+pub const TENANT_HEADER: &str = "x-antigravity-tenant";
+
+/// Tenant id of a credential: a SHA-256 prefix, so the credential itself never reaches a
+/// session key. No credential at all is the anonymous tenant.
+pub fn tenant_for_credential(credential: Option<&str>) -> String {
+    let raw = credential.unwrap_or("anon");
     let hash = format!("{:x}", Sha256::digest(raw.as_bytes()));
     hash[..16].to_string()
+}
+
+/// The tenant the authentication middleware stamped on the request, if it did.
+pub fn stamped_tenant(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(TENANT_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|v| v.len() == 16 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_string)
+}
+
+fn tenant_from_headers(headers: &HeaderMap) -> String {
+    if let Some(tenant) = stamped_tenant(headers) {
+        return tenant;
+    }
+    // Not stamped (a path outside the authentication layer, or a unit test): use the same
+    // credential parser as the authentication middleware, headers only.
+    tenant_for_credential(
+        crate::proxy::middleware::auth::credential_from_headers(headers).as_deref(),
+    )
 }
 
 pub fn sanitize_session_id(raw: &str) -> String {
@@ -3192,6 +3215,43 @@ mod tests {
 
         assert_eq!(SessionScope::store_key_for_client_id("tenant", "  "), None);
         assert_eq!(SessionScope::store_key_for_client_id("", "sess-x"), None);
+    }
+
+    #[test]
+    fn tenant_comes_from_the_stamped_credential_not_from_a_second_header_parser() {
+        let stamped = |credential: Option<&str>| {
+            let mut h = HeaderMap::new();
+            h.insert(
+                TENANT_HEADER,
+                tenant_for_credential(credential).parse().unwrap(),
+            );
+            h
+        };
+        // The stamp wins over whatever the visible headers say.
+        let mut h = stamped(Some("query-key-a"));
+        h.insert("x-api-key", "something-else".parse().unwrap());
+        assert_eq!(
+            tenant_for_headers(&h),
+            tenant_for_credential(Some("query-key-a"))
+        );
+        assert_ne!(
+            tenant_for_headers(&stamped(Some("query-key-a"))),
+            tenant_for_headers(&stamped(Some("query-key-b")))
+        );
+
+        // Unstamped headers: an empty bearer falls through to x-api-key like the auth layer.
+        let mut a = HeaderMap::new();
+        a.insert("authorization", "Bearer ".parse().unwrap());
+        a.insert("x-api-key", "key-a".parse().unwrap());
+        let mut b = a.clone();
+        b.insert("x-api-key", "key-b".parse().unwrap());
+        assert_ne!(tenant_for_headers(&a), tenant_for_headers(&b));
+        assert_eq!(tenant_for_headers(&a), tenant_for_credential(Some("key-a")));
+
+        // A malformed stamp is ignored.
+        let mut bad = HeaderMap::new();
+        bad.insert(TENANT_HEADER, "not-a-tenant".parse().unwrap());
+        assert_eq!(stamped_tenant(&bad), None);
     }
 
     #[test]

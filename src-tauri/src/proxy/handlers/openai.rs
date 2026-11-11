@@ -1271,9 +1271,11 @@ data: {"type":"response.failed","response":{"status":"failed","error":{"code":"u
             .await
             .expect("cancelled save task exits")
             .expect("save task");
-        assert!(crate::proxy::http_session_store::get_session(&response_id)
-            .await
-            .is_none());
+        assert!(
+            crate::proxy::http_session_store::get_session(&response_id, "tenant-a")
+                .await
+                .is_none()
+        );
     }
 
     #[test]
@@ -3145,6 +3147,8 @@ pub async fn handle_completions(
                 .map(str::to_string)
         });
     let response_id_for_save = format!("resp-{}", uuid::Uuid::new_v4());
+    // A `previous_response_id` is only honoured for the tenant that created that response.
+    let requester_tenant = crate::proxy::thinking_store::tenant_for_headers(&headers);
     let http_tool_call_cache: std::collections::HashMap<String, serde_json::Value> =
         std::collections::HashMap::new();
     let mut session_parent = None;
@@ -3168,7 +3172,11 @@ pub async fn handle_completions(
 
         let merged = if let Some(ref prev_id) = previous_response_id {
             if let Some((session, parent)) =
-                crate::proxy::http_session_store::get_session_with_parent(prev_id).await
+                crate::proxy::http_session_store::get_session_with_parent(
+                    prev_id,
+                    &requester_tenant,
+                )
+                .await
             {
                 stored_routing_session_id = Some(parent.routing_session_id().to_string());
                 stored_parent_signature_key = parent.signature_key().map(str::to_string);
@@ -7767,9 +7775,10 @@ async fn call_openai_gemini_sync(
         .map_err(|e| format!("Failed to get account: {}", e))?;
 
     let token_obj = token_manager.get_token_by_id(&account_id);
-    let session_id = format!("bg_sid_{}", chrono::Utc::now().timestamp_subsec_millis());
+    // The third argument is the (mapped) model, not a session id: it used to receive a
+    // throwaway "bg_sid_*" string, so the model-based thinking heuristics never saw the model.
     let (gemini_body, _, _, _) =
-        transform_openai_request(request, &project_id, &session_id, token_obj.as_ref());
+        transform_openai_request(request, &project_id, model, token_obj.as_ref());
 
     let upstream_url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",

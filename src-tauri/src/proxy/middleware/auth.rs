@@ -18,10 +18,11 @@ fn non_empty_trimmed(value: &str) -> Option<&str> {
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
-/// Extract the client credential from a request.
+/// Extract the client credential from the headers and URL of a request.
 ///
 /// Order of precedence:
-/// 1. `Authorization` header (`Bearer <t>`, `bearer <t>`, or a bare token)
+/// 1. `Authorization` header (`Bearer <t>`, `bearer <t>`, or a bare token); an empty bearer
+///    value falls through
 /// 2. `x-api-key` header
 /// 3. `x-goog-api-key` header
 /// 4. URL query `?key=<t>` (Google Gemini REST convention), only when `allow_query` is true
@@ -29,9 +30,45 @@ fn non_empty_trimmed(value: &str) -> Option<&str> {
 /// `allow_query` must be false for management (admin) endpoints: a credential in the URL
 /// ends up in browser history, proxies and access logs, so the admin password is only
 /// accepted from headers.
-pub fn extract_api_key<B>(request: &Request<B>, allow_query: bool) -> Option<Cow<'_, str>> {
-    let headers = request.headers();
+///
+/// This is the one place that decides which credential a request carries; everything that
+/// needs "who is this" (authentication, the per-tenant session scope) goes through it.
+pub fn credential_from_parts<'a>(
+    headers: &'a axum::http::HeaderMap,
+    uri: &'a axum::http::Uri,
+    allow_query: bool,
+) -> Option<Cow<'a, str>> {
+    if let Some(token) = credential_from_headers(headers) {
+        return Some(token);
+    }
 
+    if allow_query {
+        if let Some(query) = uri.query() {
+            for (name, value) in url::form_urlencoded::parse(query.as_bytes()) {
+                if name != "key" {
+                    continue;
+                }
+                match value {
+                    Cow::Borrowed(v) => {
+                        if let Some(token) = non_empty_trimmed(v) {
+                            return Some(Cow::Borrowed(token));
+                        }
+                    }
+                    Cow::Owned(v) => {
+                        if let Some(token) = non_empty_trimmed(&v) {
+                            return Some(Cow::Owned(token.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// The header part of [`credential_from_parts`] (no URL query).
+pub fn credential_from_headers(headers: &axum::http::HeaderMap) -> Option<Cow<'_, str>> {
     if let Some(auth_val) = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
@@ -62,29 +99,34 @@ pub fn extract_api_key<B>(request: &Request<B>, allow_query: bool) -> Option<Cow
         }
     }
 
-    if allow_query {
-        if let Some(query) = request.uri().query() {
-            for (name, value) in url::form_urlencoded::parse(query.as_bytes()) {
-                if name != "key" {
-                    continue;
-                }
-                match value {
-                    Cow::Borrowed(v) => {
-                        if let Some(token) = non_empty_trimmed(v) {
-                            return Some(Cow::Borrowed(token));
-                        }
-                    }
-                    Cow::Owned(v) => {
-                        if let Some(token) = non_empty_trimmed(&v) {
-                            return Some(Cow::Owned(token.to_string()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     None
+}
+
+pub fn extract_api_key<B>(request: &Request<B>, allow_query: bool) -> Option<Cow<'_, str>> {
+    credential_from_parts(request.headers(), request.uri(), allow_query)
+}
+
+/// Stamp the request with the tenant of the credential this middleware actually uses.
+///
+/// Any client-supplied tenant header is dropped first, so the value downstream (the
+/// per-tenant session scope, the request monitor) is always derived from the same
+/// credential the authentication decision was made on, including a `?key=` credential
+/// that headers alone cannot show.
+fn stamp_request_tenant(request: Request, allow_query: bool) -> Request {
+    let (mut parts, body) = request.into_parts();
+    parts
+        .headers
+        .remove(crate::proxy::thinking_store::TENANT_HEADER);
+    let tenant = crate::proxy::thinking_store::tenant_for_credential(
+        credential_from_parts(&parts.headers, &parts.uri, allow_query).as_deref(),
+    );
+    if let Ok(value) = header::HeaderValue::from_str(&tenant) {
+        parts.headers.insert(
+            header::HeaderName::from_static(crate::proxy::thinking_store::TENANT_HEADER),
+            value,
+        );
+    }
+    Request::from_parts(parts, body)
 }
 
 /// API Key 认证中间件 (代理接口使用，遵循 auth_mode)
@@ -112,6 +154,7 @@ async fn auth_middleware_internal(
     next: Next,
     force_strict: bool,
 ) -> Result<Response, StatusCode> {
+    let request = stamp_request_tenant(request, !force_strict);
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
@@ -311,6 +354,71 @@ mod tests {
             builder = builder.header(*k, *v);
         }
         builder.body(()).unwrap()
+    }
+
+    fn tenant_of(r: &HttpRequest<()>, allow_query: bool) -> String {
+        crate::proxy::thinking_store::tenant_for_credential(
+            credential_from_parts(r.headers(), r.uri(), allow_query).as_deref(),
+        )
+    }
+
+    #[test]
+    fn task_tenant_follows_the_credential_the_auth_layer_uses() {
+        // An empty bearer value falls through to x-api-key, so the credential (and the
+        // tenant) is the x-api-key value, not the hash of the empty string.
+        let a = req(
+            "/v1/models",
+            &[("Authorization", "Bearer "), ("x-api-key", "key-a")],
+        );
+        let b = req(
+            "/v1/models",
+            &[("Authorization", "Bearer "), ("x-api-key", "key-b")],
+        );
+        assert_ne!(tenant_of(&a, true), tenant_of(&b, true));
+        let direct = req("/v1/models", &[("x-api-key", "key-a")]);
+        assert_eq!(tenant_of(&a, true), tenant_of(&direct, true));
+
+        // A credential only in the URL is a credential: ?key=A and ?key=B are two tenants,
+        // and neither is the anonymous tenant.
+        let qa = req("/v1beta/models/m:generateContent?key=A", &[]);
+        let qb = req("/v1beta/models/m:generateContent?key=B", &[]);
+        let anon = req("/v1beta/models/m:generateContent", &[]);
+        assert_ne!(tenant_of(&qa, true), tenant_of(&qb, true));
+        assert_ne!(tenant_of(&qa, true), tenant_of(&anon, true));
+
+        // Bearer spelling and surrounding whitespace do not change the tenant.
+        let bearer = req("/v1/models", &[("Authorization", "Bearer sk-1")]);
+        let lower = req("/v1/models", &[("Authorization", "  bearer   sk-1  ")]);
+        let raw = req("/v1/models", &[("Authorization", "sk-1")]);
+        assert_eq!(tenant_of(&bearer, true), tenant_of(&lower, true));
+        assert_eq!(tenant_of(&bearer, true), tenant_of(&raw, true));
+    }
+
+    #[test]
+    fn task_stamp_overrides_a_client_supplied_tenant_header() {
+        let forged = crate::proxy::thinking_store::tenant_for_credential(Some("victim-key"));
+        let r = HttpRequest::builder()
+            .uri("/v1/models?key=mine")
+            .header(crate::proxy::thinking_store::TENANT_HEADER, forged.as_str())
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let stamped = stamp_request_tenant(r, true);
+        let mine = crate::proxy::thinking_store::tenant_for_credential(Some("mine"));
+        assert_eq!(
+            crate::proxy::thinking_store::stamped_tenant(stamped.headers()).as_deref(),
+            Some(mine.as_str())
+        );
+        // Admin endpoints never take the credential from the URL.
+        let r = HttpRequest::builder()
+            .uri("/admin?key=mine")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let stamped = stamp_request_tenant(r, false);
+        let anon = crate::proxy::thinking_store::tenant_for_credential(None);
+        assert_eq!(
+            crate::proxy::thinking_store::stamped_tenant(stamped.headers()).as_deref(),
+            Some(anon.as_str())
+        );
     }
 
     #[test]

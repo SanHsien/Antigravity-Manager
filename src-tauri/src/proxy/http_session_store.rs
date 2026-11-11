@@ -36,6 +36,10 @@ struct SessionNode {
     /// the only trusted source for a later `previous_response_id` signature lookup
     /// (never the client's id string). `None` for entries that did not record one.
     signature_key: Option<String>,
+    /// Tenant (credential hash) that created this response. A lookup from any other tenant
+    /// finds nothing, exactly like an unknown id. `None` (entries saved without a tenant)
+    /// is never served to a tenant lookup.
+    tenant: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +70,20 @@ impl HttpSessionStore {
         Self {
             sessions: HashMap::new(),
         }
+    }
+
+    /// Lookup on behalf of `tenant`: a response created by another tenant (or without a
+    /// recorded tenant) is reported as absent, and its access time is left alone.
+    fn get_for_tenant(
+        &mut self,
+        response_id: &str,
+        tenant: &str,
+    ) -> Option<(HttpSessionEntry, SessionParent)> {
+        let owner = self.sessions.get(response_id)?.node.tenant.as_deref();
+        if owner != Some(tenant) {
+            return None;
+        }
+        self.get(response_id)
     }
 
     fn get(&mut self, response_id: &str) -> Option<(HttpSessionEntry, SessionParent)> {
@@ -108,6 +126,10 @@ impl HttpSessionStore {
         signature_key: Option<String>,
     ) {
         let routing_session_id = routing_session_id.unwrap_or_else(|| response_id.clone());
+        let tenant = signature_key
+            .as_deref()
+            .and_then(crate::proxy::signature_cache::tenant_of_store_key)
+            .map(str::to_string);
         self.sessions.insert(
             response_id,
             StoredSession {
@@ -119,6 +141,7 @@ impl HttpSessionStore {
                     model,
                     routing_session_id,
                     signature_key,
+                    tenant,
                 }),
                 last_accessed: Instant::now(),
             },
@@ -160,19 +183,23 @@ fn store() -> &'static Mutex<HttpSessionStore> {
     STORE.get_or_init(|| Mutex::new(HttpSessionStore::new()))
 }
 
-/// 根据 previous_response_id 查找历史会话
-pub async fn get_session(previous_response_id: &str) -> Option<HttpSessionEntry> {
+/// 根据 previous_response_id 查找历史会话；只有建立该回应的租户查得到，其他租户与未知 id 相同处理
+pub async fn get_session(previous_response_id: &str, tenant: &str) -> Option<HttpSessionEntry> {
     store()
         .lock()
         .await
-        .get(previous_response_id)
+        .get_for_tenant(previous_response_id, tenant)
         .map(|(entry, _)| entry)
 }
 
 pub async fn get_session_with_parent(
     previous_response_id: &str,
+    tenant: &str,
 ) -> Option<(HttpSessionEntry, SessionParent)> {
-    store().lock().await.get(previous_response_id)
+    store()
+        .lock()
+        .await
+        .get_for_tenant(previous_response_id, tenant)
 }
 
 /// 保存新的会话状态（以 response_id 为 key）
@@ -625,6 +652,32 @@ mod tests {
 
         // An id the client invented has no record at all, so it has no key either.
         assert!(store.get("sess-victim").is_none());
+    }
+
+    #[test]
+    fn a_response_is_only_served_to_the_tenant_that_created_it() {
+        let mut store = HttpSessionStore::new();
+        store.insert_delta(
+            "resp-a".to_string(),
+            None,
+            vec![json!({"content": "tenant a private history"})],
+            Vec::new(),
+            String::new(),
+            String::new(),
+            Some("routing-a".to_string()),
+            Some("tenant-a:sess-1".to_string()),
+        );
+        // Entries saved without a tenant (legacy / chat) are never served to a tenant lookup.
+        store.insert("resp-legacy".to_string(), entry("legacy"));
+
+        let (entry_a, parent_a) = store.get_for_tenant("resp-a", "tenant-a").expect("owner");
+        assert_eq!(entry_a.input_items.len(), 1);
+        assert_eq!(parent_a.routing_session_id(), "routing-a");
+
+        // Another tenant gets exactly what an unknown id gets.
+        assert!(store.get_for_tenant("resp-a", "tenant-b").is_none());
+        assert!(store.get_for_tenant("resp-unknown", "tenant-b").is_none());
+        assert!(store.get_for_tenant("resp-legacy", "tenant-a").is_none());
     }
 
     #[test]
