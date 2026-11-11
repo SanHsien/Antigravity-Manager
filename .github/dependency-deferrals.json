@@ -45,6 +45,10 @@
       "deferredLatest": "0.13.5",
       "reason": "major-series (0.x minor or 1.x) upgrade of a runtime crate needing API migration and a full Tauri build; not now"
     },
+    "rusqlite": {
+      "deferredLatest": "0.42.0",
+      "reason": "reviewed 2026-11-11: 0.42.0 is a 0.x minor released 2026-11-11 that bumps the bundled SQLite to 3.54.1 and SQLCipher to 4.20.0 and adds RawValue, and the fork's ~10 modules (db, proxy_db, token_stats, security_db, user_token_db, ...) run on the 0.41 fallible_uint u64 behavior. The bundled-engine bump changes database runtime, and this host cannot compile the crate (no cmake/MSVC), so raise it in a CI-built branch with the database test suite rather than blind"
+    },
     "sha2": {
       "deferredLatest": "0.11.1",
       "reason": "v0.11 moves to digest 0.11 and declares Rust 1.88/edition 2024; this fork uses Sha256 for crypto, cache, session, schema, and thinking-store identifiers. Recheck with a coordinated Cargo update, hash-stability fixtures, and a Windows Tauri build rather than changing persistent/runtime hash behavior unchecked"
