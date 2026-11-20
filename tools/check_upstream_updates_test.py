@@ -301,6 +301,15 @@ class SlugResolution(unittest.TestCase):
         self.assertEqual(check.upstream_slug("https://github.com/a/b", None), "a/b")
         self.assertIsNone(check.upstream_slug("upstream", None))
 
+    def test_remote_name_reaches_git_after_end_of_options(self):
+        """``git remote get-url`` takes the baseline's ``repo`` too; ``--`` keeps it from ever
+        being parsed as an option, like every other git call that carries it."""
+        with mock.patch.object(check, "run_git", return_value="https://github.com/a/b\n") as run:
+            check.upstream_slug("upstream", Path("."))
+        args = run.call_args[0][0]
+        self.assertEqual(args[:2], ["remote", "get-url"])
+        self.assertLess(args.index("--"), args.index("upstream"))
+
 
 class ConsoleEncoding(PatchedCase):
     def assert_survives(self, encoding):
@@ -352,8 +361,14 @@ class EndToEnd(PatchedCase):
         self.first = commit(self.upstream, "a.txt", "first")
         git(root, "clone", "-q", str(self.upstream), "fork")
         self.fork = root / "fork"
+        self.add_decision_log(check.DEFAULT_DECISION_LOG)
         self.report = root / "report.md"
         self.baseline_file = root / "baseline.json"
+
+    def add_decision_log(self, relative: str):
+        path = self.fork / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# Decisions\n", encoding="utf-8")
 
     def write(self, sha=None, **extra):
         data = baseline_for(sha or self.first, **extra)
@@ -443,6 +458,67 @@ class EndToEnd(PatchedCase):
             self.baseline_file.write_text(content, encoding="utf-8")
             self.assertEqual(self.run_check(), 2, content)
             self.assertIn("Check failed", self.report_text(), content)
+
+    def test_baseline_saved_with_a_utf8_bom_still_loads(self):
+        """Windows editors (Notepad, PowerShell 5 ``Out-File``) prepend a BOM; that is not a bad
+        baseline, and exit 2 on every run would bury real check failures."""
+        data = baseline_for(self.first, repo=str(self.upstream))
+        self.baseline_file.write_bytes(b"\xef\xbb\xbf" + json.dumps(data).encode("utf-8"))
+        self.assertEqual(self.run_check("--strict"), 0)
+        self.assertNotIn("Check failed", self.report_text())
+
+    def test_baseline_repo_shaped_like_a_git_option_never_reaches_git(self):
+        """``repo`` is passed to ``git fetch``/``ls-remote``. A value such as
+        ``--upload-pack=<cmd>`` would be parsed as an option and run a command; a transport
+        helper (``ext::<cmd>``) or a value with whitespace/control characters is no upstream URL.
+        Exit 2 as a bad baseline, before any git call sees the value."""
+        seen: list[list[str]] = []
+        real = check.run_git
+
+        def recording(args, repo_dir):
+            seen.append(list(args))
+            return real(args, repo_dir)
+
+        hostile = [
+            "--upload-pack=touch pwned",
+            "-uinject",
+            "ext::sh -c touch% pwned",
+            "https://example.com/a b",
+            "https://example.com/a\nb",
+            "",
+            7,
+        ]
+        with mock.patch.object(check, "run_git", recording):
+            for value in hostile:
+                data = baseline_for(self.first, repo=value)
+                self.baseline_file.write_text(json.dumps(data), encoding="utf-8")
+                self.assertEqual(self.run_check("--strict"), 2, repr(value))
+                self.assertIn("Check failed", self.report_text(), repr(value))
+        leaked = [args for args in seen if any(str(v) in args for v in hostile if v != "")]
+        self.assertEqual(leaked, [])
+
+    def test_git_receives_the_repository_after_end_of_options(self):
+        """Defence in depth beside baseline validation: every git call that takes the upstream
+        as a positional argument puts ``--`` before it, so it can never be read as an option."""
+        seen: list[list[str]] = []
+        real = check.run_git
+
+        def recording(args, repo_dir):
+            seen.append(list(args))
+            return real(args, repo_dir)
+
+        self.write(check_branches=True, branches=[], track="release")
+        git(self.upstream, "tag", "v1.0.0")
+        commit(self.upstream, "b.txt", "second")
+        git(self.upstream, "tag", "v1.1.0")  # a newer release: the tag fetch runs too
+        with mock.patch.object(check, "run_git", recording):
+            self.run_check()
+        repo = str(self.upstream)
+        uses = [args for args in seen if repo in args]
+        self.assertTrue(uses)
+        for args in uses:
+            self.assertIn("--", args, args)
+            self.assertLess(args.index("--"), args.index(repo), args)
 
     def test_numeric_string_watermarks_still_load(self):
         self.write(reviewed_pr_through="12")
@@ -668,12 +744,41 @@ class EndToEnd(PatchedCase):
 
         def gone(args):
             if args[:2] == ["pr", "view"]:
-                return completed("", 1, "Could not resolve to a PullRequest")
+                # Verbatim from `gh pr view 99999999 --repo cli/cli` (gh 2.x, 2026-11-20).
+                message = (
+                    "GraphQL: Could not resolve to a PullRequest with the number of 9. "
+                    "(repository.pullRequest)"
+                )
+                return completed("", 1, message)
             return fake_gh()(args)
 
         self.set_gh(gone)
         self.assertEqual(self.run_check("--strict"), 1)
         self.assertIn("not found", self.report_text())
+
+    def test_monitored_lookup_failure_that_says_not_found_is_unchecked_not_drift(self):
+        """Only "this repository has no PR with that number" is drift. A repository that cannot
+        be resolved (renamed, private, no access), a bare 404, or an answer about some other
+        number says nothing about the pinned PR: exit 2 ("could not check"), never exit 1."""
+        self.write(monitored=[{"item": "pr#9", "head": "a" * 40, "state": "open"}])
+        failures = [
+            # Verbatim from `gh pr view 1 --repo <missing repo>` (gh 2.x, 2026-11-20).
+            "GraphQL: Could not resolve to a Repository with the name 'owner/name'. (repository)",
+            "HTTP 404: Not Found (https://api.github.com/graphql)",
+            "GraphQL: Could not resolve to a PullRequest with the number of 90. "
+            "(repository.pullRequest)",
+            "could not resolve host: api.github.com",
+        ]
+        for stderr in failures:
+
+            def failing(args, stderr=stderr):
+                if args[:2] == ["pr", "view"]:
+                    return completed("", 1, stderr)
+                return fake_gh()(args)
+
+            self.set_gh(failing)
+            self.assertEqual(self.run_check("--strict"), 2, stderr)
+            self.assertIn("Not checked", self.report_text(), stderr)
 
     def test_monitored_pin_too_short_to_compare_counts_as_drift(self):
         self.write(monitored=[{"item": "pr#9", "head": "abc", "state": "open"}])
@@ -721,12 +826,66 @@ class EndToEnd(PatchedCase):
         self.assertEqual(self.run_check("--strict"), 1)
 
     def test_decision_log_from_baseline_is_what_the_report_names(self):
+        self.add_decision_log("docs/fork/DECISIONS.md")
         self.write(decision_log="docs/fork/DECISIONS.md", reviewed_pr_through=0)
         self.set_gh(fake_gh(prs=[1]))
         self.run_check()
         text = self.report_text()
         self.assertIn("docs/fork/DECISIONS.md", text)
         self.assertNotIn("`docs/DECISIONS.md`", text)
+
+    def test_decision_log_that_does_not_exist_is_a_check_error_not_a_dangling_instruction(self):
+        """A fork keeping its log at docs/fork/DECISIONS.md without saying so in the baseline would
+        otherwise be told, every run, to record verdicts in a file that is not there -- and the
+        verdicts end up nowhere. Exit 2 naming the path and the field, so the fix is obvious."""
+        (self.fork / check.DEFAULT_DECISION_LOG).unlink()
+        self.add_decision_log("docs/fork/DECISIONS.md")
+        self.write(reviewed_pr_through=0)
+        self.set_gh(fake_gh(prs=[1]))
+        self.assertEqual(self.run_check(), 2)
+        text = self.report_text()
+        self.assertIn("Check failed", text)
+        self.assertIn(check.DEFAULT_DECISION_LOG, text)
+        self.assertIn("decision_log", text)
+        # An explicit decision_log that is missing is the same failure.
+        self.write(decision_log="docs/elsewhere/DECISIONS.md")
+        self.assertEqual(self.run_check(), 2)
+        self.assertIn("docs/elsewhere/DECISIONS.md", self.report_text())
+
+    def test_decision_log_must_be_a_relative_path_string(self):
+        for value in ("", 7, None, ["docs/DECISIONS.md"]):
+            self.write(decision_log=value)
+            self.assertEqual(self.run_check(), 2, repr(value))
+            self.assertIn("Check failed", self.report_text(), repr(value))
+
+    def test_decision_log_outside_the_repository_is_rejected_even_if_the_file_exists(self):
+        """The report sends verdicts to this path; one that is absolute or climbs out of the
+        repository records them somewhere the fork does not version (and the existence check
+        would be answered by a file outside it). Exit 2 as a bad baseline."""
+        outside = self.fork.parent / "OUTSIDE.md"
+        outside.write_text("# not the fork's\n", encoding="utf-8")
+        hostile = [
+            str(outside),  # absolute, existing
+            outside.as_posix(),
+            "../OUTSIDE.md",
+            "docs/../../OUTSIDE.md",
+            "/etc/passwd",
+            "C:/Windows/win.ini",
+            "C:\\Windows\\win.ini",
+            "C:OUTSIDE.md",  # drive-relative
+            "\\\\server\\share\\DECISIONS.md",
+            "//server/share/DECISIONS.md",
+        ]
+        for value in hostile:
+            self.write(decision_log=value)
+            self.assertEqual(self.run_check(), 2, value)
+            self.assertIn("decision_log", self.report_text(), value)
+
+    def test_decision_log_relative_paths_inside_the_repository_still_load(self):
+        self.add_decision_log("docs/fork/DECISIONS.md")
+        for value in ("docs/fork/DECISIONS.md", "./docs/DECISIONS.md", "docs/fork/../DECISIONS.md"):
+            self.write(decision_log=value)
+            self.assertEqual(self.run_check("--strict"), 0, value)
 
     def test_baseline_with_a_short_sha_is_rejected(self):
         self.write(sha="abc1234")
