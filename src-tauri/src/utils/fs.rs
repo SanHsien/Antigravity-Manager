@@ -175,11 +175,17 @@ mod tests {
         let target_file = temp_dir.join("config.json");
         write_atomic(&target_file, b"old").unwrap();
 
-        let lock = hold_exclusively(&target_file);
+        // The holder takes the lock, reports that it holds it, then releases it
+        // well inside the ~155 ms retry window.
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let lock_path = target_file.clone();
         let releaser = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(40));
+            let lock = hold_exclusively(&lock_path);
+            held_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
             drop(lock);
         });
+        held_rx.recv().unwrap();
 
         let result = write_atomic(&target_file, b"new");
         releaser.join().unwrap();
@@ -213,11 +219,24 @@ mod tests {
             "retries must be bounded"
         );
         assert_eq!(fs::read(&target_file).unwrap(), b"old");
-        let leftovers: Vec<_> = fs::read_dir(&temp_dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
-            .collect();
+        // An antivirus scan can delay the delete of the temp file for a moment;
+        // allow a short grace period before calling it a leftover.
+        let list_leftovers = || -> Vec<_> {
+            fs::read_dir(&temp_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+                .map(|e| e.file_name())
+                .collect()
+        };
+        let mut leftovers = list_leftovers();
+        for _ in 0..25 {
+            if leftovers.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            leftovers = list_leftovers();
+        }
         assert!(
             leftovers.is_empty(),
             "temp file left behind: {:?}",
