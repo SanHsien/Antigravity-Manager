@@ -89,7 +89,19 @@ pub fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             let app_handle = app.clone();
             match event.id().as_ref() {
                 "show" => {
-                    let _ = modules::lightweight::exit_lightweight_mode(&app_handle);
+                    // Upstream #3993: tray callbacks run on the UI thread on Windows;
+                    // queue the rebuild so it runs after this callback returns.
+                    #[cfg(target_os = "windows")]
+                    {
+                        let deferred_handle = app_handle.clone();
+                        modules::lightweight::defer_on_main_thread(&app_handle, move || {
+                            let _ = modules::lightweight::exit_lightweight_mode(&deferred_handle);
+                        });
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        let _ = modules::lightweight::exit_lightweight_mode(&app_handle);
+                    }
                 }
                 "toggle_lightweight" => {
                     tauri::async_runtime::spawn(async move {
@@ -234,7 +246,18 @@ pub fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             } = event
             {
                 let app = tray.app_handle();
-                let _ = modules::lightweight::exit_lightweight_mode(app);
+                // Upstream #3993: same as the "show" menu item above.
+                #[cfg(target_os = "windows")]
+                {
+                    let app_handle = app.clone();
+                    modules::lightweight::defer_on_main_thread(app, move || {
+                        let _ = modules::lightweight::exit_lightweight_mode(&app_handle);
+                    });
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = modules::lightweight::exit_lightweight_mode(app);
+                }
             }
         })
         .build(app)?;

@@ -299,10 +299,27 @@ pub fn run() {
                     tauri_plugin_window_state::StateFlags::all()
                         .difference(tauri_plugin_window_state::StateFlags::VISIBLE),
                 )
+                // Upstream #3993: the plugin restores state from on_window_ready while
+                // WebviewWindow::build still holds Tauri's non-reentrant RwLocks; on Windows
+                // SetWindowPos re-enters the event loop and deadlocks the UI thread. Restore
+                // main after build instead (setup and lightweight::ensure_main_window).
+                .skip_initial_state("main")
                 .build(),
         )
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = modules::lightweight::exit_lightweight_mode(app);
+            // Upstream #3993: this callback runs on the UI thread on Windows; queue the
+            // rebuild so it runs after the callback returns.
+            #[cfg(target_os = "windows")]
+            {
+                let app_handle = app.clone();
+                modules::lightweight::defer_on_main_thread(app, move || {
+                    let _ = modules::lightweight::exit_lightweight_mode(&app_handle);
+                });
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = modules::lightweight::exit_lightweight_mode(app);
+            }
         }))
         .manage(commands::proxy::ProxyServiceState::new())
         .manage(commands::cloudflared::CloudflaredState::new())
@@ -324,6 +341,23 @@ pub fn run() {
                         width,
                         height,
                     ));
+                }
+            }
+
+            // Upstream #3993: main has skip_initial_state, so restore its saved position
+            // and size here, after the window is built (deferred on Windows).
+            if let Some(window) = app.get_webview_window("main") {
+                use tauri_plugin_window_state::{StateFlags, WindowExt};
+                let flags = StateFlags::all().difference(StateFlags::VISIBLE);
+                #[cfg(target_os = "windows")]
+                {
+                    modules::lightweight::defer_on_main_thread(app.handle(), move || {
+                        let _ = window.restore_state(flags);
+                    });
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = window.restore_state(flags);
                 }
             }
 

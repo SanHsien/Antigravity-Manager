@@ -1,6 +1,25 @@
 use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
+/// Queue `f` onto the Win32 event loop from a worker thread so it cannot run
+/// inline inside the current tao/Win32 callback.
+///
+/// `AppHandle::run_on_main_thread` runs the task immediately when the caller is
+/// already on the UI thread, which would not release a WindowManager/PluginStore
+/// `RwLock` still held by that callback (upstream #3993, commit 9bc35068).
+#[cfg(target_os = "windows")]
+pub fn defer_on_main_thread<F>(app: &AppHandle, f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let app = app.clone();
+    let _ = std::thread::Builder::new()
+        .name("agm-defer-main".into())
+        .spawn(move || {
+            let _ = app.run_on_main_thread(f);
+        });
+}
+
 /// 尝试获取或重新构建主窗口。
 /// 如果主窗口已被轻量模式销毁，将基于 tauri.conf.json 的配置动态重建，并恢复窗口位置和图标。
 pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -57,7 +76,21 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
     }
 
     // 5. 恢复窗口状态（记忆的位置和尺寸）
-    let _ = window.restore_state(StateFlags::all().difference(StateFlags::VISIBLE));
+    // main has skip_initial_state, so the plugin no longer restores during build().
+    // Upstream #3993: on Windows SetWindowPos re-enters Tauri's non-reentrant RwLock;
+    // queue the restore so it does not run inline in the current UI callback.
+    #[cfg(target_os = "windows")]
+    {
+        let window_for_restore = window.clone();
+        let flags = StateFlags::all().difference(StateFlags::VISIBLE);
+        defer_on_main_thread(app, move || {
+            let _ = window_for_restore.restore_state(flags);
+        });
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window.restore_state(StateFlags::all().difference(StateFlags::VISIBLE));
+    }
 
     tracing::info!("[Lightweight] 主窗口重建完成");
     Ok(window)
