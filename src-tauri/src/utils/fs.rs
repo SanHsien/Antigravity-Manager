@@ -37,14 +37,39 @@ fn atomic_replace_file(src: &Path, dst: &Path) -> Result<(), String> {
     const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
     let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
 
-    let result = unsafe { MoveFileExW(src_wide.as_ptr(), dst_wide.as_ptr(), flags) };
-    if result == 0 {
-        let err = std::io::Error::last_os_error();
-        let _ = std::fs::remove_file(src);
-        return Err(format!("MoveFileExW failed: {}", err));
-    }
+    // Antivirus scanners, indexers and concurrent readers briefly hold the target
+    // without FILE_SHARE_DELETE; MoveFileExW then fails with ERROR_ACCESS_DENIED (5)
+    // or ERROR_SHARING_VIOLATION (32). Retry those with a bounded backoff
+    // (5+10+20+40+80 ms) before giving up (upstream 90241980, #3881).
+    const ERROR_ACCESS_DENIED: i32 = 5;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    const MAX_RETRIES: u32 = 5;
 
-    Ok(())
+    let mut attempt: u32 = 0;
+    loop {
+        let result = unsafe { MoveFileExW(src_wide.as_ptr(), dst_wide.as_ptr(), flags) };
+        if result != 0 {
+            return Ok(());
+        }
+
+        let err = std::io::Error::last_os_error();
+        let transient = matches!(
+            err.raw_os_error(),
+            Some(ERROR_ACCESS_DENIED) | Some(ERROR_SHARING_VIOLATION)
+        );
+        if transient && attempt < MAX_RETRIES {
+            std::thread::sleep(std::time::Duration::from_millis(5u64 << attempt));
+            attempt += 1;
+            continue;
+        }
+
+        let _ = std::fs::remove_file(src);
+        return Err(format!(
+            "MoveFileExW failed after {} attempt(s): {}",
+            attempt + 1,
+            err
+        ));
+    }
 }
 
 /// Non-Windows: use standard atomic rename
@@ -123,6 +148,81 @@ mod tests {
         write_atomic(&target_file, updated_data).expect("Overwrite should succeed");
 
         assert_eq!(fs::read(&target_file).unwrap(), updated_data);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    /// Open `path` with no sharing, the way an antivirus scanner or indexer briefly
+    /// holds a freshly written file; MoveFileExW then fails with
+    /// ERROR_SHARING_VIOLATION (32) or ERROR_ACCESS_DENIED (5).
+    #[cfg(target_os = "windows")]
+    fn hold_exclusively(path: &Path) -> File {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .expect("test must be able to lock the target")
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_write_atomic_retries_through_a_transient_windows_lock() {
+        // Upstream 90241980 (#3881): a short-lived lock on the target must not
+        // turn a config/account save into a hard failure.
+        let temp_dir = std::env::temp_dir().join(format!("test_atomic_lock_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+        let target_file = temp_dir.join("config.json");
+        write_atomic(&target_file, b"old").unwrap();
+
+        let lock = hold_exclusively(&target_file);
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            drop(lock);
+        });
+
+        let result = write_atomic(&target_file, b"new");
+        releaser.join().unwrap();
+        assert!(
+            result.is_ok(),
+            "transient lock should be retried: {:?}",
+            result
+        );
+        assert_eq!(fs::read(&target_file).unwrap(), b"new");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_write_atomic_gives_up_on_a_persistent_lock_and_leaves_no_temp_file() {
+        let temp_dir = std::env::temp_dir().join(format!("test_atomic_stuck_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+        let target_file = temp_dir.join("config.json");
+        write_atomic(&target_file, b"old").unwrap();
+
+        let lock = hold_exclusively(&target_file);
+        let started = std::time::Instant::now();
+        let result = write_atomic(&target_file, b"new");
+        let elapsed = started.elapsed();
+        drop(lock);
+
+        assert!(result.is_err(), "a lock that never clears must still fail");
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "retries must be bounded"
+        );
+        assert_eq!(fs::read(&target_file).unwrap(), b"old");
+        let leftovers: Vec<_> = fs::read_dir(&temp_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp file left behind: {:?}",
+            leftovers
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
