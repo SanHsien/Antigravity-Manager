@@ -11,6 +11,7 @@ a copy of the checker that passes them is safe to run unattended in a workflow.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import json
@@ -168,6 +169,59 @@ class TicketTruncation(PatchedCase):
         scan = check.collect_new_tickets({"repo": "r"}, "pr", cap=200)
         self.assertFalse(scan.complete)
         self.assertEqual(scan.limit, 200)
+
+    def test_capped_listing_that_ends_right_above_the_watermark_is_complete(self):
+        """Newest-first and contiguous: once `#watermark+1` is listed nothing can be missing."""
+        self.set_gh(fake_gh(prs=range(1, 301)))
+        scan = check.collect_new_tickets({"repo": "r", "reviewed_pr_through": 200}, "pr", cap=100)
+        self.assertTrue(scan.complete)
+        self.assertEqual([i["number"] for i in scan.items], list(range(201, 301)))
+
+
+class SharedNumbering(PatchedCase):
+    """PRs and issues share one number sequence; an issue number cannot hide a PR."""
+
+    def scans(self, prs, issues, cap, watermark=10):
+        self.set_gh(fake_gh(prs=prs, issues=issues))
+        baseline = {"repo": "r", "reviewed_pr_through": watermark}
+        baseline["reviewed_issue_through"] = watermark
+        pr_scan = check.collect_new_tickets(baseline, "pr", cap=cap)
+        issue_scan = check.collect_new_tickets(baseline, "issue", cap=cap)
+        check.close_shared_number_gaps(pr_scan, issue_scan)
+        return pr_scan, issue_scan
+
+    def test_capped_pr_listing_whose_gap_is_all_issue_numbers_is_complete(self):
+        prs = [*range(1, 11), *range(101, 401)]
+        pr_scan, issue_scan = self.scans(prs, range(11, 101), cap=300)
+        self.assertTrue(pr_scan.complete)
+        self.assertTrue(issue_scan.complete)
+        self.assertEqual([i["number"] for i in pr_scan.items], list(range(101, 401)))
+
+    def test_a_number_neither_listing_accounts_for_keeps_the_scan_incomplete(self):
+        """A deleted or transferred number could be anything: fail closed, never assume."""
+        prs = [*range(1, 11), *range(101, 401)]
+        issues = [n for n in range(11, 101) if n != 50]
+        pr_scan, _ = self.scans(prs, issues, cap=300)
+        self.assertFalse(pr_scan.complete)
+
+    def test_an_unchecked_other_kind_proves_nothing(self):
+        self.set_gh(fake_gh(prs=[*range(1, 11), *range(101, 401)]))
+        pr_scan = check.collect_new_tickets({"repo": "r", "reviewed_pr_through": 10}, "pr", cap=300)
+        for other in (None, check.TicketScan([], True, 1, disabled=True)):
+            check.close_shared_number_gaps(pr_scan, other)
+            self.assertFalse(pr_scan.complete)
+
+    def test_incomplete_report_names_the_unreached_numbers_and_bounds_the_count(self):
+        """rea: 3000 PRs listed down to #9438, watermark #7097 -- say exactly what is unknown."""
+        prs = [*range(1, 11), *range(101, 401)]
+        issues = [n for n in range(11, 101) if n not in (50, 51)]
+        pr_scan, _ = self.scans(prs, issues, cap=300)
+        text = "\n".join(check.render_ticket_section("PRs", 10, pr_scan, "pr", "D.md"))
+        self.assertIn("INCOMPLETE", text)
+        self.assertIn("`#11`–`#100`", text)
+        # 300 listed; of the 90 unreached numbers 88 are known issues, so at most 2 more PRs.
+        self.assertIn("between 300 and 302", text)
+        self.assertIn("--ticket-cap", text)
 
 
 class TicketFailureIsNotEmpty(PatchedCase):
@@ -375,18 +429,28 @@ class EndToEnd(PatchedCase):
         data["repo"] = str(self.upstream)
         self.baseline_file.write_text(json.dumps(data), encoding="utf-8")
 
-    def run_check(self, *flags):
-        return check.main(
-            [
-                "--repo-dir",
-                str(self.fork),
-                "--baseline",
-                str(self.baseline_file),
-                "--output",
-                str(self.report),
-                *flags,
-            ]
-        )
+    def run_check(self, *flags, console=None):
+        """Run ``main``; what it prints is kept in ``self.console`` instead of the test log.
+
+        A fixture report printed into a fork's CI log reads like a real finding: the
+        Antigravity-Manager "INCOMPLETE ... hit its item cap" lines came from this suite.
+        """
+        self.console = console if console is not None else io.StringIO()
+        with contextlib.redirect_stdout(self.console), contextlib.redirect_stderr(io.StringIO()):
+            return check.main(
+                [
+                    "--repo-dir",
+                    str(self.fork),
+                    "--baseline",
+                    str(self.baseline_file),
+                    "--output",
+                    str(self.report),
+                    *flags,
+                ]
+            )
+
+    def stdout_text(self):
+        return self.console.getvalue()
 
     def report_text(self):
         return self.report.read_text(encoding="utf-8")
@@ -661,8 +725,8 @@ class EndToEnd(PatchedCase):
         self.write(reviewed_pr_through=0)
         self.set_gh(fake_gh(prs=[1], titles={1: "🚀 修復"}))
         console = io.TextIOWrapper(io.BytesIO(), encoding="cp950")
-        with mock.patch.object(sys, "stdout", console):
-            self.assertEqual(self.run_check("--strict"), 1)  # pending, not UnicodeEncodeError
+        # pending, not UnicodeEncodeError
+        self.assertEqual(self.run_check("--strict", console=console), 1)
 
     # -- tracking modes
 
@@ -794,6 +858,47 @@ class EndToEnd(PatchedCase):
 
         with mock.patch.object(check, "run_git", fake):
             self.assertEqual(self.run_check("--strict"), 2)
+
+    # -- report size: GitHub drops a step summary over 1024 KiB whole (rea: 1355k, nothing shown)
+
+    def _huge_world(self):
+        self.write(reviewed_pr_through=0)
+        titles = {n: f"{'long upstream title ' * 15}#{n}" for n in range(1, 6001)}
+        self.set_gh(fake_gh(prs=range(1, 6001), titles=titles))
+
+    def test_report_too_big_for_a_step_summary_is_abridged_with_an_exact_count(self):
+        self._huge_world()
+        code = self.run_check("--strict", "--ticket-cap", "8000")
+        self.assertEqual(code, 1)  # abridging the report never changes the verdict
+        size = len(self.report.read_bytes())
+        self.assertLessEqual(size, check.REPORT_BYTE_BUDGET)
+        text = self.report_text()
+        self.assertIn("6000 new item(s) to triage", text)
+        shown = text.count("| long upstream title")
+        self.assertGreater(shown, 0)
+        self.assertIn(f"{6000 - shown} more item(s) not shown", text)
+        self.assertIn("abridged", text)
+
+    def test_abridged_report_still_prints_every_item_to_the_job_log(self):
+        self._huge_world()
+        self.run_check("--strict", "--ticket-cap", "8000")
+        out = self.stdout_text()
+        self.assertIn("| #1 |", out)
+        self.assertIn("| #6000 |", out)
+        self.assertNotIn("not shown", out)
+
+    def test_abridging_keeps_an_incomplete_scan_at_exit_2(self):
+        self._huge_world()
+        self.assertEqual(self.run_check("--strict", "--ticket-cap", "5000"), 2)
+        self.assertLessEqual(len(self.report.read_bytes()), check.REPORT_BYTE_BUDGET)
+        self.assertIn("INCOMPLETE", self.report_text())
+
+    def test_a_report_that_fits_is_not_abridged(self):
+        self.write(reviewed_pr_through=0)
+        self.set_gh(fake_gh(prs=range(1, 40)))
+        self.run_check()
+        self.assertNotIn("not shown", self.report_text())
+        self.assertNotIn("abridged", self.report_text())
 
     def test_report_file_written_by_main_is_utf8_on_disk(self):
         self.write(reviewed_pr_through=0)
