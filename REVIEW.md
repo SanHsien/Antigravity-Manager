@@ -1715,3 +1715,24 @@ PR 軸水位提升至 `#3885`，issue 軸水位提升至 `#3883`。水位推進�
 **驗證（本機，Windows）**：`npm run build` 綠；`tools\dev_check.ps1` 前九步全綠（security dependency、build、tailwind、lightweight window 3/3、compileall、upstream checker unittest 82/82、fork 文件連結、zh-TW locale key 1471/1471）；最後一步 `check_upstream_updates.py --strict` 紅燈，原因是上游積壓未分流：PR 自 `#3899` 起有 5 筆新項、Issue 自 `#3897` 起有 10 筆新項（例如 #3904、#3912、#3913、#3914），與本輪依賴改動無關，本輪未處理，須另開分流；`check_dependency_freshness.py --strict` exit 0；Rust 部分未編譯（本機缺 cmake）。
 
 **未驗證**：實機切換語言、帳號詳情對話框與設定頁的視覺結果；本輪只做了 Node 層的解析與 SSR 標記比對。升級後請在 Windows 實機確認語言切換與 `Trans` 內的程式碼標記顯示。
+
+### 38. CodeQL `rust/unsafe-deserialization` 三筆告警分流（#33–#35，2026-11-21）
+
+三筆都在 2026-11-20 出現，觸發的 commit 只改了工具檔。原因已查證是 CodeQL 版本更新：Rust 分析 `2176768000`（`1ece0165`，CodeQL 2.27.4，28 條規則）結果 0；分析 `2216637364`（`eab1c41b`，CodeQL 2.27.5，29 條規則）起結果 3。被標的三行自 `123a6ad2`（2026-09-27）起未變，上游 `lbjlaq/Antigravity-Manager` `9b6dfc10` 有相同寫法（`claude.rs:897`、`openai.rs:2251`、`openai.rs:4471`）。SARIF 的 source 全部是 `server.rs` 的路由註冊（`:600`、`:604`、`:608`、`:611`、`:614`、`:629`），也就是 axum `Json<Value>` 抽取的客戶端請求本文；沒有一條來自上游回應。
+
+| 告警 | 位置 | 資料流 | 判定 | 處理 |
+| --- | --- | --- | --- | --- |
+| #35 | `src-tauri/src/proxy/handlers/claude.rs:541` | `/v1/messages`（`server.rs:629`）→ `handle_messages` 的 `Json(body): Json<Value>`（`claude.rs:490`）→ `serde_json::from_value::<ClaudeRequest>(body.clone())` | 誤報 | GitHub dismiss（false positive） |
+| #33 | `src-tauri/src/proxy/handlers/openai.rs:1880` | `/v1/chat/completions`（`server.rs:600`）→ `handle_chat_completions` 的 `Json(mut body)`（`openai.rs:1791`）→ `from_value::<OpenAIRequest>(body)` | 誤報 | GitHub dismiss（false positive） |
+| #34 | `src-tauri/src/proxy/handlers/openai.rs:3803` | `/v1/completions`、`/v1/responses`、`/responses`、`/responses/compact`（`server.rs:604–614`）→ `handle_completions` 的 `Json(mut body)`（`openai.rs:3111`）→ `from_value::<OpenAIRequest>(body)` | 誤報 | GitHub dismiss（false positive） |
+
+**為什麼是誤報**（CWE-502 的風險是攻擊者選擇要建構的型別或觸發 gadget；這三處都不成立）：
+
+1. **目標是固定型別。** `ClaudeRequest`（`mappers/claude/models.rs:7-8`）與 `OpenAIRequest`（`mappers/openai/models.rs:6-7`）都是 `#[derive(Deserialize)]`，兩個檔案沒有 `deserialize_with` 或手寫 `impl Deserialize`。serde 不會依輸入選型別，也沒有反序列化時執行的程式碼。
+2. **輸入在被標的那一行之前已經解析並設限。** `from_value` 的輸入是已經解析好的 `serde_json::Value`，不是原始位元組。axum 0.7.9 的 `Json::from_bytes` 用 `serde_json::Deserializer::from_slice`（`axum-0.7.9/src/json.rs:158`），保留 serde_json 預設的巢狀深度上限 128（`serde_json-1.0.151/src/de.rs:63`）。`src-tauri/src` 沒有呼叫 `disable_recursion_limit`。依賴圖裡的 `unbounded_depth` feature 只來自 build 期的 `cargo_metadata`，而且只開放這個函式，不改預設值。
+3. **大小有上限。** `DefaultBodyLimit::max(max_body_size)`（`server.rs:1005`）套在全部路由；預設 100 MB，可由 `ABV_MAX_BODY_SIZE` 調整（`server.rs:987-990`）。監控中介層另外以 `to_bytes(body, MAX_REQUEST_LOG_SIZE)` 讀取，上限 100 MB（`middleware/monitor.rs:15`、`:792`）。`from_value` 的成本與已解析的 `Value` 成正比（`claude.rs:541` 多一次 `clone`），沒有放大。
+4. **誰能送到這裡。** 預設只綁 `127.0.0.1`（`config.rs:975`、`:1012-1018`）；proxy 路由經 `auth_middleware`（`server.rs:674-677`）。
+
+**刻意不改**：100 MB 上限是 fork 與上游一致的既有設計，用於帶圖片與長上下文的請求。把它調低會改變功能，也不是這條規則要的修正。若要收緊，應另立項目並先量測實際請求大小。
+
+**處理**：三筆以 `dismissed_reason=false positive` dismiss，附上本節的 file:line 證據；ROADMAP 近期表的分流列刪除。沒有改程式碼，所以沒有新增測試。
