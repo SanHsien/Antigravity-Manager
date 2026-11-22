@@ -6237,7 +6237,11 @@ pub async fn handle_responses_websocket(
     headers: HeaderMap,
     State(state): State<AppState>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_websocket_session(socket, headers, state))
+    // One message is one request: apply the HTTP body limit instead of tungstenite's
+    // unrelated defaults (64 MiB per message, 16 MiB per frame).
+    let max_bytes = crate::proxy::middleware::body_budget::max_request_body_bytes();
+    crate::proxy::middleware::body_budget::limit_websocket_messages(ws, max_bytes)
+        .on_upgrade(move |socket| handle_websocket_session(socket, headers, state))
 }
 
 async fn handle_websocket_session(mut socket: WebSocket, headers: HeaderMap, state: AppState) {

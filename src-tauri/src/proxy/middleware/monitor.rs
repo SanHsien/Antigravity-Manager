@@ -807,11 +807,9 @@ pub async fn monitor_middleware(
                     }
                 } else if let Ok(s) = std::str::from_utf8(&bytes) {
                     if model.is_none() {
-                        model = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| {
-                            v.get("model")
-                                .and_then(|m| m.as_str())
-                                .map(|s| s.to_string())
-                        });
+                        // Read the one field; do not build a full JSON tree of the body
+                        // here (the handler parses it again anyway).
+                        model = crate::proxy::middleware::model_peek::top_level_model(&bytes);
                     }
                     Some(s.to_string())
                 } else {

@@ -505,13 +505,15 @@ pub async fn handle_messages(
             .into_response();
     }
 
-    // [FIX] 保存原始请求体的完整副本，用于日志记录
+    // [FIX] 保留原始请求体用于日志记录
     // 这确保了即使结构体定义遗漏字段，日志也能完整记录所有参数
-    let original_body = body.clone();
+    // The parsed tree is moved here, not cloned: the typed request below is deserialized from
+    // a borrow of it, so the body exists once as a `Value`, not three times.
+    let original_body = body;
 
     tracing::debug!(
         "handle_messages called. Body JSON len: {}",
-        body.to_string().len()
+        original_body.to_string().len()
     );
 
     // 生成随机 Trace ID 用户追踪
@@ -538,7 +540,7 @@ pub async fn handle_messages(
 
     // [CRITICAL REFACTOR] 优先解析请求以获取模型信息(用于智能兜底判断)
     let mut request: crate::proxy::mappers::claude::models::ClaudeRequest =
-        match serde_json::from_value(body.clone()) {
+        match serde::Deserialize::deserialize(&original_body) {
             Ok(r) => r,
             Err(e) => {
                 return (
@@ -2903,5 +2905,86 @@ mod exhausted_status_tests {
             upstream_transport_error_status("HTTP 429 rate limited while connecting"),
             StatusCode::BAD_GATEWAY
         );
+    }
+}
+
+#[cfg(test)]
+mod borrowed_body_parse_tests {
+    use crate::proxy::mappers::claude::models::ClaudeRequest;
+    use serde_json::{json, Value};
+
+    /// `handle_messages` builds the typed request from a borrow of the parsed body instead of
+    /// from a clone of it. That must be the same parse: same request, same error text (the
+    /// text is returned to the client in the 400 body).
+    #[test]
+    fn task_typed_request_from_borrowed_body_equals_parse_of_a_clone() {
+        let bodies: Vec<Value> = vec![
+            json!({
+                "model": "claude-sonnet-4-5",
+                "max_tokens": 1024,
+                "stream": true,
+                "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+                "messages": [
+                    {"role": "user", "content": "plain string"},
+                    {"role": "assistant", "content": [
+                        {"type": "thinking", "thinking": "t", "signature": "s"},
+                        {"type": "text", "text": "answer"},
+                        {"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {"path": "a", "n": [1, 2.5, null]}}
+                    ]},
+                    {"role": "user", "content": [
+                        {"type": "tool_result", "tool_use_id": "toolu_1", "content": [{"type": "text", "text": "ok"}]},
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}}
+                    ]}
+                ],
+                "tools": [{"name": "Read", "description": "d", "input_schema": {"type": "object", "properties": {}}}],
+                "thinking": {"type": "enabled", "budget_tokens": 2048},
+                "metadata": {"user_id": "u"},
+                "unknown_top_level_field": {"kept": "only in the raw body"}
+            }),
+            // Aliased field name.
+            json!({"model": "m", "maxTokens": 7, "messages": []}),
+            // Errors: missing field, wrong types, wrong shape.
+            json!({"messages": []}),
+            json!({"model": "m"}),
+            json!({"model": 5, "messages": []}),
+            json!({"model": "m", "messages": "not-a-list"}),
+            json!({"model": "m", "messages": [{"role": "user"}]}),
+            json!({"model": "m", "messages": [], "max_tokens": "many"}),
+            json!({"model": "m", "messages": [], "max_tokens": -1}),
+            json!({"model": "m", "messages": [], "stream": "yes"}),
+            json!([1, 2, 3]),
+            json!("string body"),
+            json!(null),
+        ];
+
+        let mut ok = 0;
+        let mut rejected = 0;
+        for body in bodies {
+            let from_clone = serde_json::from_value::<ClaudeRequest>(body.clone());
+            let from_borrow: Result<ClaudeRequest, serde_json::Error> =
+                serde::Deserialize::deserialize(&body);
+            match (from_clone, from_borrow) {
+                (Ok(a), Ok(b)) => {
+                    ok += 1;
+                    assert_eq!(
+                        serde_json::to_value(&a).unwrap(),
+                        serde_json::to_value(&b).unwrap(),
+                        "request differs for {body}"
+                    );
+                }
+                (Err(a), Err(b)) => {
+                    rejected += 1;
+                    assert_eq!(a.to_string(), b.to_string(), "error differs for {body}");
+                }
+                (a, b) => panic!(
+                    "one parse accepted and the other rejected {body}: clone={:?} borrow={:?}",
+                    a.map(|_| ()).map_err(|e| e.to_string()),
+                    b.map(|_| ()).map_err(|e| e.to_string())
+                ),
+            }
+        }
+        // Both outcomes must really be exercised.
+        assert!(ok >= 2, "accepted only {ok}");
+        assert!(rejected >= 8, "rejected only {rejected}");
     }
 }

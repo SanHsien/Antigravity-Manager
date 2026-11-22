@@ -1730,12 +1730,14 @@ PR 軸水位提升至 `#3885`，issue 軸水位提升至 `#3883`。水位推進�
 
 1. **目標是固定型別。** `ClaudeRequest`（`mappers/claude/models.rs:7-8`）與 `OpenAIRequest`（`mappers/openai/models.rs:6-7`）都是 `#[derive(Deserialize)]`，兩個檔案沒有 `deserialize_with` 或手寫 `impl Deserialize`。serde 不會依輸入選型別，也沒有反序列化時執行的程式碼。
 2. **輸入在被標的那一行之前已經解析並設限。** `from_value` 的輸入是已經解析好的 `serde_json::Value`，不是原始位元組。axum 0.7.9 的 `Json::from_bytes` 用 `serde_json::Deserializer::from_slice`（`axum-0.7.9/src/json.rs:158`），保留 serde_json 預設的巢狀深度上限 128（`serde_json-1.0.151/src/de.rs:63`）。`src-tauri/src` 沒有呼叫 `disable_recursion_limit`。依賴圖裡的 `unbounded_depth` feature 只來自 build 期的 `cargo_metadata`，而且只開放這個函式，不改預設值。
-3. **大小有上限。** `DefaultBodyLimit::max(max_body_size)`（`server.rs:1005`）套在全部路由；預設 100 MB，可由 `ABV_MAX_BODY_SIZE` 調整（`server.rs:987-990`）。監控中介層另外以 `to_bytes(body, MAX_REQUEST_LOG_SIZE)` 讀取，上限 100 MB（`middleware/monitor.rs:15`、`:792`）。`from_value` 的成本與已解析的 `Value` 成正比（`claude.rs:541` 多一次 `clone`），沒有放大。
-4. **誰能送到這裡。** 預設只綁 `127.0.0.1`（`config.rs:975`、`:1012-1018`）；proxy 路由經 `auth_middleware`（`server.rs:674-677`）。
+3. **大小有上限，但記憶體用量是本文的數十倍（2026-11-22 更正）。** `DefaultBodyLimit::max(max_body_size)` 套在全部路由；預設 100 MB，可由 `ABV_MAX_BODY_SIZE` 調整。原文寫「`from_value` 的成本與已解析的 `Value` 成正比，沒有放大」，這句不成立：`serde_json::Value` 的節點遠大於它對應的本文位元組，量測見第 40 節（10 MB 數字陣列解析成 `Value` 佔 576 MB，57.6 倍）；修正前監控中介層先完整解析一次只為取 `model`，Claude handler 再 `clone` 兩次。WebSocket 路徑（`GET /v1/responses`）不受 `DefaultBodyLimit` 管，當時用的是 tungstenite 預設的 64 MiB。這是 CWE-400／CWE-770（資源耗盡），不是本節判定的 CWE-502；已在第 40 節處理。
+4. **誰能送到這裡（2026-11-22 更正）。** 預設只綁 `127.0.0.1`（`config.rs:975`、`:1012-1018`）。原文寫「proxy 路由經 `auth_middleware`」，容易讀成有認證把關，實際上預設沒有：`auth_mode` 預設 `Auto`，LAN 存取關閉時等同 `Off`（`security.rs:25-33`），`auth_middleware` 在 `Off` 時全部放行（`auth.rs:187-211`）。加上當時 CORS 是 `allow_origin(Any)`，使用者瀏覽的任何網頁都能對 `http://127.0.0.1:8045` 送出請求並讀回應；WebSocket 升級沒有 `Origin` 檢查。回送位址擋得住別台機器，擋不住本機瀏覽器裡的網頁。已在第 40 節處理。
 
 **刻意不改**：100 MB 上限是 fork 與上游一致的既有設計，用於帶圖片與長上下文的請求。把它調低會改變功能，也不是這條規則要的修正。若要收緊，應另立項目並先量測實際請求大小。
 
 **處理**：三筆以 `dismissed_reason=false positive` dismiss，附上本節的 file:line 證據；ROADMAP 近期表的分流列刪除。沒有改程式碼，所以沒有新增測試。
+
+**更正（2026-11-22）**：誤報判定只對 CWE-502（反序列化 gadget／由輸入選型別）成立，維持 dismiss。第 3、4 點原本的「沒有放大」與「loopback＋auth」兩個說法是錯的，已改寫如上；三筆告警的 dismiss 說明也同步改掉這兩句（狀態仍為 dismissed）。對應的強化在第 40 節。
 
 ### 39. 上游 v5.0.4 正式版審查：commit `0144b0f2..9b6dfc10`（188 筆）、PR #3902–#4016、Issue #3900–#4013（2026-11-21）
 
@@ -1783,3 +1785,60 @@ PR 軸水位提升至 `#3885`，issue 軸水位提升至 `#3883`。水位推進�
 **水位**：`reviewed_release` v5.0.3 → v5.0.4，`reviewed_through` `0144b0f2` → `9b6dfc10`，`reviewed_pr_through` 3899 → 4016，`reviewed_issue_through` 3897 → 4013，`reviewed_date` 2026-11-21。commit 軸推到 v5.0.4 是因為 188 筆都已有上表的判定；其中標「defer」的群組沒有逐行審查，移植前要重讀 diff。
 
 **本機驗證**：`node --test tools/check_lightweight_window.test.mjs` 7/7；`fs.rs` 獨立 harness 4/4（連跑 30 次）；`rustfmt --check` 通過（三個改動的 Rust 檔與 `fs.rs`）；完整 crate 仍無法在本機編譯（缺 cmake／NASM，同 §35），`lib.rs`、`lightweight.rs`、`tray.rs` 的改動沒有經過型別檢查，要推送後由 CI 的 `Check Rust Code` 驗證。
+
+### 40. 本機代理的跨來源濫用與記憶體耗盡強化（2026-11-22）
+
+來源：2026-11-22 一份以攻擊者視角做的獨立覆核。動手前逐條對照原始碼重新查證，全部成立：
+
+| 發現 | 查證（修正前的 `783fa470`） |
+| --- | --- |
+| 預設不需憑證 | `auth_mode` 預設 `Auto`（`proxy/config.rs:370-374`）；LAN 存取關閉時 `effective_auth_mode()` 回 `Off`（`proxy/security.rs:25-33`）；`auth_middleware` 在 `Off` 時直接 `next.run`（`middleware/auth.rs:187-211`），`OPTIONS` 一律放行（`auth.rs:177`）。 |
+| 任何來源都能讀回應 | `cors_layer()` 是 `allow_origin(Any)`＋`allow_headers(Any)`（`middleware/cors.rs:7-18`）。 |
+| WebSocket 沒有來源檢查 | `GET /v1/responses`（`server.rs:609`）→ `handle_responses_websocket`（`handlers/openai.rs:6235`）直接 `ws.on_upgrade`；WebSocket 握手不受 CORS 管。 |
+| 本文被重複整份解析與複製 | `middleware/monitor.rs:810` 為了取 `model` 把整個本文解析成 `Value`；handler 再解析一次；`handlers/claude.rs:510`、`:541` 各 `clone` 一次。上限註解寫 50MB、實際 100MB（`server.rs:986-990`）。 |
+| WebSocket 訊息大小沒設定 | `ws.on_upgrade` 前沒有 `max_message_size`／`max_frame_size`，用 tungstenite 0.24 預設（訊息 64 MiB、frame 16 MiB），與 `ABV_MAX_BODY_SIZE` 無關。 |
+| 沒有併發上限 | proxy 路由沒有任何限制同時處理中本文總量的層；代理與 Tauri 主行程同一個行程。 |
+
+**威脅模型**：使用者瀏覽的任一網頁。瀏覽器會先送出請求再套用 CORS，所以「簡單請求」（例如 `Content-Type: text/plain` 的 POST）不需要預檢就會被處理、扣使用者的帳號額度；CORS 是 `Any` 時回應還讀得到。WebSocket 完全不受 CORS 管。
+
+**修法**
+
+1. **來源檢查（HTTP 與 WebSocket）**：新模組 `src-tauri/src/proxy/middleware/origin.rs`。`origin_guard_middleware`（`:169`）掛在 proxy 路由、`auth` 之外（`server.rs:696-699`）：有效認證模式為 `Off` 且請求帶 `Origin` 時，來源必須是回送位址或桌面應用自己的來源，否則回 403 `origin_not_allowed`。沒有 `Origin` 的請求（Claude Code、Codex、curl、SDK）照舊通過。WebSocket 升級在這一層還是一般 GET，同一個檢查就涵蓋。認證開啟時這一層不動作，憑證才是閘門。
+   - 允許的來源（`is_local_app_origin`，`origin.rs:72`）：`http(s)://localhost`、`*.localhost`、`127.0.0.0/8`、`[::1]`（任意埠），以及 `tauri://localhost`。桌面前端的實際來源查自 `src-tauri/tauri.conf.json`：沒有設 `useHttpsScheme`，所以 Windows 是 `http://tauri.localhost`、macOS／Linux 是 `tauri://localhost`、`tauri dev` 是 `http://localhost:1420`（`build.devUrl`）；三者都在允許範圍。另外，桌面前端的 CSP 是 `connect-src ipc: http://ipc.localhost`，本來就不會用 HTTP 打 8045，走的是 IPC。
+   - `null`（沙箱 iframe、`data:`、本機檔案）一律拒絕，因為任何網頁都做得出這個值。多個 `Origin` 標頭必須全部可信。
+   - 例外出口：環境變數 `ABV_ALLOWED_ORIGINS`（逗號分隔的完整來源，精確比對；`*` 與 `null` 會被忽略）。
+2. **CORS 改成允許清單**：`cors_layer(security)`（`middleware/cors.rs:24`）改用 `AllowOrigin::predicate`。認證開啟時任何來源都允許（行為同前；回應標頭由 `*` 變成回顯請求的來源，對不帶憑證的 CORS 等效）；認證關閉時只允許上面的來源，所以其他來源過不了預檢也讀不到回應。管理 API（`/api/...`）永遠需要憑證，CORS 維持任何來源。
+3. **拿掉多餘的整份複製**
+   - 監控：新模組 `middleware/model_peek.rs`，`top_level_model`（`:106`）用串流方式只讀頂層 `model` 字串，其餘就地略過；`monitor.rs:812` 改呼叫它。
+   - Claude：`handlers/claude.rs:512` 由 `body.clone()` 改成移動（`let original_body = body;`），`:543` 由 `from_value(body.clone())` 改成 `Deserialize::deserialize(&original_body)`。`Value` 由三份變一份。
+   - OpenAI：`handlers/openai.rs:1880` 與 `:3803` 本來就是 `from_value(body)`（移動，不是複製）；`:3111`–`:3803` 之間只有 `existing_input.clone()`（`:3209`、`:3215`，Responses 要存回 session 的 input，功能需要），沒有整份本文的複製，所以沒改。
+4. **WebSocket 大小上限**：`handlers/openai.rs:6240-6244` 以 `limit_websocket_messages`（`middleware/body_budget.rs:39`）把 `max_message_size` 與 `max_frame_size` 都設成 `max_request_body_bytes()`（`ABV_MAX_BODY_SIZE`，預設 100 MB），與 HTTP 同一個數字。
+5. **同時處理中的大本文總量上限**：`middleware/body_budget.rs` 的 `body_budget_middleware`（`:138`）掛在 `auth` 與 `monitor` 之間（`server.rs:686-689`；monitor 是第一個讀本文的層，所以排隊中的請求只佔一條連線、不佔緩衝）。依 `Content-Length` 計費，小於 1 MiB 不計；總量預設等於單一請求上限（100 MB，可用 `ABV_MAX_INFLIGHT_BODY_BYTES` 調整），也就是同時只處理一個最大本文，或加總不超過它的多個較小本文；等超過 60 秒回 503＋`Retry-After`。沒有 `Content-Length`（chunked）的本文不知道大小，以單一請求上限的四分之一計（全額計費會讓固定用 chunked 上傳的客戶端一次只能跑一個請求），所以 chunked 本文最多同時四個，各自仍受單一請求上限限制。
+6. **註解**：`server.rs` 原本「默认 50MB」的註解已隨那段程式移除；讀取處改為 `max_request_body_bytes()`（`server.rs:596-597`），註解寫 100MB。
+
+**測試（全部在 CI 的 `Test whole lib` 內）**
+
+- `proxy::middleware::origin::tests::task_*` 7 筆：允許／拒絕的來源表（含 `localhost.evil.example`、`127.0.0.1.evil.example`、`null`、`http://localhost@evil.example` 等相似字串）；認證關閉時惡意來源的 HTTP POST 回 403 且沒有 `Access-Control-Allow-Origin`、預檢不給過；沒有 `Origin` 通過；`tauri://localhost`、`http://tauri.localhost`、`http://localhost:1420` 通過；認證開啟時跨來源行為不變；**真實 TCP 握手**的 WebSocket 升級：惡意來源 403，沒有 `Origin` 與 Tauri 來源 101。
+- `proxy::middleware::cors::tests::task_open_proxy_does_not_expose_responses_to_other_origins`；`middleware/internal.rs` 兩筆既有 CORS 測試改為期待回顯的來源（原本期待 `*`）。
+- `proxy::middleware::model_peek::tests::task_*` 2 筆：29 種輸入（重複鍵、巢狀 `model`、非字串、非物件、壞 JSON、尾端雜訊）逐一與原本的完整解析結果比對。
+- `proxy::handlers::claude::borrowed_body_parse_tests::task_typed_request_from_borrowed_body_equals_parse_of_a_clone`：借用解析與複製後解析的結果與錯誤訊息逐一相同（錯誤訊息會回給客戶端）。
+- `proxy::middleware::body_budget::tests::task_*` 6 筆：計費規則；8 個 8 MB 請求對 20 MB 預算，同時處理量不超過預算（對照組：預算夠大時 64 MB 全部同時進行）；預算用完時小請求不排隊、大請求逾時回 503、釋放後恢復；WebSocket 超過上限的 frame 只送標頭就被拒絕，20 MiB frame 在 32 MiB 上限下通過（證明生效的是設定值，不是 tungstenite 的 16 MiB 預設）。
+
+**先紅後綠**：本機無法編譯完整 crate（`boring-sys2` 缺 cmake／NASM，同第 35 節），所以用獨立 crate 以 `#[path]` 引入 repo 的原檔（`security.rs`、`middleware/origin.rs`、`cors.rs`、`body_budget.rs`、`model_peek.rs`、`mappers/claude/models.rs`），依賴版本取自 repo 的 `Cargo.lock`（axum 0.7.9、tower-http 0.5.2、tungstenite 0.24.0）。把三處改回修正前的行為（來源檢查不擋、CORS 一律允許、WebSocket 不設上限）時 4 筆紅：`left: Some("https://evil.example") right: None`、`left: 200 right: 403`、`got "HTTP/1.1 101 Switching Protocols"`、`left: [] right: [Err(())]`；原檔 19 筆全綠。`server.rs`、`monitor.rs`、`claude.rs`、`openai.rs`、`internal.rs` 的改動本機沒有編譯過，以 CI 為準。
+
+**量測**（同一個獨立 crate，release 建置，計數配置器，本文 10 MB）：
+
+| 步驟 | 修正前 | 修正後 |
+| --- | --- | --- |
+| 監控取 `model`（本文是 10 MB 數字陣列） | 峰值多 576.0 MB（本文的 57.6 倍） | 多 1 byte（只有 `model` 字串） |
+| Claude handler 由已解析的本文建出型別化請求（本文是大量小 content block） | 在已解析本文之上再多 362.9 MB（36.3 倍） | 再多 191.8 MB（19.2 倍，就是型別化請求本身） |
+
+axum 抽取出的那一份 `Value`（上例 175.6 MB）不在這次修改範圍。所以單一請求的峰值仍是本文的數十倍；這次拿掉的是重複的部分，併發總量則由第 5 點限制。量測的是配置器層的位元組數，不是整個應用在真實請求下的常駐記憶體；沒有對執行中的應用做端對端量測。
+
+**刻意的 fork 差異**：上游 `9b6dfc10` 仍是 `allow_origin(Any)`、沒有來源檢查。已記入 `FORK.md` 差異表。
+
+**行為改變（升級須知）**：認證關閉時，從非回送來源的網頁（例如別的網域上的網頁版聊天介面、`Origin: null` 的本機 HTML、來源是自訂 scheme 的瀏覽器擴充功能或桌面應用）呼叫代理會得到 403。解法是開啟 API key 認證（開啟後任何來源帶 key 都可用，與之前相同），或把來源列進 `ABV_ALLOWED_ORIGINS`。
+
+**沒做，已列入 `ROADMAP.md` 中期表**：監控仍把整份本文複製成字串存進請求日誌（上限 100 MB）；WebSocket 訊息不計入併發預算；預算在回應標頭送出時釋放，串流回應期間不再佔用；沒有檢查 `Host` 標頭（DNS rebinding 下的同源 GET 讀得到 `/v1/models` 這類不耗額度的唯讀端點，POST 與 WebSocket 因為一定帶 `Origin` 已被擋）。
+
+修復 commit：`FIXCOMMIT`（2026-11-22）。

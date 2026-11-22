@@ -45,6 +45,22 @@ Send a filename only in `path`; absolute paths, nested paths and symlinks are re
 Keep this dedicated directory writable only by trusted administrators. Imports open SQLite
 read-only. Desktop file selection remains available without this environment variable.
 
+## 本機代理的瀏覽器來源限制
+
+代理預設只綁 `127.0.0.1` 且不需要憑證（`auth_mode` 為 `auto`、LAN 存取關閉）。這個狀態下，
+帶 `Origin` 標頭的請求只有來源是回送位址（`localhost`、`*.localhost`、`127.0.0.0/8`、`[::1]`）
+或桌面應用本身（`tauri://localhost`）才會被處理，其餘回 `403`；WebSocket 升級同樣檢查。
+沒有 `Origin` 的命令列客戶端不受影響。這是為了不讓使用者瀏覽的網頁借用本機代理的帳號額度。
+
+要從其他來源的網頁呼叫代理：開啟 API key 認證（之後任何來源帶 key 都可用），
+或以環境變數 `ABV_ALLOWED_ORIGINS` 列出來源（逗號分隔、精確比對）。
+這個檢查不防本機上的其他程式；它們不經瀏覽器，本來就能直接連回送位址。
+
+While authentication is off, the proxy rejects browser requests whose `Origin` is not
+loopback or the desktop app itself (HTTP and WebSocket). Clients that send no `Origin`
+are unaffected. Turn on API key authentication or set `ABV_ALLOWED_ORIGINS` to call the
+proxy from a page on another origin.
+
 ## 依賴修補（2026-10-11）
 
 KaTeX 固定解析至 `0.18.2`，selector parser 至 `7.1.6`；以 npm overrides 修補間接依賴。

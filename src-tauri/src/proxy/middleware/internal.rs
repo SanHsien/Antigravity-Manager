@@ -219,7 +219,8 @@ mod tests {
             .layer(middleware::from_fn(move |request, next| {
                 service_status_middleware_with_running(running, request, next)
             }))
-            .layer(cors_layer())
+            // Auth on: the CORS layer allows any origin (it echoes the request's).
+            .layer(cors_layer(security(ProxyAuthMode::Strict)))
             .layer(middleware::from_fn(internal_loopback_middleware))
     }
 
@@ -467,7 +468,7 @@ mod tests {
                     .headers()
                     .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
                     .unwrap(),
-                "*",
+                "https://example.test",
                 "peer={peer}"
             );
         }
@@ -489,7 +490,7 @@ mod tests {
                 .headers()
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
                 .unwrap(),
-            "*"
+            "https://example.test"
         );
         assert_eq!(counter.load(Ordering::SeqCst), 0);
     }

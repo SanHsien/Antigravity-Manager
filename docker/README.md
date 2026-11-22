@@ -127,6 +127,8 @@ docker build --build-arg USE_MIRROR=true -t antigravity-manager:latest -f docker
 | `ABV_API_KEY` | - | **[重要]** 代理 API 密鑰。客戶端（如 Claude Code）訪問時需提供的 Key |
 | `ABV_WEB_PASSWORD` | - | **[安全]** Web 管理後台登錄密碼。若不設置則回退使用 API Key |
 | `ABV_MAX_BODY_SIZE` | `104857600` | **[性能]** 最大請求體限制 (Byte)。默認 100MB，用於解決大圖傳輸 413 錯誤 |
+| `ABV_MAX_INFLIGHT_BODY_BYTES` | 同 `ABV_MAX_BODY_SIZE` | **[性能]** 同時處理中的大請求體（≥1 MiB）總量上限 (Byte)。超過時排隊，等超過 60 秒回 503 |
+| `ABV_ALLOWED_ORIGINS` | - | **[安全]** 認證關閉時額外允許的瀏覽器來源（逗號分隔的完整來源，如 `https://chat.example.com`）。預設只允許回送位址；認證開啟時不需要 |
 | `LOG_LEVEL` | `info` | 日志等級 (debug, info, warn, error) |
 | `ABV_DIST_PATH` | `/app/dist` | 前端靜態資源託管路徑 (Dockerfile 已內置) |
 | `ABV_PUBLIC_URL` | - | 用於遠程 OAuth 回調的公網 URL (可選) |

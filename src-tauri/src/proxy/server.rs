@@ -584,10 +584,20 @@ impl AxumServer {
         // 构建路由 - 使用新架构的 handlers！
         use crate::proxy::handlers;
         use crate::proxy::middleware::{
-            admin_auth_middleware, auth_middleware, cors_layer,
-            internal::internal_loopback_middleware, ip_filter_middleware, monitor_middleware,
+            admin_auth_middleware, auth_middleware,
+            body_budget::{body_budget_middleware, max_request_body_bytes, BodyBudget},
+            cors_layer,
+            internal::internal_loopback_middleware,
+            ip_filter_middleware, monitor_middleware,
+            origin::origin_guard_middleware,
             service_status_middleware,
         };
+
+        // 请求体大小限制：环境变量 ABV_MAX_BODY_SIZE，默认 100MB（WebSocket 消息同限）
+        let max_body_size: usize = max_request_body_bytes();
+        tracing::info!("请求体大小限制: {} MB", max_body_size / 1024 / 1024);
+        // Total size of the large request bodies handled at once (default: one max-size body).
+        let body_budget = Arc::new(BodyBudget::from_env(max_body_size));
 
         // 1. 构建主 AI 代理路由 (遵循 auth_mode 配置)
         let proxy_routes = Router::new()
@@ -664,16 +674,28 @@ impl AxumServer {
             )
             // 应用 AI 服务特定的层
             // 注意：Axum layer 执行顺序是从下往上（洋葱模型）
-            // 请求: ip_filter -> auth -> monitor -> handler
-            // 响应: handler -> monitor -> auth -> ip_filter
+            // 请求: ip_filter -> origin_guard -> auth -> body_budget -> monitor -> handler
+            // 响应: handler -> monitor -> body_budget -> auth -> origin_guard -> ip_filter
             // monitor 需要在 auth 之后执行才能获取 UserTokenIdentity
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 monitor_middleware,
             ))
+            // Before the monitor, which is the first layer to read the body, and after auth,
+            // so an unauthenticated request cannot hold budget.
+            .layer(axum::middleware::from_fn_with_state(
+                body_budget,
+                body_budget_middleware,
+            ))
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 auth_middleware,
+            ))
+            // While auth is off, a browser page from another origin must not use the proxy
+            // (HTTP and the /v1/responses WebSocket upgrade).
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                origin_guard_middleware,
             ))
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
@@ -983,13 +1005,6 @@ impl AxumServer {
             ));
 
         // 3. 整合并应用全局层
-        // 从环境变量读取 body 大小限制，默认 50MB
-        let max_body_size: usize = std::env::var("ABV_MAX_BODY_SIZE")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(100 * 1024 * 1024); // 默认 100MB
-        tracing::info!("请求体大小限制: {} MB", max_body_size / 1024 / 1024);
-
         let app = Router::new()
             .nest("/api", admin_routes)
             .merge(proxy_routes)
@@ -1000,7 +1015,7 @@ impl AxumServer {
                 state.clone(),
                 service_status_middleware,
             ))
-            .layer(cors_layer())
+            .layer(cors_layer(state.security.clone()))
             .layer(axum::middleware::from_fn(internal_loopback_middleware))
             .layer(DefaultBodyLimit::max(max_body_size)) // 放宽 body 大小限制
             .with_state(state.clone());
