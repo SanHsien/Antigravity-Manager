@@ -35,3 +35,11 @@
 - 現況：fork handler 忽略 body，固定回 `input_tokens: 0`、`output_tokens: 0`。這會讓依該端點計算上下文用量的客戶端取得零值。
 - 來源：[上游歷史 `d9122555`](https://github.com/lbjlaq/Antigravity-Manager/commit/d9122555) 的 Google 路徑已是相同占位行為；fork 移除 z.ai 分支未改變此路徑。當前上游水位 `0067fe04` 已改用 `pipeline::estimate_tokens`。
 - 決定：依本輪「上游原有缺陷只記錄」的範圍保留程式，列入觀察。這是靜態確認，未使用真實帳號呼叫計數服務，也未將上游估算功能移植進 fork。
+
+## 2026-11-22：Layer-3 摘要提示不再宣稱 private scratchpad（提示詞稽核，艦隊規劃長代決）
+
+- 事實：`CONTEXT_SUMMARY_PROMPT`（`handlers/claude.rs`、`handlers/openai.rs`、`mappers/gemini/wrapper.rs` 三份相同）要摘要模型先在「private <scratchpad>」裡推理再輸出 `<state_snapshot>`。但三處呼叫端（`claude.rs` 的 forked_messages、`openai.rs`、`wrapper.rs`）都把模型整段輸出原樣塞進新對話，沒有程式抽出 `<state_snapshot>` 或剝掉 scratchpad，所以那段「private」推理其實會進入下游模型的上下文、佔掉壓縮後的預算。
+- 兩條路：(a) 改提示，不再要求 scratchpad；(b) 在三個呼叫端插回前剝掉 scratchpad 段。選 (a)：只動三份常數、行為更單純，且能用一條不需網路的單元測試驗證；(b) 要動三條呼叫路徑並處理模型不照格式輸出的情況。摘要目標模型仍是 Gemini（`gemini-2.5-flash-lite`／`internal-background-task`），provider 不變。
+- 做法：三份常數同步改寫兩句；兩個 handler 常數改 `pub(crate)`，`wrapper.rs` 加 `context_summary_prompt_copies_match_and_promise_no_private_section` 釘住三份相同、不含 `scratchpad`／`private`。本機沒有 MSVC linker，Rust 測試靠 CI 的 `Test whole lib`。
+- 刻意不做：稽核同時 flag 壓縮後歷史以 assistant 確認句結尾（`claude.rs` forked_messages）。下游走 Gemini 協定，沒有證據會被當成 prefill 報錯，不改。
+- 重審條件：上游 PR #3898（移除 Layer-3 壓縮）合併時，以上游為準、丟掉本差異。

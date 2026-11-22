@@ -1277,9 +1277,9 @@ const CONTEXT_SUMMARY_PROMPT: &str = r#"You are a context compression specialist
 
 This snapshot will become the Agent's ONLY memory of the past. All key details, plans, errors, and user instructions MUST be preserved.
 
-First, think through the entire history in a private <scratchpad>. Review the user's overall goal, the agent's actions, tool outputs, file modifications, and any unresolved issues. Identify every piece of information critical for future actions.
+Review the whole history: the user's overall goal, the agent's actions, tool outputs, file modifications, and any unresolved issues. Identify every piece of information critical for future actions.
 
-After reasoning, generate the final <state_snapshot> XML object. Information must be extremely dense. Omit any irrelevant conversational filler.
+Output only the final <state_snapshot> XML object; everything you output is inserted verbatim into the resumed conversation. Information must be extremely dense. Omit any irrelevant conversational filler.
 
 The structure MUST be as follows:
 
@@ -1510,6 +1510,24 @@ static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // fork patch (SanHsien/Antigravity-Manager): the Layer-3 summary is inserted verbatim
+    // into the resumed conversation (no code strips any section), so the prompt must not
+    // promise the model a "private" scratchpad, and the three copies must stay identical.
+    #[test]
+    fn context_summary_prompt_copies_match_and_promise_no_private_section() {
+        assert_eq!(
+            CONTEXT_SUMMARY_PROMPT,
+            crate::proxy::handlers::claude::CONTEXT_SUMMARY_PROMPT
+        );
+        assert_eq!(
+            CONTEXT_SUMMARY_PROMPT,
+            crate::proxy::handlers::openai::CONTEXT_SUMMARY_PROMPT
+        );
+        assert!(!CONTEXT_SUMMARY_PROMPT.contains("scratchpad"));
+        assert!(!CONTEXT_SUMMARY_PROMPT.contains("private"));
+        assert!(CONTEXT_SUMMARY_PROMPT.contains("inserted verbatim into the resumed conversation"));
+    }
 
     #[test]
     fn test_wrap_request() {

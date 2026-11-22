@@ -7709,13 +7709,13 @@ fn split_namespace_tool_name(qualified_name: &str) -> (String, Option<String>) {
 }
 
 const INTERNAL_BACKGROUND_TASK: &str = "gemini-2.5-flash-lite";
-const CONTEXT_SUMMARY_PROMPT: &str = r#"You are a context compression specialist. Your task is to create a structured XML snapshot of the conversation history.
+pub(crate) const CONTEXT_SUMMARY_PROMPT: &str = r#"You are a context compression specialist. Your task is to create a structured XML snapshot of the conversation history.
 
 This snapshot will become the Agent's ONLY memory of the past. All key details, plans, errors, and user instructions MUST be preserved.
 
-First, think through the entire history in a private <scratchpad>. Review the user's overall goal, the agent's actions, tool outputs, file modifications, and any unresolved issues. Identify every piece of information critical for future actions.
+Review the whole history: the user's overall goal, the agent's actions, tool outputs, file modifications, and any unresolved issues. Identify every piece of information critical for future actions.
 
-After reasoning, generate the final <state_snapshot> XML object. Information must be extremely dense. Omit any irrelevant conversational filler.
+Output only the final <state_snapshot> XML object; everything you output is inserted verbatim into the resumed conversation. Information must be extremely dense. Omit any irrelevant conversational filler.
 
 The structure MUST be as follows:
 
