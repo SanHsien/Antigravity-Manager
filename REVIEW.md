@@ -1841,4 +1841,4 @@ axum 抽取出的那一份 `Value`（上例 175.6 MB）不在這次修改範圍�
 
 **沒做，已列入 `ROADMAP.md` 中期表**：監控仍把整份本文複製成字串存進請求日誌（上限 100 MB）；WebSocket 訊息不計入併發預算；預算在回應標頭送出時釋放，串流回應期間不再佔用；沒有檢查 `Host` 標頭（DNS rebinding 下的同源 GET 讀得到 `/v1/models` 這類不耗額度的唯讀端點，POST 與 WebSocket 因為一定帶 `Origin` 已被擋）。
 
-修復 commit：`FIXCOMMIT`（2026-11-22）。
+修復 commit：`8c75f37f`（2026-11-22）。
